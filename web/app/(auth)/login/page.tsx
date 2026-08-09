@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { useI18n } from "@/lib/i18n";
@@ -20,6 +20,34 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Menyambung kembali sesi yang access token-nya sudah kedaluwarsa.
+  //
+  // Server Component tidak bisa menulis cookie, jadi token yang lewat masa
+  // berlakunya membuat halaman dashboard menganggap orangnya belum login dan
+  // melemparnya ke sini. Refresh token-nya masih ada di cookie: klien browser
+  // menukarnya jadi sesi baru dan menuliskannya kembali, jadi yang dialami
+  // pengguna cuma satu kedipan — bukan disuruh mengetik sandi lagi.
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { data } = await createClient().auth.getSession();
+        if (!cancelled && data.session) {
+          router.replace("/electrical");
+          router.refresh();
+        }
+      } catch {
+        // Tidak ada sesi untuk dipulihkan — form di bawah yang mengambil alih.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
