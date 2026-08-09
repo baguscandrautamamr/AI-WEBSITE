@@ -52,5 +52,26 @@
     "haveAccount": "Sudah punya akun? Masuk",
     "checkEmail": "Akun dibuat. Cek email untuk konfirmasi, lalu masuk.",
     "accessNote": "Akun baru belum punya akses proyek. Admin perlu memberikannya dulu sebelum kamu bisa mengirim perintah ke Revit."
+  },
+  "common": {
+    "loading": "Memuat…"
+  },
+  "command": {
+    "project": "Proyek",
+    "send": "Kirim ke Revit",
+    "sending": "Mengirim…",
+    "sendFailed": "Gagal mengirim perintah",
+    "results": "Hasil",
+    "confirm": "Perintah ini mengubah model dan tidak bisa dibatalkan dari sini. Lanjutkan?",
+    "noProject": "Akunmu belum diberi akses proyek. Minta admin menambahkanmu dulu — sampai itu terjadi, tidak ada perintah yang bisa dikirim ke Revit.",
+    "roleTooLow": "Peranmu di proyek ini hanya boleh membaca. Perintah yang mengubah model butuh peran editor.",
+    "waitingAddin": "Menunggu diambil add-in. Kalau tetap begini, pastikan Revit terbuka dan add-in-nya berjalan.",
+    "status": {
+      "pending": "Menunggu",
+      "processing": "Dikerjakan Revit",
+      "completed": "Selesai",
+      "failed": "Gagal",
+      "cancelled": "Dibatalkan"
+    }
   }
 }

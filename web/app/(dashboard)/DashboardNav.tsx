@@ -4,19 +4,22 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useI18n } from "@/lib/i18n";
-import type { Role } from "@/types/database";
+import type { Role } from "@/lib/commands";
 
 export default function DashboardNav({ role }: { role: Role }) {
   const { t, locale, setLocale } = useI18n();
   const { theme, setTheme } = useTheme();
   const pathname = usePathname();
 
-  const items = [
-    { href: "/electrical", label: t("nav.electrical"), roles: ["admin", "user_revit"] },
-    { href: "/standard", label: t("nav.standard"), roles: ["admin", "user_revit", "viewer"] },
-    { href: "/export-import", label: t("nav.exportImport"), roles: ["admin", "user_revit"] },
-    { href: "/history", label: t("nav.history"), roles: ["admin", "user_revit", "viewer"] },
-    { href: "/admin/devices", label: t("nav.admin"), roles: ["admin"] },
+  // Peran mengikuti tabel di docs/COMMANDS.md: viewer boleh query, export,
+  // print_pdf dan list_sheets — jadi export-import ikut terlihat untuk viewer.
+  // Yang mengubah model (halaman electrical) butuh editor ke atas.
+  const items: { href: string; label: string; roles: Role[] }[] = [
+    { href: "/electrical", label: t("nav.electrical"), roles: ["editor", "admin"] },
+    { href: "/standard", label: t("nav.standard"), roles: ["viewer", "editor", "admin"] },
+    { href: "/export-import", label: t("nav.exportImport"), roles: ["viewer", "editor", "admin"] },
+    { href: "/history", label: t("nav.history"), roles: ["viewer", "editor", "admin"] },
+    { href: "/admin/users", label: t("nav.admin"), roles: ["admin"] },
   ];
 
   return (
