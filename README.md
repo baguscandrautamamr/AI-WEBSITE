@@ -65,6 +65,28 @@ npm install
 npm run dev
 ```
 
+## Kalau situsnya 500 / `MIDDLEWARE_INVOCATION_FAILED`
+
+Buka **`/api/health`** di domain yang bermasalah. Route itu tidak butuh login dan
+tidak menampilkan nilai rahasia — hanya ada/tidaknya tiap variabel, apakah URL
+Supabase bisa di-parse, dan apakah host-nya menjawab:
+
+```json
+{ "ok": false,
+  "env": { "NEXT_PUBLIC_SUPABASE_URL": true, "NEXT_PUBLIC_SUPABASE_ANON_KEY": true, … },
+  "supabase": { "host": null, "urlValid": false, "reachable": null } }
+```
+
+`urlValid: false` padahal variabelnya ada = nilainya salah format. Yang paling
+sering: nama variabelnya ikut ke-paste ke kolom value
+(`NEXT_PUBLIC_SUPABASE_URL=https://…`), ada spasi/baris baru di ujung, atau
+`https://` hilang.
+
+**Env var dibaca saat build, bukan saat request.** Menambah atau memperbaikinya
+di dashboard Vercel tidak berpengaruh apa-apa sampai deploy diulang. Pastikan
+juga variabelnya dicentang untuk environment yang benar (Production, bukan cuma
+Preview).
+
 ## Skema database
 
 Lihat `supabase/README.md`. Ringkasnya: skema inti (0001–0007) ada di repo

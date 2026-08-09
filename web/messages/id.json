@@ -50,7 +50,8 @@
     "needAccount": "Belum punya akun? Daftar",
     "haveAccount": "Sudah punya akun? Masuk",
     "checkEmail": "Akun dibuat. Cek email untuk konfirmasi, lalu masuk.",
-    "accessNote": "Akun baru belum punya akses proyek. Admin perlu memberikannya dulu sebelum kamu bisa mengirim perintah ke Revit."
+    "accessNote": "Akun baru belum punya akses proyek. Admin perlu memberikannya dulu sebelum kamu bisa mengirim perintah ke Revit.",
+    "notConfigured": "Konfigurasi Supabase belum terpasang di deployment ini. Set NEXT_PUBLIC_SUPABASE_URL dan NEXT_PUBLIC_SUPABASE_ANON_KEY di Vercel, lalu deploy ulang. Cek /api/health untuk memastikan."
   },
   "common": {
     "loading": "Memuat…"
