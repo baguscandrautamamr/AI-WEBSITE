@@ -24,7 +24,7 @@ export async function POST(req: Request) {
 
   const response = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 1000,
+    max_tokens: 4096,
     system: SYSTEM_PROMPT,
     messages: [...(history ?? []), { role: "user", content: message }] as any,
   });

@@ -9,4 +9,7 @@ export const anthropic = new Anthropic({
   baseURL: process.env.AI_GATEWAY_BASE_URL ?? "https://gateway.olagon.site/anthropic",
 });
 
-export const MODEL = process.env.AI_MODEL ?? "claude-sonnet-4-6";
+// Catatan: pada Claude Sonnet 5 adaptive thinking aktif secara default, dan
+// `max_tokens` membatasi thinking + teks jawaban sekaligus. Beri ruang cukup
+// di setiap pemanggilan supaya jawaban tidak terpotong di tengah.
+export const MODEL = process.env.AI_MODEL ?? "claude-sonnet-5";
