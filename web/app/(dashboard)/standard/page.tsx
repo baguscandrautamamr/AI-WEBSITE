@@ -1,33 +1,73 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 
-interface Msg { role: "user" | "assistant"; content: string }
+interface Msg {
+  role: "user" | "assistant";
+  content: string;
+}
 
 export default function StandardPage() {
   const { t } = useI18n();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const bottom = useRef<HTMLDivElement>(null);
+
+  // Utas tersimpan di standards_threads, jadi percakapan kemarin masih ada
+  // saat halaman dibuka lagi — termasuk yang dimulai dari Telegram.
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/ai/standard");
+        if (!res.ok) return;
+        const { turns } = (await res.json()) as {
+          turns: { role: "user" | "assistant"; text: string }[];
+        };
+        setMessages(turns.map((x) => ({ role: x.role, content: x.text })));
+      } catch {
+        // Riwayat kosong bukan kegagalan yang perlu ditampilkan; halaman tetap
+        // bisa dipakai untuk bertanya.
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    bottom.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   async function send() {
-    if (!input.trim()) return;
-    const next = [...messages, { role: "user" as const, content: input }];
-    setMessages(next);
+    const question = input.trim();
+    if (!question || loading) return;
+
+    setMessages((prev) => [...prev, { role: "user", content: question }]);
     setInput("");
     setLoading(true);
+    setError(null);
 
-    // Mode Standard TIDAK PERNAH insert ke tabel `commands` —
+    // Mode Standard TIDAK PERNAH menulis ke commands_queue —
     // ini murni chat ke LLM, tidak menyentuh Revit sama sekali.
-    const res = await fetch("/api/ai/standard", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: input }),
-    });
-    const { reply } = await res.json();
-    setMessages([...next, { role: "assistant", content: reply }]);
-    setLoading(false);
+    try {
+      const res = await fetch("/api/ai/standard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: question }),
+      });
+      const body = await res.json();
+
+      if (!res.ok) {
+        setError(body.error ?? t("standard.failed"));
+        return;
+      }
+
+      setMessages((prev) => [...prev, { role: "assistant", content: body.reply }]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("standard.failed"));
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -39,13 +79,20 @@ export default function StandardPage() {
 
       <div className="flex-1 overflow-auto space-y-2">
         {messages.map((m, i) => (
-          <div key={i} className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
-            m.role === "user" ? "bg-accent text-white ml-auto" : "glass-input"
-          }`}>
+          <div
+            key={i}
+            className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${
+              m.role === "user" ? "bg-accent text-white ml-auto" : "glass-input"
+            }`}
+          >
             {m.content}
           </div>
         ))}
+        {loading && <p className="text-xs opacity-60">{t("common.loading")}</p>}
+        <div ref={bottom} />
       </div>
+
+      {error && <p className="text-sm text-red-500">{error}</p>}
 
       <div className="flex gap-2">
         <input
@@ -55,7 +102,9 @@ export default function StandardPage() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send()}
         />
-        <button onClick={send} disabled={loading} className="btn-accent">{t("standard.send")}</button>
+        <button onClick={send} disabled={loading} className="btn-accent">
+          {t("standard.send")}
+        </button>
       </div>
     </div>
   );

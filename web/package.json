@@ -17,7 +17,6 @@
     "next-pwa": "^5.6.0",
     "cloudinary": "^2.4.0",
     "@anthropic-ai/sdk": "^0.116.0",
-    "archiver": "^7.0.1",
     "clsx": "^2.1.1"
   },
   "devDependencies": {
@@ -26,8 +25,7 @@
     "postcss": "^8.4.0",
     "autoprefixer": "^10.4.0",
     "@types/node": "^20.14.0",
-    "@types/react": "^18.3.0",
-    "@types/archiver": "^6.0.2"
+    "@types/react": "^18.3.0"
   },
   "overrides": {
     "serialize-javascript": "^7.0.3"
