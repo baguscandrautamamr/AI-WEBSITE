@@ -1,17 +1,33 @@
 "use client";
 
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import id from "@/messages/id.json";
 import en from "@/messages/en.json";
 
 const dictionaries = { id, en } as const;
 export type Locale = keyof typeof dictionaries;
 
+const STORAGE_KEY = "locale";
+
 type Ctx = { locale: Locale; t: (key: string) => string; setLocale: (l: Locale) => void };
 const I18nContext = createContext<Ctx | null>(null);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocale] = useState<Locale>("id");
+  // Render pertama selalu "id" — sama di server dan di browser, jadi tidak ada
+  // hydration mismatch. Pilihan yang tersimpan dipasang setelahnya.
+  const [locale, setLocaleState] = useState<Locale>("id");
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(STORAGE_KEY);
+    if (saved === "id" || saved === "en") setLocaleState(saved);
+  }, []);
+
+  // Tanpa ini pilihan bahasa hilang setiap kali halaman dimuat ulang, dan
+  // pengguna berbahasa Inggris harus menekan tombolnya lagi setiap kunjungan.
+  const setLocale = (next: Locale) => {
+    setLocaleState(next);
+    window.localStorage.setItem(STORAGE_KEY, next);
+  };
 
   const t = (key: string) => {
     const parts = key.split(".");
