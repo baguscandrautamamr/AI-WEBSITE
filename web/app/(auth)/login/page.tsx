@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { useI18n } from "@/lib/i18n";
 
 type Mode = "signin" | "signup";
@@ -10,7 +10,9 @@ type Mode = "signin" | "signup";
 export default function LoginPage() {
   const { t } = useI18n();
   const router = useRouter();
-  const supabase = createClient();
+  // Klien dibuat di dalam handler, bukan di sini: badan komponen ini ikut
+  // dijalankan saat prerender, dan membuat klien di situ membuat build gagal
+  // total begitu env var Supabase belum terpasang.
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -19,11 +21,47 @@ export default function LoginPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Menyambung kembali sesi yang access token-nya sudah kedaluwarsa.
+  //
+  // Server Component tidak bisa menulis cookie, jadi token yang lewat masa
+  // berlakunya membuat halaman dashboard menganggap orangnya belum login dan
+  // melemparnya ke sini. Refresh token-nya masih ada di cookie: klien browser
+  // menukarnya jadi sesi baru dan menuliskannya kembali, jadi yang dialami
+  // pengguna cuma satu kedipan — bukan disuruh mengetik sandi lagi.
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { data } = await createClient().auth.getSession();
+        if (!cancelled && data.session) {
+          router.replace("/electrical");
+          router.refresh();
+        }
+      } catch {
+        // Tidak ada sesi untuk dipulihkan — form di bawah yang mengambil alih.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
     setNotice(null);
+
+    let supabase: ReturnType<typeof createClient>;
+    try {
+      supabase = createClient();
+    } catch (err) {
+      setLoading(false);
+      return setError(err instanceof Error ? err.message : String(err));
+    }
 
     if (mode === "signin") {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -61,6 +99,12 @@ export default function LoginPage() {
         <h1 className="text-xl font-medium">
           {mode === "signin" ? t("auth.login") : t("auth.register")}
         </h1>
+
+        {/* Terlihat sebelum tombol ditekan: tanpa ini, deploy yang env var-nya
+            belum terpasang hanya memberi kegagalan tanpa sebab saat submit. */}
+        {!isSupabaseConfigured() && (
+          <p className="text-sm text-red-500">{t("auth.notConfigured")}</p>
+        )}
 
         {mode === "signup" && (
           <input

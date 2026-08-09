@@ -2,45 +2,44 @@
   "nav": {
     "electrical": "Electrical AI",
     "standard": "Standar Electrical",
-    "exportImport": "Export / Import",
+    "exportImport": "Export",
     "history": "Riwayat",
     "admin": "Admin"
   },
   "electrical": {
-    "title": "Mode Electrical AI",
-    "placeholder": "Contoh: tag semua panel di lantai 2 dan hitung voltage drop",
-    "run": "Jalankan ke Revit",
-    "noDevice": "Kamu belum punya akses ke device Revit manapun. Minta admin untuk memberi akses.",
-    "selectDevice": "Pilih device Revit",
-    "status": {
-      "pending": "Menunggu diambil add-in",
-      "in_progress": "Sedang dikerjakan di Revit",
-      "done": "Selesai",
-      "failed": "Gagal"
-    }
+    "title": "Mode Electrical AI"
   },
   "standard": {
     "title": "Standar & Regulasi Electrical",
     "subtitle": "Tanya jawab standar (SNI, PUIL, IEC, NEC) — tidak menyentuh Revit",
     "placeholder": "Tanya standar SNI/PUIL/IEC...",
-    "send": "Kirim"
+    "send": "Kirim",
+    "failed": "Gagal menghubungi asisten standar"
   },
   "exportImport": {
-    "title": "Export & Import",
-    "sheets": "Daftar Sheet",
-    "refreshSheets": "Ambil ulang daftar sheet",
-    "exportPdf": "Export PDF",
-    "exportDwg": "Export DWG",
-    "importPdf": "Import PDF",
-    "exportExcel": "Export Excel",
-    "importExcel": "Import Excel",
-    "dwgSetup": "Nama export setup DWG",
-    "pdfQuality": "Kualitas raster PDF"
+    "title": "Export",
+    "note": "Belum ada perintah import di add-in Revit, jadi halaman ini hanya berisi export. /list_sheets menampilkan nomor sheet yang dipakai /print_pdf; /export menulis schedule dan laporan kepatuhan."
   },
   "history": {
-    "title": "Riwayat File",
-    "downloadAll": "Unduh Semua (.zip)",
-    "empty": "Belum ada file"
+    "title": "Riwayat Perintah",
+    "subtitle": "50 perintah terakhir yang kamu kirim ke Revit, beserta hasilnya.",
+    "empty": "Belum ada perintah yang dikirim",
+    "fileNote": "Tautan file hanya muncul kalau add-in dijalankan dengan `export_base_url`. Tanpa itu, hasil export tersimpan sebagai path lokal di PC Revit."
+  },
+  "admin": {
+    "title": "Akses Proyek",
+    "subtitle": "Akun baru tidak punya akses proyek apa pun sampai diberikan di sini.",
+    "members": "Anggota proyek",
+    "noMembers": "Belum ada anggota di proyek ini",
+    "grantTitle": "Beri akses",
+    "pickUser": "Pilih user",
+    "grant": "Beri",
+    "revoke": "Cabut",
+    "notAdmin": "Kamu bukan admin di proyek mana pun.",
+    "roleNote": "viewer hanya membaca (query, export, print_pdf, list_sheets); editor boleh menjalankan perintah perangkat; admin boleh mengelola akses.",
+    "loadFailed": "Gagal memuat data akses",
+    "grantFailed": "Gagal memberi akses",
+    "revokeFailed": "Gagal mencabut akses"
   },
   "auth": {
     "login": "Masuk",
@@ -51,7 +50,8 @@
     "needAccount": "Belum punya akun? Daftar",
     "haveAccount": "Sudah punya akun? Masuk",
     "checkEmail": "Akun dibuat. Cek email untuk konfirmasi, lalu masuk.",
-    "accessNote": "Akun baru belum punya akses proyek. Admin perlu memberikannya dulu sebelum kamu bisa mengirim perintah ke Revit."
+    "accessNote": "Akun baru belum punya akses proyek. Admin perlu memberikannya dulu sebelum kamu bisa mengirim perintah ke Revit.",
+    "notConfigured": "Konfigurasi Supabase belum terpasang di deployment ini. Set NEXT_PUBLIC_SUPABASE_URL dan NEXT_PUBLIC_SUPABASE_ANON_KEY di Vercel, lalu deploy ulang. Cek /api/health untuk memastikan."
   },
   "common": {
     "loading": "Memuat…"

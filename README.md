@@ -1,39 +1,63 @@
-# Electrical AI Platform — starter scaffold
+# Electrical AI — website
 
-Ini kerangka awal (bukan produk siap-pakai) untuk tiga bagian yang didiskusikan:
+Website untuk mengendalikan add-in Revit lewat browser. Ini **bukan sistem
+berdiri sendiri**: ia menumpang project Supabase, skema, dan add-in yang sudah
+dipakai bot Telegram di repo
+[`electrical_ai`](https://github.com/baguscandrautamamr/electrical_ai).
 
 ```
-supabase/       schema database + RLS (jalankan lewat Supabase CLI atau SQL editor)
 web/            Next.js 14 (App Router) — deploy ke Vercel
-revit-addin/    C# add-in Revit (WPF + WebView2 + Revit API)
+supabase/       migrasi tambahan untuk login web (0008, 0009)
+revit-addin/    ⚠️ scaffold lama, JANGAN dipakai — lihat catatan di bawah
 ```
 
-## Sebelum mulai
+## Cara kerjanya
 
-1. **Command electrical asli belum terpasang.** File
-   `revit-addin/Revit/ElectricalCommands.cs` masih placeholder (keyword
-   matching sederhana). Begitu kamu share command list / kode dari bot
-   Telegram lama, bagian ini diganti supaya perilakunya sama.
-2. **Endpoint AI di `web/lib/anthropic.ts`** menunjuk ke gateway pihak ketiga
-   (`gateway.olagon.site`) sesuai yang kamu berikan — bukan endpoint resmi
-   Anthropic. API key HARUS diisi lewat environment variable server
-   (`AI_GATEWAY_API_KEY`), jangan pernah ditaruh di kode client.
+Mengirim perintah ke Revit secara harfiah = INSERT satu baris di
+`commands_queue`. Add-in mengambilnya lewat RPC `claim_next_command`, jadi
+website tidak perlu tahu apa pun soal device, koneksi, atau alamat PC. Kolom
+`chat_id` dibiarkan `null` — itulah penanda bahwa baris ini berasal dari
+website, dan yang membuat hasilnya tidak dikirim ke chat Telegram siapa pun.
 
-## Environment variables yang dibutuhkan (`web/.env.local`)
+Katalog perintah di `web/lib/commands.ts` menyalin `docs/COMMANDS.md` di repo
+`electrical_ai`. Kalau add-in menambah perintah baru, file itu yang diperbarui —
+form di UI dibangun otomatis dari sana.
+
+## Halaman
+
+| Halaman | Isi |
+|---|---|
+| `/electrical` | Perintah yang mengubah model (place_*, cable tray, equip_room, modify, delete, undo). Butuh peran `editor`. |
+| `/export-import` | `list_sheets`, `print_pdf`, `export`. Boleh untuk `viewer`. |
+| `/standard` | Tanya jawab standar (SNI/PUIL/IEC). Tidak pernah menyentuh `commands_queue`. Riwayatnya di `standards_threads`, sama dengan bot Telegram. |
+| `/history` | 50 perintah terakhir milik sendiri dari `commands_queue`, beserta status dan hasilnya. |
+| `/admin/users` | Memberi/mencabut akses proyek (`user_project_access`). Hanya untuk admin proyek. |
+
+## Environment variables (`web/.env.local`)
 
 ```
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
+# Wajib: dipakai /api/admin/access untuk membaca daftar user dan menulis
+# user_project_access. Tanpa ini halaman admin tidak jalan.
 SUPABASE_SERVICE_ROLE_KEY=
+
 AI_GATEWAY_API_KEY=
 AI_GATEWAY_BASE_URL=https://gateway.olagon.site/anthropic
 AI_MODEL=claude-sonnet-5
+
+# Hanya dipakai /api/files/upload (belum ada halaman yang memanggilnya —
+# lihat "Yang belum ada").
 CLOUDINARY_CLOUD_NAME=
 CLOUDINARY_API_KEY=
 CLOUDINARY_API_SECRET=
 ```
 
-## Cara jalanin web app secara lokal
+`AI_GATEWAY_BASE_URL` menunjuk gateway pihak ketiga, bukan endpoint resmi
+Anthropic. Pastikan kamu percaya operatornya sebelum mengirim data proyek lewat
+sana. API key hanya boleh dibaca di server, tidak pernah di browser.
+
+## Jalanin lokal
 
 ```bash
 cd web
@@ -41,29 +65,89 @@ npm install
 npm run dev
 ```
 
-## Cara apply schema Supabase
+## Kenapa tidak ada `middleware.ts`
 
-Buka SQL editor di dashboard Supabase project kamu, jalankan isi
-`supabase/migrations/0001_init.sql`. (Atau pakai Supabase CLI:
-`supabase db push` kalau sudah link project.)
+Sengaja dihapus, dan jangan ditambahkan lagi tanpa membaca ini.
 
-## Yang belum ada di scaffold ini (perlu ditambahkan)
+Middleware Next 14 selalu berjalan di **Edge runtime**. `next/server` menarik
+`@opentelemetry/api` versi bundel Next, yang memuat baris:
 
-- Route upload generik `web/app/api/files/upload/route.ts` (dipanggil dari
-  halaman export-import untuk upload PDF import ke Cloudinary sebelum
-  dikirim ke add-in).
-- UI admin untuk mengubah role user (`profiles.role`) — saat ini harus
-  diubah manual lewat SQL editor / dashboard Supabase.
-- Icon PWA (`web/public/icons/icon-192.png`, `icon-512.png`) — taruh file
-  asli di sana.
-- Alur pairing device end-to-end (Edge Function yang menukar pairing code
-  jadi device_id + token untuk add-in).
-- Function calling / tool-use di `api/ai/electrical` supaya teks bahasa
-  manusia diubah jadi payload terstruktur sebelum dikirim ke add-in, bukan
-  dikirim mentah (lihat komentar TODO di file itu).
+```js
+if (typeof __nccwpck_require__ !== "undefined") __nccwpck_require__.ab = __dirname + "/";
+```
 
-## Struktur lengkap ada di dokumen sebelumnya
+Build lokal mengganti `__dirname` dengan `"/"`. Build di Vercel tidak, sehingga
+`__dirname` — yang tidak ada di Edge runtime — tetap hidup di bundle dan melempar
+`ReferenceError` **saat modul dimuat**, sebelum fungsi middleware-nya sendiri
+dijalankan. Akibatnya setiap URL membalas 500 `MIDDLEWARE_INVOCATION_FAILED`,
+termasuk `/login`. Karena kegagalannya di tahap pemuatan modul, tidak ada
+try/catch di dalam middleware yang bisa menolong.
 
-`spesifikasi-electrical-ai-platform.md` (sudah dikirim di respons
-sebelumnya) menjelaskan alasan arsitektur command-bus, skema DB, dan urutan
-pengerjaan yang disarankan — dokumen ini scaffold kodenya.
+Tersangka utamanya `next-pwa@5.6.0` (sudah tidak dipelihara, terbit sebelum
+App Router): ia mengubah `config.entry` dan menyuntikkan plugin dari **salinan
+webpack-nya sendiri** ke setiap compiler, termasuk compiler edge — persis jenis
+gangguan yang membuat mock `__dirname` milik Next hilang. Belum dibuktikan
+langsung, karena kegagalannya tidak muncul di build lokal.
+
+Tugas middleware itu cuma satu: menyegarkan cookie sesi Supabase. Penggantinya
+sekarang: klien browser menyegarkan sesinya sendiri selama tab terbuka, dan
+`/login` menukar refresh token jadi sesi baru lalu mengembalikan orangnya ke
+dashboard. Yang menegakkan akses tetap RLS dan `auth.getUser()` di layout serta
+route handler — tidak ada yang berkurang.
+
+Kalau nanti mau menghidupkannya lagi, urutan yang masuk akal: lepas `next-pwa`
+(atau ganti ke `@ducanh2912/next-pwa` yang dipelihara), atau naik ke Next 15.2+
+yang mengizinkan `export const runtime = "nodejs"` di middleware — lalu uji di
+preview deployment, bukan di lokal, karena bug ini memang tidak muncul di lokal.
+
+## Kalau situsnya 500 / `MIDDLEWARE_INVOCATION_FAILED`
+
+Buka **`/api/health`** di domain yang bermasalah. Route itu tidak butuh login dan
+tidak menampilkan nilai rahasia — hanya ada/tidaknya tiap variabel, apakah URL
+Supabase bisa di-parse, dan apakah host-nya menjawab:
+
+```json
+{ "ok": false,
+  "env": { "NEXT_PUBLIC_SUPABASE_URL": true, "NEXT_PUBLIC_SUPABASE_ANON_KEY": true, … },
+  "supabase": { "host": null, "urlValid": false, "reachable": null } }
+```
+
+`urlValid: false` padahal variabelnya ada = nilainya salah format. Yang paling
+sering: nama variabelnya ikut ke-paste ke kolom value
+(`NEXT_PUBLIC_SUPABASE_URL=https://…`), ada spasi/baris baru di ujung, atau
+`https://` hilang.
+
+**Env var dibaca saat build, bukan saat request.** Menambah atau memperbaikinya
+di dashboard Vercel tidak berpengaruh apa-apa sampai deploy diulang. Pastikan
+juga variabelnya dicentang untuk environment yang benar (Production, bukan cuma
+Preview).
+
+## Skema database
+
+Lihat `supabase/README.md`. Ringkasnya: skema inti (0001–0007) ada di repo
+`electrical_ai`; repo ini hanya menambah `0008_web_auth.sql` dan
+`0009_web_user_trigger_fix.sql` untuk login web.
+
+Akun yang baru mendaftar **sengaja tidak punya akses proyek apa pun** sampai
+seorang admin memberikannya lewat `/admin/users`.
+
+## ⚠️ Folder `revit-addin/` di repo ini sudah usang
+
+Isinya scaffold C# lama yang mem-polling tabel `commands` dengan konsep
+`device_id` / `pairing_code`. Tabel dan konsep itu **tidak ada** di database yang
+sebenarnya, dan logika electrical-nya masih stub. Add-in yang asli dan dipakai
+produksi ada di `revit-addin/RevitCommandCenter.Electrical` pada repo
+`electrical_ai`. Jangan build atau pasang yang di sini — folder ini tinggal
+dihapus.
+
+## Yang belum ada
+
+- **Import.** Add-in tidak punya perintah import apa pun, jadi tidak ada tombol
+  import di UI. `/api/files/upload` (Cloudinary) sudah siap dan tervalidasi,
+  tapi belum ada yang memanggilnya sampai perintah import ada di sisi add-in.
+- **Tautan file hasil export.** Add-in menaruh path lokal di `result_json`
+  kecuali dijalankan dengan `export_base_url`. Halaman Riwayat hanya membuat
+  tautan untuk yang benar-benar berupa URL.
+- **Membuat proyek dari web.** `projects` masih diisi lewat SQL editor.
+- **Sinkron tema/bahasa ke `users.theme` / `users.language`** supaya sama antara
+  Telegram dan web; saat ini bahasa disimpan di localStorage browser.

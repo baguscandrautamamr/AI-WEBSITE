@@ -2,45 +2,44 @@
   "nav": {
     "electrical": "Electrical AI",
     "standard": "Electrical Standards",
-    "exportImport": "Export / Import",
+    "exportImport": "Export",
     "history": "History",
     "admin": "Admin"
   },
   "electrical": {
-    "title": "Electrical AI Mode",
-    "placeholder": "e.g. tag all panels on level 2 and calculate voltage drop",
-    "run": "Run on Revit",
-    "noDevice": "You don't have access to any Revit device yet. Ask an admin to grant access.",
-    "selectDevice": "Select Revit device",
-    "status": {
-      "pending": "Waiting for add-in to pick up",
-      "in_progress": "Running in Revit",
-      "done": "Done",
-      "failed": "Failed"
-    }
+    "title": "Electrical AI Mode"
   },
   "standard": {
     "title": "Electrical Standards & Codes",
     "subtitle": "Q&A about standards (SNI, PUIL, IEC, NEC) — never touches Revit",
     "placeholder": "Ask about SNI/PUIL/IEC standards...",
-    "send": "Send"
+    "send": "Send",
+    "failed": "Could not reach the standards assistant"
   },
   "exportImport": {
-    "title": "Export & Import",
-    "sheets": "Sheet list",
-    "refreshSheets": "Refresh sheet list",
-    "exportPdf": "Export PDF",
-    "exportDwg": "Export DWG",
-    "importPdf": "Import PDF",
-    "exportExcel": "Export Excel",
-    "importExcel": "Import Excel",
-    "dwgSetup": "DWG export setup name",
-    "pdfQuality": "PDF raster quality"
+    "title": "Export",
+    "note": "The Revit add-in has no import command, so this page is export only. /list_sheets shows the sheet numbers /print_pdf takes; /export writes schedules and the compliance report."
   },
   "history": {
-    "title": "File History",
-    "downloadAll": "Download all (.zip)",
-    "empty": "No files yet"
+    "title": "Command History",
+    "subtitle": "The last 50 commands you sent to Revit, with their results.",
+    "empty": "No commands sent yet",
+    "fileNote": "File links appear only when the add-in runs with `export_base_url` set. Without it, an export is recorded as a local path on the Revit PC."
+  },
+  "admin": {
+    "title": "Project Access",
+    "subtitle": "A new account has no project access at all until it is granted here.",
+    "members": "Project members",
+    "noMembers": "No members on this project yet",
+    "grantTitle": "Grant access",
+    "pickUser": "Pick a user",
+    "grant": "Grant",
+    "revoke": "Revoke",
+    "notAdmin": "You are not an admin on any project.",
+    "roleNote": "viewer reads only (query, export, print_pdf, list_sheets); editor may run device commands; admin may manage access.",
+    "loadFailed": "Could not load access data",
+    "grantFailed": "Could not grant access",
+    "revokeFailed": "Could not revoke access"
   },
   "auth": {
     "login": "Sign in",
@@ -51,7 +50,8 @@
     "needAccount": "No account yet? Sign up",
     "haveAccount": "Already have an account? Sign in",
     "checkEmail": "Account created. Check your email to confirm, then sign in.",
-    "accessNote": "A new account has no project access yet. An admin must grant it before you can send commands to Revit."
+    "accessNote": "A new account has no project access yet. An admin must grant it before you can send commands to Revit.",
+    "notConfigured": "Supabase is not configured on this deployment. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel, then redeploy. Check /api/health to confirm."
   },
   "common": {
     "loading": "Loading…"
