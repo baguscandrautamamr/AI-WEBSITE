@@ -28,5 +28,8 @@
     "@types/node": "^20.14.0",
     "@types/react": "^18.3.0",
     "@types/archiver": "^6.0.2"
+  },
+  "overrides": {
+    "serialize-javascript": "^7.0.3"
   }
 }

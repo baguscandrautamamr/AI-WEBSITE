@@ -66,12 +66,19 @@ export default function ExportImportPage() {
 
   async function importPdf(file: File) {
     setBusy(true);
-    const form = new FormData();
-    form.append("file", file);
-    const uploadRes = await fetch("/api/files/upload", { method: "POST", body: form }); // TODO: buat route ini
-    const { url } = await uploadRes.json();
-    await insertCommand("import_pdf", { fileUrl: url });
-    setBusy(false);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const uploadRes = await fetch("/api/files/upload", { method: "POST", body: form });
+      const body = await uploadRes.json();
+      if (!uploadRes.ok) throw new Error(body.error ?? "upload gagal");
+      await insertCommand("import_pdf", { fileUrl: body.url });
+    } catch (err) {
+      // TODO: ganti dengan komponen toast begitu ada di UI kit.
+      alert(`Import PDF gagal: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
