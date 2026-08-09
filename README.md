@@ -65,6 +65,63 @@ npm install
 npm run dev
 ```
 
+## Kenapa tidak ada `middleware.ts`
+
+Sengaja dihapus, dan jangan ditambahkan lagi tanpa membaca ini.
+
+Middleware Next 14 selalu berjalan di **Edge runtime**. `next/server` menarik
+`@opentelemetry/api` versi bundel Next, yang memuat baris:
+
+```js
+if (typeof __nccwpck_require__ !== "undefined") __nccwpck_require__.ab = __dirname + "/";
+```
+
+Build lokal mengganti `__dirname` dengan `"/"`. Build di Vercel tidak, sehingga
+`__dirname` — yang tidak ada di Edge runtime — tetap hidup di bundle dan melempar
+`ReferenceError` **saat modul dimuat**, sebelum fungsi middleware-nya sendiri
+dijalankan. Akibatnya setiap URL membalas 500 `MIDDLEWARE_INVOCATION_FAILED`,
+termasuk `/login`. Karena kegagalannya di tahap pemuatan modul, tidak ada
+try/catch di dalam middleware yang bisa menolong.
+
+Tersangka utamanya `next-pwa@5.6.0` (sudah tidak dipelihara, terbit sebelum
+App Router): ia mengubah `config.entry` dan menyuntikkan plugin dari **salinan
+webpack-nya sendiri** ke setiap compiler, termasuk compiler edge — persis jenis
+gangguan yang membuat mock `__dirname` milik Next hilang. Belum dibuktikan
+langsung, karena kegagalannya tidak muncul di build lokal.
+
+Tugas middleware itu cuma satu: menyegarkan cookie sesi Supabase. Penggantinya
+sekarang: klien browser menyegarkan sesinya sendiri selama tab terbuka, dan
+`/login` menukar refresh token jadi sesi baru lalu mengembalikan orangnya ke
+dashboard. Yang menegakkan akses tetap RLS dan `auth.getUser()` di layout serta
+route handler — tidak ada yang berkurang.
+
+Kalau nanti mau menghidupkannya lagi, urutan yang masuk akal: lepas `next-pwa`
+(atau ganti ke `@ducanh2912/next-pwa` yang dipelihara), atau naik ke Next 15.2+
+yang mengizinkan `export const runtime = "nodejs"` di middleware — lalu uji di
+preview deployment, bukan di lokal, karena bug ini memang tidak muncul di lokal.
+
+## Kalau situsnya 500 / `MIDDLEWARE_INVOCATION_FAILED`
+
+Buka **`/api/health`** di domain yang bermasalah. Route itu tidak butuh login dan
+tidak menampilkan nilai rahasia — hanya ada/tidaknya tiap variabel, apakah URL
+Supabase bisa di-parse, dan apakah host-nya menjawab:
+
+```json
+{ "ok": false,
+  "env": { "NEXT_PUBLIC_SUPABASE_URL": true, "NEXT_PUBLIC_SUPABASE_ANON_KEY": true, … },
+  "supabase": { "host": null, "urlValid": false, "reachable": null } }
+```
+
+`urlValid: false` padahal variabelnya ada = nilainya salah format. Yang paling
+sering: nama variabelnya ikut ke-paste ke kolom value
+(`NEXT_PUBLIC_SUPABASE_URL=https://…`), ada spasi/baris baru di ujung, atau
+`https://` hilang.
+
+**Env var dibaca saat build, bukan saat request.** Menambah atau memperbaikinya
+di dashboard Vercel tidak berpengaruh apa-apa sampai deploy diulang. Pastikan
+juga variabelnya dicentang untuk environment yang benar (Production, bukan cuma
+Preview).
+
 ## Skema database
 
 Lihat `supabase/README.md`. Ringkasnya: skema inti (0001–0007) ada di repo
