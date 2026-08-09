@@ -65,6 +65,27 @@ npm install
 npm run dev
 ```
 
+## Setelan project Vercel
+
+| Setelan | Nilai | Kenapa |
+|---|---|---|
+| Root Directory | `web` | Aplikasi Next.js-nya di subfolder, bukan di akar repo. |
+| Framework Preset | **Next.js** | Ditegakkan oleh `web/vercel.json` (`"framework": "nextjs"`). |
+
+Framework Preset **tidak boleh** `Other`. Dengan `Other`, Vercel tidak memakai
+builder Next.js: Output Directory-nya jatuh ke `public` (folder itu ada — berisi
+`manifest.json`, `icons/`, dan `sw.js` yang ditulis next-pwa), sehingga yang
+diterbitkan hanyalah isi `web/public` sebagai situs statis. `next build` tetap
+jalan dan "sukses", tapi seluruh `.next` dibuang, tidak ada route yang disajikan,
+dan setiap URL membalas `404: NOT_FOUND`.
+
+`web/vercel.json` ada supaya setelan ini ikut di repo dan tidak bisa bergeser
+lagi lewat dashboard — setelan di `vercel.json` mengalahkan setelan project.
+Jangan menambahkan `outputDirectory` di situ: untuk Next.js, builder-nya yang
+menentukan, dan menyetelnya ke `public` persis yang menyebabkan 404 di atas.
+(Repo `electrical_ai` memang memakai `"outputDirectory": "public"` — itu benar
+di sana, karena isinya static + serverless `api/`, bukan Next.js.)
+
 ## Kenapa tidak ada `middleware.ts`
 
 Sengaja dihapus, dan jangan ditambahkan lagi tanpa membaca ini.
