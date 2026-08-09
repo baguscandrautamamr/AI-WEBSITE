@@ -45,6 +45,12 @@
   "auth": {
     "login": "Masuk",
     "email": "Email",
-    "password": "Kata sandi"
+    "password": "Kata sandi",
+    "register": "Daftar",
+    "fullName": "Nama lengkap",
+    "needAccount": "Belum punya akun? Daftar",
+    "haveAccount": "Sudah punya akun? Masuk",
+    "checkEmail": "Akun dibuat. Cek email untuk konfirmasi, lalu masuk.",
+    "accessNote": "Akun baru belum punya akses proyek. Admin perlu memberikannya dulu sebelum kamu bisa mengirim perintah ke Revit."
   }
 }

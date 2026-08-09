@@ -5,23 +5,50 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useI18n } from "@/lib/i18n";
 
+type Mode = "signin" | "signup";
+
 export default function LoginPage() {
   const { t } = useI18n();
   const router = useRouter();
   const supabase = createClient();
+  const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    setNotice(null);
+
+    if (mode === "signin") {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      setLoading(false);
+      if (error) return setError(error.message);
+      router.push("/electrical");
+      router.refresh();
+      return;
+    }
+
+    // full_name dititipkan ke user metadata; trigger handle_new_web_user
+    // membacanya saat membuat baris `users` pasangannya.
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { full_name: fullName || undefined } },
+    });
     setLoading(false);
-    if (error) {
-      setError(error.message);
+    if (error) return setError(error.message);
+
+    // Kalau konfirmasi email menyala, belum ada sesi — jangan arahkan ke
+    // dashboard, nanti ditendang balik oleh layout.
+    if (!data.session) {
+      setNotice(t("auth.checkEmail"));
+      setMode("signin");
       return;
     }
     router.push("/electrical");
@@ -31,13 +58,28 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center p-6">
       <form onSubmit={handleSubmit} className="glass-panel w-full max-w-sm p-8 space-y-4">
-        <h1 className="text-xl font-medium">{t("auth.login")}</h1>
+        <h1 className="text-xl font-medium">
+          {mode === "signin" ? t("auth.login") : t("auth.register")}
+        </h1>
+
+        {mode === "signup" && (
+          <input
+            className="glass-input w-full"
+            type="text"
+            placeholder={t("auth.fullName")}
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            autoComplete="name"
+          />
+        )}
+
         <input
           className="glass-input w-full"
           type="email"
           placeholder={t("auth.email")}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          autoComplete="email"
           required
         />
         <input
@@ -46,12 +88,33 @@ export default function LoginPage() {
           placeholder={t("auth.password")}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          autoComplete={mode === "signin" ? "current-password" : "new-password"}
+          minLength={6}
           required
         />
+
         {error && <p className="text-sm text-red-500">{error}</p>}
+        {notice && <p className="text-sm text-emerald-600">{notice}</p>}
+
         <button type="submit" disabled={loading} className="btn-accent w-full">
-          {t("auth.login")}
+          {mode === "signin" ? t("auth.login") : t("auth.register")}
         </button>
+
+        <button
+          type="button"
+          className="w-full text-center text-sm opacity-70 hover:opacity-100"
+          onClick={() => {
+            setMode(mode === "signin" ? "signup" : "signin");
+            setError(null);
+            setNotice(null);
+          }}
+        >
+          {mode === "signin" ? t("auth.needAccount") : t("auth.haveAccount")}
+        </button>
+
+        {mode === "signup" && (
+          <p className="text-xs opacity-60">{t("auth.accessNote")}</p>
+        )}
       </form>
     </main>
   );

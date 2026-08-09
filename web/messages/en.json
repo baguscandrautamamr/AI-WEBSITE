@@ -45,6 +45,12 @@
   "auth": {
     "login": "Sign in",
     "email": "Email",
-    "password": "Password"
+    "password": "Password",
+    "register": "Sign up",
+    "fullName": "Full name",
+    "needAccount": "No account yet? Sign up",
+    "haveAccount": "Already have an account? Sign in",
+    "checkEmail": "Account created. Check your email to confirm, then sign in.",
+    "accessNote": "A new account has no project access yet. An admin must grant it before you can send commands to Revit."
   }
 }
