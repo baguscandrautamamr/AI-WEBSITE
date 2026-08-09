@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-gradient: linear-gradient(180deg, #eef1f5 0%, #dfe6ee 100%);
+  --glass-bg: rgba(255, 255, 255, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.4);
+  --text-primary: #1d1d1f;
+  --text-secondary: #6e6e73;
+  --accent: #0071e3;
+}
+
+.dark {
+  --bg-gradient: linear-gradient(180deg, #1c1c1e 0%, #000000 100%);
+  --glass-bg: rgba(30, 30, 32, 0.55);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --text-primary: #f5f5f7;
+  --text-secondary: #a1a1a6;
+  --accent: #2997ff;
+}
+
+body {
+  background: var(--bg-gradient);
+  color: var(--text-primary);
+  min-height: 100vh;
+}
+
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+}
+
+.glass-input {
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  color: var(--text-primary);
+}
+.dark .glass-input {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.btn-accent {
+  background: var(--accent);
+  color: white;
+  border-radius: 12px;
+  padding: 10px 18px;
+  font-weight: 500;
+  transition: opacity 0.15s ease;
+}
+.btn-accent:hover { opacity: 0.85; }
+.btn-accent:disabled { opacity: 0.4; }

@@ -1,0 +1,50 @@
+{
+  "nav": {
+    "electrical": "Electrical AI",
+    "standard": "Standar Electrical",
+    "exportImport": "Export / Import",
+    "history": "Riwayat",
+    "admin": "Admin"
+  },
+  "electrical": {
+    "title": "Mode Electrical AI",
+    "placeholder": "Contoh: tag semua panel di lantai 2 dan hitung voltage drop",
+    "run": "Jalankan ke Revit",
+    "noDevice": "Kamu belum punya akses ke device Revit manapun. Minta admin untuk memberi akses.",
+    "selectDevice": "Pilih device Revit",
+    "status": {
+      "pending": "Menunggu diambil add-in",
+      "in_progress": "Sedang dikerjakan di Revit",
+      "done": "Selesai",
+      "failed": "Gagal"
+    }
+  },
+  "standard": {
+    "title": "Standar & Regulasi Electrical",
+    "subtitle": "Tanya jawab standar (SNI, PUIL, IEC, NEC) — tidak menyentuh Revit",
+    "placeholder": "Tanya standar SNI/PUIL/IEC...",
+    "send": "Kirim"
+  },
+  "exportImport": {
+    "title": "Export & Import",
+    "sheets": "Daftar Sheet",
+    "refreshSheets": "Ambil ulang daftar sheet",
+    "exportPdf": "Export PDF",
+    "exportDwg": "Export DWG",
+    "importPdf": "Import PDF",
+    "exportExcel": "Export Excel",
+    "importExcel": "Import Excel",
+    "dwgSetup": "Nama export setup DWG",
+    "pdfQuality": "Kualitas raster PDF"
+  },
+  "history": {
+    "title": "Riwayat File",
+    "downloadAll": "Unduh Semua (.zip)",
+    "empty": "Belum ada file"
+  },
+  "auth": {
+    "login": "Masuk",
+    "email": "Email",
+    "password": "Kata sandi"
+  }
+}
