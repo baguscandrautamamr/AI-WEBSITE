@@ -1,6 +1,6 @@
 {
-  "name": "Electrical AI",
-  "short_name": "ElectricalAI",
+  "name": "Revit Command Center",
+  "short_name": "Command Center",
   "description": "Platform AI untuk kontrol Revit khusus electrical",
   "start_url": "/electrical",
   "display": "standalone",

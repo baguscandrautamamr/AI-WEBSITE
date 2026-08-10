@@ -1,15 +1,46 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useI18n } from "@/lib/i18n";
+import { createClient } from "@/lib/supabase/client";
 import type { Role } from "@/lib/commands";
 
 export default function DashboardNav({ role }: { role: Role }) {
   const { t, locale, setLocale } = useI18n();
   const { theme, setTheme } = useTheme();
   const pathname = usePathname();
+  const router = useRouter();
+  const [leaving, setLeaving] = useState(false);
+
+  /**
+   * Keluar dari sesi ini.
+   *
+   * Sebelumnya tidak ada jalan keluar sama sekali: sesi Supabase bertahan
+   * berhari-hari, jadi satu komputer yang dipakai bergantian — hal yang biasa di
+   * ruang proyek — berarti orang berikutnya melanjutkan sebagai orang
+   * sebelumnya, dengan akses proyek dan riwayat chat yang bukan miliknya.
+   *
+   * router.refresh() setelahnya, bukan hanya replace: halaman dashboard adalah
+   * Server Component yang membaca cookie, dan tanpa penyegaran itu ia bisa
+   * tergambar ulang dari cache dengan data orang yang baru saja keluar.
+   */
+  async function signOut() {
+    if (leaving) return;
+    setLeaving(true);
+
+    try {
+      await createClient().auth.signOut();
+    } catch {
+      // Sesi yang sudah tidak sah di server tetap harus hilang dari layar ini.
+      // Kegagalannya bukan alasan untuk menahan orangnya tetap di dalam.
+    }
+
+    router.replace("/login");
+    router.refresh();
+  }
 
   // Peran mengikuti tabel di docs/COMMANDS.md: viewer boleh query, export,
   // print_pdf dan list_sheets — jadi export-import ikut terlihat untuk viewer.
@@ -69,6 +100,14 @@ export default function DashboardNav({ role }: { role: Role }) {
           aria-label="Tema"
         >
           {theme === "dark" ? "🌙" : "☀️"}
+        </button>
+        <button
+          onClick={signOut}
+          disabled={leaving}
+          className="glass-input px-2 py-1 disabled:opacity-40"
+          title={t("auth.logout")}
+        >
+          {leaving ? t("auth.loggingOut") : t("auth.logout")}
         </button>
       </div>
     </nav>
