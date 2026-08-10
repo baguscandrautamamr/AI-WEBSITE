@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { useProjects, type ProjectAccess } from "@/lib/useProjects";
 import { COMMANDS, COMMANDS_BY_NAME, canRun, type CommandField, type CommandSpec } from "@/lib/commands";
+import { turnsFromChat } from "@/lib/chatHistory";
 import CommandChat, { type ChatBody, type ChatEntry } from "./CommandChat";
 import ResultView from "./ResultView";
 
@@ -466,9 +467,7 @@ export default function CommandRunner({
     setChatBusy(true);
 
     try {
-      const history = chatEntries
-        .filter((e) => e.role === "user" || e.role === "assistant")
-        .map((e) => ({ role: e.role as "user" | "assistant", content: e.text }));
+      const history = turnsFromChat(chatEntries);
 
       const res = await fetch("/api/ai/electrical", {
         method: "POST",

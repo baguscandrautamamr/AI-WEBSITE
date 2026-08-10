@@ -17,7 +17,7 @@
 // manifest.json termasuk yang disimpan, dan nama aplikasinya ada di dalamnya —
 // tanpa versi baru, telepon yang sudah memasang aplikasi ini akan terus
 // menyebutnya dengan nama yang lama.
-const VERSION = "v4";
+const VERSION = "v5";
 const STATIC_CACHE = `electrical-ai-static-${VERSION}`;
 
 /** Aset ber-hash dari Next dan ikon PWA: isinya tidak pernah berubah per URL. */
