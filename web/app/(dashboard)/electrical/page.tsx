@@ -8,5 +8,5 @@ import { useI18n } from "@/lib/i18n";
 // Standard, yang sengaja tidak pernah menyentuh Revit.
 export default function ElectricalPage() {
   const { t } = useI18n();
-  return <CommandRunner groups={["device", "layout"]} title={t("electrical.title")} />;
+  return <CommandRunner groups={["device", "layout"]} title={t("electrical.title")} chat />;
 }

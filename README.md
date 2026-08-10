@@ -65,6 +65,27 @@ npm install
 npm run dev
 ```
 
+## Setelan project Vercel
+
+| Setelan | Nilai | Kenapa |
+|---|---|---|
+| Root Directory | `web` | Aplikasi Next.js-nya di subfolder, bukan di akar repo. |
+| Framework Preset | **Next.js** | Ditegakkan oleh `web/vercel.json` (`"framework": "nextjs"`). |
+
+Framework Preset **tidak boleh** `Other`. Dengan `Other`, Vercel tidak memakai
+builder Next.js: Output Directory-nya jatuh ke `public` (folder itu ada — berisi
+`manifest.json`, `icons/`, dan `sw.js` yang ditulis next-pwa), sehingga yang
+diterbitkan hanyalah isi `web/public` sebagai situs statis. `next build` tetap
+jalan dan "sukses", tapi seluruh `.next` dibuang, tidak ada route yang disajikan,
+dan setiap URL membalas `404: NOT_FOUND`.
+
+`web/vercel.json` ada supaya setelan ini ikut di repo dan tidak bisa bergeser
+lagi lewat dashboard — setelan di `vercel.json` mengalahkan setelan project.
+Jangan menambahkan `outputDirectory` di situ: untuk Next.js, builder-nya yang
+menentukan, dan menyetelnya ke `public` persis yang menyebabkan 404 di atas.
+(Repo `electrical_ai` memang memakai `"outputDirectory": "public"` — itu benar
+di sana, karena isinya static + serverless `api/`, bukan Next.js.)
+
 ## Kenapa tidak ada `middleware.ts`
 
 Sengaja dihapus, dan jangan ditambahkan lagi tanpa membaca ini.
@@ -139,6 +160,33 @@ sebenarnya, dan logika electrical-nya masih stub. Add-in yang asli dan dipakai
 produksi ada di `revit-addin/RevitCommandCenter.Electrical` pada repo
 `electrical_ai`. Jangan build atau pasang yang di sini — folder ini tinggal
 dihapus.
+
+## Import & file hasil export
+
+Keduanya butuh add-in versi terbaru (branch `claude/website-files-and-import`
+di repo `electrical_ai`).
+
+**File export muncul di Riwayat** begitu add-in diberi kredensial Cloudinary di
+`%APPDATA%\RevitCommandCenter\config.json`:
+
+```json
+{
+  "cloudinary_cloud_name": "...",
+  "cloudinary_api_key": "...",
+  "cloudinary_api_secret": "...",
+  "cloudinary_folder": "electrical-ai/exports"
+}
+```
+
+Perintah dari website tidak punya `chat_id`, jadi tanpa ini hasil export hanya
+ada di PC yang menjalankan Revit. Dengan ini, URL-nya ikut ditulis ke
+`result_json` dan halaman Riwayat menampilkannya sebagai tautan unduhan.
+
+**Import Excel** ada di halaman Export. Bentuk file-nya sama dengan yang ditulis
+`/export`: kolom `Element Id` atau `Mark` menentukan elemennya, kolom lain
+dianggap nama parameter. Jadi alurnya export → sunting di Excel → kirim balik.
+Centang "uji coba" untuk menjalankan lalu membatalkannya, dan lihat apa yang
+akan berubah sebelum benar-benar menulis ke model.
 
 ## Yang belum ada
 

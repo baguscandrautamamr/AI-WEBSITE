@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { useProjects, type ProjectAccess } from "@/lib/useProjects";
-import { COMMANDS, canRun, type CommandField, type CommandSpec } from "@/lib/commands";
+import { COMMANDS, COMMANDS_BY_NAME, canRun, type CommandField, type CommandSpec } from "@/lib/commands";
+import CommandChat, { type ChatBody, type ChatEntry } from "./CommandChat";
 
 type QueueStatus = "pending" | "processing" | "completed" | "failed" | "cancelled";
 
@@ -32,9 +33,12 @@ const TERMINAL: QueueStatus[] = ["completed", "failed", "cancelled"];
 export default function CommandRunner({
   groups,
   title,
+  chat = false,
 }: {
   groups: CommandSpec["group"][];
   title: string;
+  /** Panel percakapan bahasa manusia di atas tombol command. */
+  chat?: boolean;
 }) {
   const { t, locale } = useI18n();
   const { projects, loading: projectsLoading } = useProjects();
@@ -46,6 +50,13 @@ export default function CommandRunner({
   const [sending, setSending] = useState(false);
   const [runs, setRuns] = useState<RunEntry[]>([]);
 
+  const [chatEntries, setChatEntries] = useState<ChatEntry[]>([]);
+  const [chatBusy, setChatBusy] = useState(false);
+  const chatId = useRef(0);
+
+  const [rooms, setRooms] = useState<string[]>([]);
+  const [roomsLoading, setRoomsLoading] = useState(false);
+
   // Proyek pertama dipilih otomatis supaya halaman langsung bisa dipakai.
   useEffect(() => {
     if (!project && projects.length) setProject(projects[0]);
@@ -53,7 +64,9 @@ export default function CommandRunner({
 
   const available = useMemo(() => {
     if (!project) return [];
-    return COMMANDS.filter((c) => groups.includes(c.group) && canRun(c, project.role));
+    return COMMANDS.filter(
+      (c) => groups.includes(c.group) && !c.hidden && canRun(c, project.role)
+    );
   }, [project, groups]);
 
   // Command yang terpilih ikut disaring ulang saat proyek berganti: peran di
@@ -66,6 +79,15 @@ export default function CommandRunner({
     }
   }, [available, selected]);
 
+  // Daftar ruangan milik satu model; berganti proyek berarti daftarnya basi.
+  useEffect(() => {
+    setRooms([]);
+  }, [project?.projectId]);
+
+  function addChat(entry: ChatBody) {
+    setChatEntries((prev) => [...prev, { ...entry, id: ++chatId.current }]);
+  }
+
   function pick(spec: CommandSpec) {
     setSelected(spec);
     setIssues([]);
@@ -76,6 +98,22 @@ export default function CommandRunner({
     setValues(init);
   }
 
+  /** Mengantre satu command; dipakai tombol kirim dan pemuat daftar ruangan. */
+  const enqueue = useCallback(
+    async (commandName: string, vals: Record<string, unknown>) => {
+      if (!project) throw new Error("no project");
+      const res = await fetch("/api/commands", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: commandName, projectId: project.projectId, values: vals }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw Object.assign(new Error(body.error ?? "gagal"), { issues: body.issues });
+      return body as { id: string; commandText: string };
+    },
+    [project]
+  );
+
   async function send() {
     if (!selected || !project) return;
     if (selected.confirm && !window.confirm(t("command.confirm"))) return;
@@ -84,26 +122,107 @@ export default function CommandRunner({
     setIssues([]);
 
     try {
-      const res = await fetch("/api/commands", {
+      const body = await enqueue(selected.name, values);
+      setRuns((prev) => [{ id: body.id, commandText: body.commandText, status: "pending" }, ...prev]);
+    } catch (err) {
+      const withIssues = err as Error & { issues?: string[] };
+      setIssues(withIssues.issues ?? [withIssues.message || t("command.sendFailed")]);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  /**
+   * Menanyakan daftar ruangan ke model yang sedang terbuka.
+   *
+   * Jawabannya datang lewat antrean yang sama seperti perintah lain, jadi ini
+   * hanya berhasil kalau Revit terbuka dan add-in berjalan — dan itu memang
+   * satu-satunya sumber yang tahu ruangan apa saja yang ada di model.
+   */
+  async function loadRooms() {
+    if (!project || roomsLoading) return;
+    setRoomsLoading(true);
+    try {
+      const { id } = await enqueue("query", { what: "room", detail: "list", limit: 500 });
+
+      // Menunggu add-in menjawab; dibatasi supaya Revit yang tertutup tidak
+      // membuat tombolnya berputar selamanya.
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const res = await fetch(`/api/commands?id=${encodeURIComponent(id)}`);
+        if (!res.ok) continue;
+        const cmd = (await res.json()) as QueuedCommand;
+        if (!TERMINAL.includes(cmd.status)) continue;
+
+        if (cmd.status !== "completed") {
+          setIssues([cmd.error_message ?? t("command.roomsFailed")]);
+          return;
+        }
+
+        const items = (cmd.result_json as { items?: { id?: string; label?: string }[] })?.items ?? [];
+        const names = items
+          .map((it) => it.label ?? it.id ?? "")
+          .filter((n): n is string => Boolean(n));
+        setRooms(names);
+        if (names.length === 0) setIssues([t("command.roomsEmpty")]);
+        return;
+      }
+      setIssues([t("command.roomsTimeout")]);
+    } catch (err) {
+      setIssues([err instanceof Error ? err.message : String(err)]);
+    } finally {
+      setRoomsLoading(false);
+    }
+  }
+
+  /** Satu giliran percakapan: kalimat masuk, usulan perintah keluar. */
+  async function sendChat(message: string) {
+    if (!project) return;
+    addChat({ role: "user", text: message });
+    setChatBusy(true);
+
+    try {
+      const history = chatEntries
+        .filter((e) => e.role === "user" || e.role === "assistant")
+        .map((e) => ({ role: e.role as "user" | "assistant", content: e.text }));
+
+      const res = await fetch("/api/ai/electrical", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command: selected.name, projectId: project.projectId, values }),
+        body: JSON.stringify({ message, projectId: project.projectId, history }),
       });
       const body = await res.json();
 
       if (!res.ok) {
-        setIssues(body.issues ?? [body.error ?? t("command.sendFailed")]);
+        addChat({ role: "assistant", text: body.error ?? t("chat.failed") });
         return;
       }
 
-      setRuns((prev) => [
-        { id: body.id, commandText: body.commandText, status: "pending" },
-        ...prev,
-      ]);
+      if (body.kind === "reply") {
+        addChat({ role: "assistant", text: body.text });
+        return;
+      }
+
+      // Usulan mengisi form, bukan langsung berangkat. Yang terlihat di form
+      // itulah yang akan dikirim, jadi tidak ada selisih antara yang disetujui
+      // dan yang dijalankan.
+      const spec = COMMANDS_BY_NAME[body.command];
+      if (spec) {
+        setSelected(spec);
+        setValues(body.values ?? {});
+        setIssues([]);
+      }
+
+      addChat({
+        role: "proposal",
+        text: body.note ?? "",
+        commandText: body.commandText ?? `/${body.command}`,
+        issues: body.issues,
+      });
     } catch (err) {
-      setIssues([err instanceof Error ? err.message : String(err)]);
+      addChat({ role: "assistant", text: err instanceof Error ? err.message : String(err) });
     } finally {
-      setSending(false);
+      setChatBusy(false);
     }
   }
 
@@ -134,6 +253,24 @@ export default function CommandRunner({
       })
     );
   });
+
+  // Hasil dari Revit dilaporkan balik ke percakapan, supaya satu utas memuat
+  // permintaan, perintah, dan akibatnya — bukan chat di satu tempat dan hasil
+  // di tempat lain.
+  const reported = useRef(new Set<string>());
+  useEffect(() => {
+    if (!chat) return;
+    for (const run of runs) {
+      if (!TERMINAL.includes(run.status) || reported.current.has(run.id)) continue;
+      reported.current.add(run.id);
+
+      const outcome =
+        run.status === "completed"
+          ? t("chat.done")
+          : `${t("chat.failedRun")}${run.error ? ` — ${run.error}` : ""}`;
+      addChat({ role: "assistant", text: `\`${run.commandText}\` — ${outcome}` });
+    }
+  }, [runs, chat, t]);
 
   if (projectsLoading) return <p className="opacity-60">{t("common.loading")}</p>;
 
@@ -189,6 +326,15 @@ export default function CommandRunner({
         )}
       </div>
 
+      {chat && (
+        <CommandChat
+          entries={chatEntries}
+          busy={chatBusy}
+          disabled={!project}
+          onSend={sendChat}
+        />
+      )}
+
       {selected && (
         <div className="glass-panel p-6 space-y-4">
           <div>
@@ -203,6 +349,9 @@ export default function CommandRunner({
                 field={selected.positional}
                 value={values[selected.positional.name]}
                 locale={locale}
+                rooms={rooms}
+                roomsLoading={roomsLoading}
+                onLoadRooms={loadRooms}
                 onChange={(v) =>
                   setValues((s) => ({ ...s, [selected.positional!.name]: v }))
                 }
@@ -214,6 +363,9 @@ export default function CommandRunner({
                 field={f}
                 value={values[f.name]}
                 locale={locale}
+                rooms={rooms}
+                roomsLoading={roomsLoading}
+                onLoadRooms={loadRooms}
                 onChange={(v) => setValues((s) => ({ ...s, [f.name]: v }))}
               />
             ))}
@@ -285,13 +437,22 @@ function Field({
   field,
   value,
   locale,
+  rooms,
+  roomsLoading,
+  onLoadRooms,
   onChange,
 }: {
   field: CommandField;
   value: unknown;
   locale: "id" | "en";
+  rooms: string[];
+  roomsLoading: boolean;
+  onLoadRooms: () => void;
   onChange: (v: unknown) => void;
 }) {
+  const { t } = useI18n();
+  const isRoom = field.name === "room";
+
   const label = (
     <span className="text-sm">
       {field.label[locale]}
@@ -314,7 +475,23 @@ function Field({
 
   return (
     <label className="space-y-1">
-      {label}
+      <span className="flex items-center justify-between gap-2">
+        {label}
+        {/* Nama ruangan harus persis seperti di model. Mengetiknya ulang dari
+            ingatan adalah cara paling sering sebuah perintah gagal, jadi
+            daftarnya diambil dari Revit dan dipakai sebagai saran. */}
+        {isRoom && (
+          <button
+            type="button"
+            onClick={onLoadRooms}
+            disabled={roomsLoading}
+            className="text-xs text-accent underline disabled:opacity-40"
+          >
+            {roomsLoading ? t("command.roomsLoading") : t("command.roomsLoad")}
+          </button>
+        )}
+      </span>
+
       {field.type === "select" ? (
         <select
           className="glass-input w-full"
@@ -328,15 +505,27 @@ function Field({
           ))}
         </select>
       ) : (
-        <input
-          className="glass-input w-full"
-          type={field.type === "number" || field.type === "integer" ? "number" : "text"}
-          value={String(value ?? "")}
-          placeholder={field.default !== undefined ? String(field.default) : ""}
-          min={field.min}
-          max={field.max}
-          onChange={(e) => onChange(e.target.value)}
-        />
+        <>
+          <input
+            className="glass-input w-full"
+            type={field.type === "number" || field.type === "integer" ? "number" : "text"}
+            value={String(value ?? "")}
+            placeholder={field.default !== undefined ? String(field.default) : ""}
+            min={field.min}
+            max={field.max}
+            list={isRoom && rooms.length ? "revit-rooms" : undefined}
+            onChange={(e) => onChange(e.target.value)}
+          />
+          {/* datalist, bukan select: nama yang tidak ada di daftar tetap boleh
+              diketik, karena daftar ini hanya sebaik model yang terakhir dibaca. */}
+          {isRoom && rooms.length > 0 && (
+            <datalist id="revit-rooms">
+              {rooms.map((r) => (
+                <option key={r} value={r} />
+              ))}
+            </datalist>
+          )}
+        </>
       )}
       {field.hint && <span className="block text-xs opacity-55">{field.hint[locale]}</span>}
     </label>

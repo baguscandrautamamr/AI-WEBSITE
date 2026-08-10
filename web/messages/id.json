@@ -17,8 +17,8 @@
     "failed": "Gagal menghubungi asisten standar"
   },
   "exportImport": {
-    "title": "Export",
-    "note": "Belum ada perintah import di add-in Revit, jadi halaman ini hanya berisi export. /list_sheets menampilkan nomor sheet yang dipakai /print_pdf; /export menulis schedule dan laporan kepatuhan."
+    "title": "Export & Import",
+    "note": "/list_sheets menampilkan nomor sheet yang dipakai /print_pdf; /export menulis schedule dan laporan kepatuhan. Hasil export muncul di halaman Riwayat sebagai tautan unduhan kalau add-in sudah diberi kredensial Cloudinary."
   },
   "history": {
     "title": "Riwayat Perintah",
@@ -72,6 +72,35 @@
       "completed": "Selesai",
       "failed": "Gagal",
       "cancelled": "Dibatalkan"
-    }
+    },
+    "roomsLoad": "Ambil dari Revit",
+    "roomsLoading": "Mengambil…",
+    "roomsEmpty": "Model tidak mengembalikan ruangan mana pun.",
+    "roomsFailed": "Gagal membaca daftar ruangan dari Revit.",
+    "roomsTimeout": "Add-in belum menjawab. Pastikan Revit terbuka dan add-in berjalan."
+  },
+  "chat": {
+    "title": "Minta pakai bahasa biasa",
+    "subtitle": "Tulis maunya apa. Usulan perintahnya mengisi form di bawah — kamu yang menekan kirim.",
+    "placeholder": "mis. pasang 6 lampu di Meeting 1 tinggi 3 meter",
+    "send": "Tanya",
+    "sending": "Menyusun…",
+    "thinking": "Menyusun perintah…",
+    "checkForm": "Sudah diisikan ke form di bawah. Periksa dulu, lalu tekan Kirim ke Revit.",
+    "failed": "Gagal menghubungi asisten",
+    "done": "selesai dijalankan di Revit.",
+    "failedRun": "gagal di Revit"
+  },
+  "importExcel": {
+    "title": "Import Excel",
+    "subtitle": "Kirim spreadsheet kembali ke model. Kolom Element Id atau Mark menentukan elemennya; kolom lain dianggap nama parameter.",
+    "dryRun": "Uji coba dulu — jalankan lalu batalkan, untuk melihat apa yang akan berubah",
+    "uploading": "Mengunggah file…",
+    "waiting": "Menunggu Revit memprosesnya…",
+    "done": "Selesai ditulis ke model.",
+    "doneDry": "Uji coba selesai — tidak ada yang diubah di model.",
+    "uploadFailed": "Gagal mengunggah file",
+    "queueFailed": "Gagal menjalankan import",
+    "note": "Bentuknya sama dengan hasil Export: export dulu, sunting di Excel, lalu kirim balik lewat sini. Kolom yang tidak cocok dengan parameter mana pun dilaporkan, bukan ditebak."
   }
 }
