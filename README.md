@@ -161,6 +161,33 @@ produksi ada di `revit-addin/RevitCommandCenter.Electrical` pada repo
 `electrical_ai`. Jangan build atau pasang yang di sini — folder ini tinggal
 dihapus.
 
+## Import & file hasil export
+
+Keduanya butuh add-in versi terbaru (branch `claude/website-files-and-import`
+di repo `electrical_ai`).
+
+**File export muncul di Riwayat** begitu add-in diberi kredensial Cloudinary di
+`%APPDATA%\RevitCommandCenter\config.json`:
+
+```json
+{
+  "cloudinary_cloud_name": "...",
+  "cloudinary_api_key": "...",
+  "cloudinary_api_secret": "...",
+  "cloudinary_folder": "electrical-ai/exports"
+}
+```
+
+Perintah dari website tidak punya `chat_id`, jadi tanpa ini hasil export hanya
+ada di PC yang menjalankan Revit. Dengan ini, URL-nya ikut ditulis ke
+`result_json` dan halaman Riwayat menampilkannya sebagai tautan unduhan.
+
+**Import Excel** ada di halaman Export. Bentuk file-nya sama dengan yang ditulis
+`/export`: kolom `Element Id` atau `Mark` menentukan elemennya, kolom lain
+dianggap nama parameter. Jadi alurnya export → sunting di Excel → kirim balik.
+Centang "uji coba" untuk menjalankan lalu membatalkannya, dan lihat apa yang
+akan berubah sebelum benar-benar menulis ke model.
+
 ## Yang belum ada
 
 - **Import.** Add-in tidak punya perintah import apa pun, jadi tidak ada tombol

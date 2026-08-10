@@ -90,7 +90,9 @@ function toolFor(spec: CommandSpec): AnthropicTool {
 
 /** Tool untuk command yang boleh dijalankan peran ini pada proyek terpilih. */
 export function toolsForRole(role: Role): AnthropicTool[] {
-  return COMMANDS.filter((c) => canRun(c, role)).map(toolFor);
+  // Command tersembunyi tidak ditawarkan: argumennya URL file yang baru ada
+  // setelah pengguna mengunggah sesuatu, jadi model tidak mungkin mengisinya.
+  return COMMANDS.filter((c) => !c.hidden && canRun(c, role)).map(toolFor);
 }
 
 export const ELECTRICAL_SYSTEM_PROMPT = `Kamu asisten yang menerjemahkan permintaan

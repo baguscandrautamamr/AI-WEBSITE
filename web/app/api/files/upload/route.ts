@@ -8,7 +8,30 @@ export const runtime = "nodejs";
 const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
 
 // Hanya tipe yang memang dipakai alur import ke add-in Revit.
-const ALLOWED_MIME = new Set(["application/pdf"]);
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const ALLOWED_MIME = new Set(["application/pdf", XLSX_MIME]);
+
+// Ekstensi ikut dipertahankan: Cloudinary menyimpan ini sebagai `raw`, dan
+// add-in mengunduhnya lewat URL — tanpa ekstensi, EPPlus menolak membukanya.
+const EXTENSION_FOR: Record<string, string> = {
+  "application/pdf": ".pdf",
+  [XLSX_MIME]: ".xlsx",
+};
+
+/**
+ * Isi file harus cocok dengan tipe yang diakukan.
+ *
+ * Client bebas menulis Content-Type apa pun, dan file yang menyamar jadi
+ * spreadsheet akan gagal jauh di dalam Revit — di mesin orang lain, dengan
+ * pesan yang tidak menyebut penyebabnya.
+ */
+function looksLike(mime: string, buffer: Buffer) {
+  if (mime === "application/pdf") {
+    return buffer.subarray(0, 4).toString("latin1") === "%PDF";
+  }
+  // .xlsx adalah arsip zip: dua byte pertamanya selalu "PK".
+  return buffer.subarray(0, 2).toString("latin1") === "PK";
+}
 
 // Cloudinary public_id ikut masuk ke URL, jadi nama file dari user harus
 // dibersihkan dulu — jangan biarkan "../" atau karakter aneh lolos.
@@ -59,9 +82,11 @@ export async function POST(req: Request) {
 
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  // Client bisa berbohong soal Content-Type, jadi cek magic bytes "%PDF".
-  if (buffer.subarray(0, 4).toString("latin1") !== "%PDF") {
-    return NextResponse.json({ error: "file is not a valid PDF" }, { status: 415 });
+  if (!looksLike(file.type, buffer)) {
+    return NextResponse.json(
+      { error: `file contents do not match "${file.type}"` },
+      { status: 415 }
+    );
   }
 
   try {
@@ -69,7 +94,7 @@ export async function POST(req: Request) {
     const { url, publicId } = await uploadBuffer(
       buffer,
       `electrical-ai/imports/${user.id}`,
-      safePublicId(file.name)
+      safePublicId(file.name) + (EXTENSION_FOR[file.type] ?? "")
     );
     return NextResponse.json({ url, publicId });
   } catch (err) {
