@@ -46,6 +46,9 @@ interface ModelInfo {
   /** Nama tipe family per kategori, mis. `lighting` → ["Downlight: LED 15W"]. */
   familyTypes: Record<string, string[]>;
   rooms: string[];
+  /** Versi DLL add-in yang menjawab, dan bagaimana ia akan mengunggah file. */
+  addinVersion: string;
+  uploadMode: string;
 }
 
 export default function CommandRunner({
@@ -215,6 +218,8 @@ export default function CommandRunner({
         cad_setups?: string[];
         family_types?: Record<string, string[]>;
         rooms?: string[];
+        addin_version?: string;
+        upload_mode?: string;
       } | null;
 
       setModel({
@@ -224,6 +229,8 @@ export default function CommandRunner({
         cadSetups: info?.cad_setups ?? [],
         familyTypes: info?.family_types ?? {},
         rooms: info?.rooms ?? [],
+        addinVersion: info?.addin_version ?? "",
+        uploadMode: info?.upload_mode ?? "",
       });
 
       // Nama ruangan datang bersama info model, jadi tombol "Ambil dari Revit"
@@ -438,9 +445,20 @@ export default function CommandRunner({
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="opacity-60">{t("command.modelFile")}</span>
           {model ? (
-            <span className="font-medium" title={model.path ?? undefined}>
-              {model.title}
-            </span>
+            <>
+              <span className="font-medium" title={model.path ?? undefined}>
+                {model.title}
+              </span>
+              {/* Versi add-in dan cara unggahnya. Tanpa keduanya, "sudah
+                  terpasang atau belum" dan "setelan saya terbaca atau tidak"
+                  hanya bisa ditebak — dan menebaknya sudah memakan berhari-hari. */}
+              {model.addinVersion && (
+                <span className="opacity-55">add-in {model.addinVersion}</span>
+              )}
+              {model.uploadMode && (
+                <span className="opacity-55">· unggah: {model.uploadMode}</span>
+              )}
+            </>
           ) : (
             <span className="opacity-55">
               {modelLoading
