@@ -37,6 +37,14 @@ interface SheetOption {
   name: string;
 }
 
+/** Jawaban /model_info: file yang sedang dibuka Revit dan setup di dalamnya. */
+interface ModelInfo {
+  title: string;
+  path?: string | null;
+  printSetups: string[];
+  cadSetups: string[];
+}
+
 export default function CommandRunner({
   groups,
   title,
@@ -67,6 +75,9 @@ export default function CommandRunner({
   const [sheets, setSheets] = useState<SheetOption[]>([]);
   const [sheetsLoading, setSheetsLoading] = useState(false);
 
+  const [model, setModel] = useState<ModelInfo | null>(null);
+  const [modelLoading, setModelLoading] = useState(false);
+
   // Proyek pertama dipilih otomatis supaya halaman langsung bisa dipakai.
   useEffect(() => {
     if (!project && projects.length) setProject(projects[0]);
@@ -89,10 +100,11 @@ export default function CommandRunner({
     }
   }, [available, selected]);
 
-  // Daftar ruangan dan sheet milik satu model; berganti proyek berarti keduanya basi.
+  // Semuanya milik satu model; berganti proyek berarti semuanya basi.
   useEffect(() => {
     setRooms([]);
     setSheets([]);
+    setModel(null);
   }, [project?.projectId]);
 
   function addChat(entry: ChatBody) {
@@ -176,6 +188,39 @@ export default function CommandRunner({
   /** Daftar `{ id, label }` yang dikembalikan query dan list_sheets. */
   function itemsOf(result: unknown) {
     return (result as { items?: { id?: string; label?: string }[] })?.items ?? [];
+  }
+
+  /**
+   * File .rvt yang sedang dibuka Revit, beserta setup yang tersimpan di
+   * dalamnya.
+   *
+   * Proyek di website adalah baris di database; yang dikerjakan add-in adalah
+   * file yang kebetulan terbuka di Revit. Keduanya biasanya sama, dan yang
+   * mahal adalah saat keduanya tidak sama — perintah berangkat ke model yang
+   * salah dan tidak ada apa pun di layar yang menunjukkannya.
+   */
+  async function loadModel() {
+    if (!project || modelLoading) return;
+    setModelLoading(true);
+    try {
+      const info = (await runAndWait("model_info", {})) as {
+        title?: string;
+        path?: string | null;
+        print_setups?: string[];
+        cad_setups?: string[];
+      } | null;
+
+      setModel({
+        title: info?.title ?? "—",
+        path: info?.path ?? null,
+        printSetups: info?.print_setups ?? [],
+        cadSetups: info?.cad_setups ?? [],
+      });
+    } catch (err) {
+      setIssues([err instanceof Error ? err.message : String(err)]);
+    } finally {
+      setModelLoading(false);
+    }
   }
 
   /** Nama ruangan di model yang sedang terbuka. */
@@ -349,6 +394,27 @@ export default function CommandRunner({
           </label>
         </div>
 
+        {/* File yang sedang dibuka Revit. Proyek di atas adalah baris di
+            database; ini yang benar-benar akan disentuh perintahnya. */}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="opacity-60">{t("command.modelFile")}</span>
+          {model ? (
+            <span className="font-medium" title={model.path ?? undefined}>
+              {model.title}
+            </span>
+          ) : (
+            <span className="opacity-55">{t("command.modelUnknown")}</span>
+          )}
+          <button
+            type="button"
+            onClick={loadModel}
+            disabled={modelLoading}
+            className="text-accent underline disabled:opacity-40"
+          >
+            {modelLoading ? t("command.modelLoading") : t("command.modelLoad")}
+          </button>
+        </div>
+
         {/* Tombol per command — inilah yang menembak ke add-in Revit. */}
         <div className="flex flex-wrap gap-2">
           {available.map((c) => (
@@ -398,6 +464,9 @@ export default function CommandRunner({
                 sheets={sheets}
                 sheetsLoading={sheetsLoading}
                 onLoadSheets={loadSheets}
+                model={model}
+                modelLoading={modelLoading}
+                onLoadModel={loadModel}
                 onChange={(v) =>
                   setValues((s) => ({ ...s, [selected.positional!.name]: v }))
                 }
@@ -415,6 +484,9 @@ export default function CommandRunner({
                 sheets={sheets}
                 sheetsLoading={sheetsLoading}
                 onLoadSheets={loadSheets}
+                model={model}
+                modelLoading={modelLoading}
+                onLoadModel={loadModel}
                 onChange={(v) => setValues((s) => ({ ...s, [f.name]: v }))}
               />
             ))}
@@ -492,6 +564,9 @@ function Field({
   sheets,
   sheetsLoading,
   onLoadSheets,
+  model,
+  modelLoading,
+  onLoadModel,
   onChange,
 }: {
   field: CommandField;
@@ -503,11 +578,66 @@ function Field({
   sheets: SheetOption[];
   sheetsLoading: boolean;
   onLoadSheets: () => void;
+  model: ModelInfo | null;
+  modelLoading: boolean;
+  onLoadModel: () => void;
   onChange: (v: unknown) => void;
 }) {
   const { t } = useI18n();
   const isRoom = field.name === "room";
   const isSheets = field.name === "sheets";
+
+  // Pilihan yang hanya diketahui model yang sedang terbuka.
+  if (field.optionsFrom) {
+    const fromModel =
+      field.optionsFrom === "print_setups" ? model?.printSetups : model?.cadSetups;
+
+    return (
+      <label className="space-y-1">
+        <span className="flex items-center justify-between gap-2">
+          <span className="text-sm">{field.label[locale]}</span>
+          <button
+            type="button"
+            onClick={onLoadModel}
+            disabled={modelLoading}
+            className="text-xs text-accent underline disabled:opacity-40"
+          >
+            {modelLoading ? t("command.modelLoading") : t("command.modelLoad")}
+          </button>
+        </span>
+
+        {fromModel && fromModel.length > 0 ? (
+          <select
+            className="glass-input w-full"
+            value={String(value ?? "")}
+            onChange={(e) => onChange(e.target.value)}
+          >
+            {/* Kosong adalah pilihan yang sah dan berarti "pakai bawaan Revit". */}
+            <option value="">{t("command.setupDefault")}</option>
+            {fromModel.map((name: string) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <>
+            <input
+              className="glass-input w-full"
+              type="text"
+              value={String(value ?? "")}
+              onChange={(e) => onChange(e.target.value)}
+            />
+            <span className="block text-xs opacity-55">
+              {fromModel ? t("command.setupNone") : t("command.setupAsk")}
+            </span>
+          </>
+        )}
+
+        {field.hint && <span className="block text-xs opacity-55">{field.hint[locale]}</span>}
+      </label>
+    );
+  }
 
   if (isSheets) {
     return (

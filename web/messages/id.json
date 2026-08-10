@@ -122,7 +122,14 @@
     "sheetsLoading": "Mengambil…",
     "sheetsEmpty": "Model tidak punya sheet yang bisa dicetak.",
     "sheetsAll": "Centang semua",
-    "sheetsNone": "Kosongkan"
+    "sheetsNone": "Kosongkan",
+    "modelFile": "File Revit:",
+    "modelUnknown": "belum ditanya",
+    "modelLoad": "Cek",
+    "modelLoading": "Mengecek…",
+    "setupDefault": "(bawaan Revit)",
+    "setupNone": "Model ini tidak punya setup tersimpan — bawaan Revit yang dipakai.",
+    "setupAsk": "Tekan Cek untuk mengambil daftar setup dari model."
   },
   "chat": {
     "title": "Minta pakai bahasa biasa",
@@ -147,5 +154,22 @@
     "uploadFailed": "Gagal mengunggah file",
     "queueFailed": "Gagal menjalankan import",
     "note": "Bentuknya sama dengan hasil Export: export dulu, sunting di Excel, lalu kirim balik lewat sini. Kolom yang tidak cocok dengan parameter mana pun dilaporkan, bukan ditebak."
+  },
+  "importTable": {
+    "title": "Import Tabel",
+    "subtitle": "Bawa spreadsheet apa saja ke dalam model sebagai tabel — lebar kolom, tinggi baris, dan sel yang di-merge ikut apa adanya.",
+    "target": "Masuk ke",
+    "targetSchedule": "Schedule (drafting view)",
+    "targetLegend": "Legend view",
+    "targetScheduleHint": "View baru yang bisa ditaruh di satu sheet.",
+    "targetLegendHint": "Bisa dipakai ulang di banyak sheet. Model harus sudah punya minimal satu legend — Revit tidak mengizinkan add-in membuat yang pertama.",
+    "viewName": "Nama view",
+    "viewNamePlaceholder": "Kosongkan untuk memakai nama sheet Excel-nya",
+    "uploading": "Mengunggah file…",
+    "waiting": "Menunggu Revit menggambarnya…",
+    "done": "Sudah digambar di model.",
+    "uploadFailed": "Gagal mengunggah file",
+    "queueFailed": "Gagal menjalankan import",
+    "note": "Hasilnya gambar dari tabelnya, bukan schedule yang membaca model — Revit tidak bisa menampilkan kolom bebas dari Excel sebagai schedule. Untuk mengubah isinya, sunting Excel-nya lalu import lagi."
   }
 }
