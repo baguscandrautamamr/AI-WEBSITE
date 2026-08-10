@@ -70,7 +70,8 @@
     "hanger_schedule": "Hanger schedule",
     "dwg": "DWG",
     "ifc": "IFC",
-    "upload_error": "Reason"
+    "upload_error": "Reason",
+    "dry_run_note": "Dry run — nothing in the model changed. The numbers below are what WOULD happen. Untick \"Dry run\" and send again to do it for real."
   },
   "admin": {
     "title": "Project Access",
@@ -151,7 +152,11 @@
     "setupNone": "This model has no saved setups — Revit defaults will be used.",
     "setupAsk": "The setup list is read as soon as Revit connects.",
     "modelOffline": "Revit not connected",
-    "modelRetry": "Try again"
+    "modelRetry": "Try again",
+    "typePick": "— pick a type from the model —",
+    "typeManual": "Type another name…",
+    "typeBackToList": "← pick from the model's list",
+    "typeCount": "{n} types from this model's families."
   },
   "chat": {
     "placeholder": "e.g. place 6 lights in Meeting 1 at 3 m",

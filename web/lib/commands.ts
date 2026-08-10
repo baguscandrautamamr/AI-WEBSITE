@@ -917,6 +917,38 @@ export const COMMANDS: CommandSpec[] = [
   },
 ];
 
+/**
+ * Uji coba, pada setiap perintah yang mengubah model.
+ *
+ * import_excel sudah punya ini sejak awal; perintah perangkat belum, dan itu
+ * ketimpangan yang mahal. Satu kalimat yang salah tafsir — ruangan yang keliru,
+ * jumlah yang kelebihan satu nol — langsung mengubah model yang sedang
+ * dikerjakan orang lain, dan satu-satunya pembatalnya adalah Ctrl+Z di PC yang
+ * mungkin bukan PC pengirimnya. Uji coba menjalankan perubahannya di dalam
+ * transaksi lalu membatalkannya: jumlahnya terlaporkan, modelnya tidak
+ * tersentuh.
+ *
+ * Ditambahkan di sini, bukan disalin ke tiap perintah: perintah perangkat
+ * berikutnya harus ikut mendapatkannya tanpa ada yang perlu ingat
+ * menambahkannya.
+ */
+const dryRun = (): CommandField => ({
+  name: "dry_run",
+  type: "boolean",
+  default: false,
+  label: { id: "Uji coba saja", en: "Dry run" },
+  hint: {
+    id: "Jalankan lalu batalkan — lihat berapa yang akan terpasang tanpa mengubah model.",
+    en: "Run then roll back — see how many would be placed without changing the model.",
+  },
+});
+
+for (const spec of COMMANDS) {
+  const changesModel = spec.group === "device" || spec.name === "delete_devices";
+  const alreadyHas = spec.fields.some((f) => f.name === "dry_run");
+  if (changesModel && !alreadyHas) spec.fields.push(dryRun());
+}
+
 export const COMMANDS_BY_NAME: Record<string, CommandSpec> = Object.fromEntries(
   COMMANDS.map((c) => [c.name, c])
 );

@@ -26,7 +26,41 @@ const MAX_DEPTH = 4;
 
 export default function ResultView({ value }: { value: unknown }) {
   if (value == null) return null;
-  return <Node value={value} depth={0} />;
+  return (
+    <>
+      <DryRunBanner value={value} />
+      <Node value={value} depth={0} />
+    </>
+  );
+}
+
+/**
+ * Uji coba harus tidak bisa terlewat.
+ *
+ * `dry_run: true` sudah ikut sebagai satu baris di antara baris lain, dan itu
+ * tidak cukup: "Perangkat dipasang: 6" berbunyi persis sama untuk enam yang
+ * terpasang dan enam yang dibatalkan. Yang membaca cepat menganggap
+ * pekerjaannya selesai, menutup halaman, dan menemukannya besok dari gambar
+ * yang masih kosong.
+ */
+function DryRunBanner({ value }: { value: unknown }) {
+  const { t } = useI18n();
+
+  const isDryRun =
+    typeof value === "object" &&
+    value !== null &&
+    (value as { dry_run?: unknown }).dry_run === true;
+
+  if (!isDryRun) return null;
+
+  return (
+    <p
+      className="mb-2 rounded-lg border border-amber-400/60 bg-amber-50 px-2 py-1 text-xs
+                 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+    >
+      {t("result.dry_run_note")}
+    </p>
+  );
 }
 
 function Node({ value, depth }: { value: unknown; depth: number }) {

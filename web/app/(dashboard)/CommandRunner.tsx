@@ -51,6 +51,11 @@ interface ModelInfo {
   uploadMode: string;
 }
 
+/** Nilai penanda untuk pilihan "ketik nama lain" di dropdown tipe.
+ *  String yang tidak mungkin jadi nama family Revit, supaya ia tidak
+ *  pernah bertabrakan dengan pilihan yang sah. */
+const MANUAL = "__ketik-sendiri__";
+
 export default function CommandRunner({
   groups,
   title,
@@ -716,6 +721,10 @@ function Field({
     ? (model?.familyTypes?.[field.name.replace(/_type$/, "")] ?? [])
     : [];
 
+  // Sudah memilih untuk mengetik sendiri, karena family yang dibutuhkan belum
+  // ada di daftar yang terakhir dibaca dari model.
+  const [typedByHand, setTypedByHand] = useState(false);
+
   // Pilihan yang hanya diketahui model yang sedang terbuka.
   if (field.optionsFrom) {
     const fromModel =
@@ -833,6 +842,45 @@ function Field({
             </option>
           ))}
         </select>
+      ) : typeOptions.length > 0 && !typedByHand ? (
+        /* Dropdown, bukan kolom teks dengan saran.
+         *
+         * Nama family Revit tidak bisa ditebak dan tidak bisa dipendekkan:
+         * "ACT_E_DOWNLIGHT 22WATT" yang ditulis "downlight" bukan nama yang
+         * mirip, ia nama yang tidak ada — dan perintahnya baru gagal setelah
+         * antre dan dijalankan Revit, dengan gambar yang tetap kosong. Sebuah
+         * datalist masih mengizinkan itu diketik; dropdown tidak.
+         *
+         * Daftarnya per kategori: kolom "Tipe armatur" hanya menawarkan
+         * Lighting Fixtures, bukan seluruh family di model. */
+        <>
+          <select
+            className="glass-input w-full"
+            value={String(value ?? "")}
+            onChange={(e) => {
+              if (e.target.value === MANUAL) {
+                setTypedByHand(true);
+                onChange("");
+                return;
+              }
+              onChange(e.target.value);
+            }}
+          >
+            <option value="">{t("command.typePick")}</option>
+            {typeOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+            {/* Jalan keluar, bukan jalan utama: daftar ini hanya sebaik model
+                yang terakhir dibaca, dan family yang baru dimuat setelah itu
+                tidak boleh membuat form ini mustahil diisi. */}
+            <option value={MANUAL}>{t("command.typeManual")}</option>
+          </select>
+          <span className="block text-xs opacity-55">
+            {t("command.typeCount").replace("{n}", String(typeOptions.length))}
+          </span>
+        </>
       ) : (
         <>
           <input
@@ -842,17 +890,11 @@ function Field({
             placeholder={field.default !== undefined ? String(field.default) : ""}
             min={field.min}
             max={field.max}
-            list={
-              isRoom && rooms.length
-                ? "revit-rooms"
-                : typeOptions.length
-                  ? `revit-types-${field.name}`
-                  : undefined
-            }
+            list={isRoom && rooms.length ? "revit-rooms" : undefined}
             onChange={(e) => onChange(e.target.value)}
           />
-          {/* datalist, bukan select: nama yang tidak ada di daftar tetap boleh
-              diketik, karena daftar ini hanya sebaik model yang terakhir dibaca. */}
+          {/* Ruangan tetap datalist: namanya diketik orang di Revit, jadi yang
+              baru dibuat setelah daftar ini dibaca masih harus bisa disebut. */}
           {isRoom && rooms.length > 0 && (
             <datalist id="revit-rooms">
               {rooms.map((r) => (
@@ -860,12 +902,17 @@ function Field({
               ))}
             </datalist>
           )}
-          {typeOptions.length > 0 && (
-            <datalist id={`revit-types-${field.name}`}>
-              {typeOptions.map((name) => (
-                <option key={name} value={name} />
-              ))}
-            </datalist>
+          {typeOptions.length > 0 && typedByHand && (
+            <button
+              type="button"
+              onClick={() => {
+                setTypedByHand(false);
+                onChange("");
+              }}
+              className="text-xs text-accent underline"
+            >
+              {t("command.typeBackToList")}
+            </button>
           )}
         </>
       )}
