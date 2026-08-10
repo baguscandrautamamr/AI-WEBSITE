@@ -152,11 +152,18 @@ export default function AdminUsersPage() {
 
   if (loading) return <p className="opacity-60">{t("common.loading")}</p>;
 
+  // Belum mengelola proyek apa pun. Bukan halaman kosong: di sinilah proyek
+  // pertama dibuat, dan tanpa itu akun yang baru mendaftar tidak punya satu pun
+  // jalan untuk mulai bekerja.
   if (projects.length === 0) {
     return (
-      <div className="glass-panel max-w-2xl p-6 space-y-2">
-        <h1 className="text-lg font-medium">{t("admin.title")}</h1>
-        <p className="text-sm text-text-secondary">{error ?? t("admin.notAdmin")}</p>
+      <div className="glass-panel max-w-2xl space-y-4 p-6">
+        <div>
+          <h1 className="text-lg font-medium">{t("admin.title")}</h1>
+          <p className="text-sm text-text-secondary">{t("admin.notAdmin")}</p>
+        </div>
+        <NewProject onCreated={load} />
+        {error && <p className="text-sm text-red-500">{error}</p>}
       </div>
     );
   }
@@ -173,6 +180,8 @@ export default function AdminUsersPage() {
         <h1 className="text-lg font-medium">{t("admin.title")}</h1>
         <p className="text-sm text-text-secondary">{t("admin.subtitle")}</p>
       </div>
+
+      <NewProject onCreated={load} />
 
       <label className="block space-y-1">
         <span className="text-sm">{t("command.project")}</span>
@@ -311,5 +320,82 @@ export default function AdminUsersPage() {
 
       {error && <p className="text-sm text-red-500">{error}</p>}
     </div>
+  );
+}
+
+/**
+ * Membuat proyek baru.
+ *
+ * Terbuka untuk siapa pun yang sudah login, bukan hanya admin: sebelum ini
+ * baris `projects` hanya bisa lahir dari SQL editor, jadi setiap proyek baru
+ * menunggu orang yang punya akses database.
+ *
+ * Yang membuat langsung jadi admin proyek itu — kalau tidak, ia baru saja
+ * membuat sesuatu yang tidak bisa ia pakai. Admin global ikut diberi akses
+ * penuh, jadi proyek yang dibuat siapa pun tetap terlihat tanpa harus diminta.
+ */
+function NewProject({ onCreated }: { onCreated: () => Promise<void> | void }) {
+  const { t } = useI18n();
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [created, setCreated] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const wanted = name.trim();
+    if (!wanted || busy) return;
+
+    setBusy(true);
+    setError(null);
+    setCreated(null);
+
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: wanted }),
+      });
+      const body = await res.json();
+
+      if (!res.ok) {
+        setError(body.error ?? t("admin.createFailed"));
+        return;
+      }
+
+      setName("");
+      setCreated(body.project?.code ?? null);
+      await onCreated();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("admin.createFailed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-2">
+      <h2 className="text-sm font-medium">{t("admin.createTitle")}</h2>
+      <div className="flex flex-wrap gap-2">
+        <input
+          className="glass-input min-w-[12rem] flex-1"
+          type="text"
+          value={name}
+          maxLength={120}
+          placeholder={t("admin.createPlaceholder")}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <button type="submit" disabled={busy || !name.trim()} className="btn-accent">
+          {busy ? t("admin.creating") : t("admin.create")}
+        </button>
+      </div>
+      {created && (
+        <p className="text-sm text-emerald-600">
+          {t("admin.created")} <code>{created}</code>
+        </p>
+      )}
+      {error && <p className="text-sm text-red-500">{error}</p>}
+      <p className="text-xs text-text-secondary">{t("admin.createNote")}</p>
+    </form>
   );
 }

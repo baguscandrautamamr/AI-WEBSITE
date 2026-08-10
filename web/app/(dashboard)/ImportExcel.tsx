@@ -139,7 +139,15 @@ export default function ImportExcel() {
           // Nilainya dikosongkan supaya memilih file yang sama dua kali tetap
           // memicu onChange.
           e.target.value = "";
-          if (file) run(file);
+          if (!file) return;
+          // Galat dari percobaan sebelumnya dihapus di sini, bukan hanya di
+          // dalam run(): kotak file kembali berbunyi "tidak ada file yang
+          // dipilih" sementara pesan merah lama masih terpampang, dan itu
+          // terbaca sebagai galat tentang file yang baru saja dipilih.
+          setPhase("idle");
+          setMessage(null);
+          setResult(null);
+          run(file);
         }}
       />
 

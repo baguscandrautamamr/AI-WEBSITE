@@ -18,8 +18,15 @@ export default function DashboardNav({ role }: { role: Role }) {
     { href: "/electrical", label: t("nav.electrical"), roles: ["editor", "admin"] },
     { href: "/standard", label: t("nav.standard"), roles: ["viewer", "editor", "admin"] },
     { href: "/export-import", label: t("nav.exportImport"), roles: ["viewer", "editor", "admin"] },
+    // Import mengubah model, jadi viewer tidak melihatnya sama sekali — bukan
+    // melihatnya lalu ditolak setelah file terlanjur diunggah.
+    { href: "/import", label: t("nav.import"), roles: ["editor", "admin"] },
     { href: "/history", label: t("nav.history"), roles: ["viewer", "editor", "admin"] },
-    { href: "/admin/users", label: t("nav.admin"), roles: ["admin"] },
+    // Terlihat semua peran: di sinilah proyek dibuat, dan orang yang belum
+    // punya proyek sama sekali justru yang paling perlu membukanya. Yang di
+    // dalamnya tetap dijaga — pengelolaan akses hanya muncul untuk proyek yang
+    // memang dia admini.
+    { href: "/admin/users", label: t("nav.admin"), roles: ["viewer", "editor", "admin"] },
   ];
 
   return (
