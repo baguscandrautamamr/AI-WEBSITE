@@ -1,6 +1,11 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { ProjectsProvider } from "@/lib/useProjects";
 import DashboardNav from "./DashboardNav";
+
+// Seluruh dashboard bergantung pada cookie sesi. Lihat catatan di app/page.tsx:
+// tanpa ini, catch di bawah menelan sinyal bail-out milik Next.
+export const dynamic = "force-dynamic";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   // Peran di sistem ini per-proyek (user_project_access), bukan global — orang
@@ -40,9 +45,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
       : "viewer";
 
   return (
-    <div className="flex min-h-screen">
-      <DashboardNav role={highest} />
-      <main className="flex-1 p-6">{children}</main>
-    </div>
+    // Provider di layout, bukan di tiap halaman: layout bertahan lintas
+    // navigasi, jadi daftar proyek diambil sekali — bukan setiap klik menu.
+    <ProjectsProvider>
+      <div className="flex min-h-screen">
+        <DashboardNav role={highest} />
+        <main className="flex-1 p-6">{children}</main>
+      </div>
+    </ProjectsProvider>
   );
 }
