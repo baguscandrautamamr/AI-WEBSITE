@@ -28,9 +28,29 @@ Aturan SVG:
 - SELURUH isi harus berada di dalam viewBox, dengan margin minimal 20 unit di
   keempat sisinya. Tidak boleh ada garis atau teks yang menyentuh atau melewati
   tepinya — itu penyebab paling sering gambar terlihat terpotong.
-- Tata letaknya rapi: kotak sejajar, jarak antar bagian seragam, dan tidak ada
-  teks yang bertumpuk dengan garis atau dengan teks lain. Kalau ruang tidak
-  cukup, kurangi isinya — jangan perkecil hurufnya.
+- TATA LETAK BERZONA. Bagi viewBox jadi zona yang tidak boleh saling masuk, dan
+  tuliskan koordinatnya dulu sebelum menggambar. Pola yang dianjurkan pada
+  viewBox="0 0 1000 640":
+    * x 0–700   : area gambar (diagram utamanya)
+    * x 720–980 : kolom panel keterangan (legenda, spesifikasi, catatan)
+  Tidak boleh ada satu pun elemen area gambar yang melewati x=700, dan tidak
+  boleh ada panel keterangan yang masuk ke bawah x=720.
+- Panel keterangan ditumpuk ke bawah, bukan ditempel di atas gambar. Beri jarak
+  minimal 16 unit antar panel, dan hitung tingginya dari jumlah barisnya
+  (≈ 22 unit per baris + 40 untuk judul). Panel yang tingginya ditebak akan
+  menabrak panel di bawahnya.
+- TIDAK BOLEH ADA YANG BERTUMPUK. Sebelum menulis setiap <rect> dan <text>,
+  pastikan kotak batasnya tidak beririsan dengan apa pun yang sudah digambar.
+  Ini kesalahan yang paling sering terjadi dan paling merusak: legenda menimpa
+  panel, label menimpa garis, teks menimpa teks.
+- Teks harus berdiri di atas latar kosong. Kalau sebuah label harus berada dekat
+  garis, geser labelnya menjauh dan tarik garis penunjuk tipis — jangan
+  menuliskannya di atas garisnya.
+- Label yang panjang dipendekkan atau dipecah jadi dua <text> bertingkat, bukan
+  dibiarkan melebar menembus elemen di sebelahnya.
+- Sedikit dan jelas mengalahkan banyak dan padat. Delapan bagian yang terpisah
+  rapi lebih berguna daripada dua puluh lima yang berdesakan. Kalau ruang tidak
+  cukup, KURANGI ISINYA — jangan perkecil hurufnya dan jangan dirapatkan.
 - font-size minimal 12 (pada viewBox setinggi ~500). Huruf yang lebih kecil
   tidak terbaca di HP.
 - Pakai stroke dan fill dengan warna eksplisit yang terbaca di atas putih. Jangan

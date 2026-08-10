@@ -21,7 +21,9 @@
     "clearConfirm": "Hapus seluruh percakapan ini? Tidak bisa dikembalikan.",
     "clearFailed": "Gagal menghapus percakapan",
     "drawing": "Menggambar diagram…",
-    "thinking": "Menyusun jawaban…"
+    "thinking": "Menyusun jawaban…",
+    "savePng": "Simpan sebagai gambar (PNG)",
+    "saving": "Menyimpan…"
   },
   "exportImport": {
     "title": "Export & Import",
