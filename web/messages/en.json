@@ -72,6 +72,23 @@
       "completed": "Done",
       "failed": "Failed",
       "cancelled": "Cancelled"
-    }
+    },
+    "roomsLoad": "Read from Revit",
+    "roomsLoading": "Reading…",
+    "roomsEmpty": "The model returned no rooms.",
+    "roomsFailed": "Could not read the room list from Revit.",
+    "roomsTimeout": "The add-in has not answered. Check that Revit is open and the add-in is running."
+  },
+  "chat": {
+    "title": "Ask in plain language",
+    "subtitle": "Say what you want. The proposed command fills the form below — you press send.",
+    "placeholder": "e.g. place 6 lights in Meeting 1 at 3 m",
+    "send": "Ask",
+    "sending": "Drafting…",
+    "thinking": "Drafting the command…",
+    "checkForm": "Filled into the form below. Check it, then press Send to Revit.",
+    "failed": "Could not reach the assistant",
+    "done": "finished in Revit.",
+    "failedRun": "failed in Revit"
   }
 }

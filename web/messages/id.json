@@ -72,6 +72,23 @@
       "completed": "Selesai",
       "failed": "Gagal",
       "cancelled": "Dibatalkan"
-    }
+    },
+    "roomsLoad": "Ambil dari Revit",
+    "roomsLoading": "Mengambil…",
+    "roomsEmpty": "Model tidak mengembalikan ruangan mana pun.",
+    "roomsFailed": "Gagal membaca daftar ruangan dari Revit.",
+    "roomsTimeout": "Add-in belum menjawab. Pastikan Revit terbuka dan add-in berjalan."
+  },
+  "chat": {
+    "title": "Minta pakai bahasa biasa",
+    "subtitle": "Tulis maunya apa. Usulan perintahnya mengisi form di bawah — kamu yang menekan kirim.",
+    "placeholder": "mis. pasang 6 lampu di Meeting 1 tinggi 3 meter",
+    "send": "Tanya",
+    "sending": "Menyusun…",
+    "thinking": "Menyusun perintah…",
+    "checkForm": "Sudah diisikan ke form di bawah. Periksa dulu, lalu tekan Kirim ke Revit.",
+    "failed": "Gagal menghubungi asisten",
+    "done": "selesai dijalankan di Revit.",
+    "failedRun": "gagal di Revit"
   }
 }

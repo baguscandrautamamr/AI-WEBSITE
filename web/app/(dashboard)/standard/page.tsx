@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
+import Markdown from "../Markdown";
 
 interface Msg {
   role: "user" | "assistant";
@@ -81,11 +82,13 @@ export default function StandardPage() {
         {messages.map((m, i) => (
           <div
             key={i}
-            className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${
-              m.role === "user" ? "bg-accent text-white ml-auto" : "glass-input"
+            className={`rounded-2xl px-3 py-2 text-sm ${
+              m.role === "user"
+                ? "bg-accent text-white ml-auto max-w-[80%] whitespace-pre-wrap"
+                : "glass-input max-w-[92%]"
             }`}
           >
-            {m.content}
+            {m.role === "user" ? m.content : <Markdown>{m.content}</Markdown>}
           </div>
         ))}
         {loading && <p className="text-xs opacity-60">{t("common.loading")}</p>}

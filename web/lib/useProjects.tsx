@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Role } from "@/lib/commands";
 
@@ -11,6 +11,14 @@ export interface ProjectAccess {
   role: Role;
 }
 
+interface ProjectsState {
+  projects: ProjectAccess[];
+  loading: boolean;
+  error: string | null;
+}
+
+const ProjectsContext = createContext<ProjectsState | null>(null);
+
 /**
  * Proyek yang boleh diakses user beserta perannya di masing-masing proyek.
  *
@@ -18,11 +26,18 @@ export interface ProjectAccess {
  * jadi tidak ada filter tambahan di sini. Daftar kosong bukan error — itu
  * kondisi normal untuk akun yang belum diberi izin admin, dan halaman
  * menampilkannya sebagai pesan, bukan sebagai kegagalan.
+ *
+ * Provider-nya dipasang di layout dashboard, dan layout di App Router bertahan
+ * lintas navigasi. Jadi daftar ini diambil sekali per kunjungan, bukan setiap
+ * kali pindah halaman — itu satu perjalanan ke Supabase yang hilang dari setiap
+ * klik menu.
  */
-export function useProjects() {
-  const [projects, setProjects] = useState<ProjectAccess[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export function ProjectsProvider({ children }: { children: ReactNode }) {
+  const [state, setState] = useState<ProjectsState>({
+    projects: [],
+    loading: true,
+    error: null,
+  });
 
   useEffect(() => {
     const supabase = createClient();
@@ -39,20 +54,20 @@ export function useProjects() {
       if (cancelled) return;
 
       if (error) {
-        setError(error.message);
-        setLoading(false);
+        setState({ projects: [], loading: false, error: error.message });
         return;
       }
 
-      setProjects(
-        (data ?? []).map((r) => ({
+      setState({
+        projects: (data ?? []).map((r) => ({
           projectId: r.project_id,
           code: r.projects?.code ?? r.project_id.slice(0, 8),
           name: r.projects?.name ?? r.projects?.code ?? "—",
           role: r.role,
-        }))
-      );
-      setLoading(false);
+        })),
+        loading: false,
+        error: null,
+      });
     })();
 
     return () => {
@@ -60,5 +75,11 @@ export function useProjects() {
     };
   }, []);
 
-  return { projects, loading, error };
+  return <ProjectsContext.Provider value={state}>{children}</ProjectsContext.Provider>;
+}
+
+export function useProjects(): ProjectsState {
+  const ctx = useContext(ProjectsContext);
+  if (!ctx) throw new Error("useProjects harus dipakai di dalam ProjectsProvider");
+  return ctx;
 }
