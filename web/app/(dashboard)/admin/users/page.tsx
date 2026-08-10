@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n";
+import { useProjects } from "@/lib/useProjects";
 
 type Role = "viewer" | "editor" | "admin";
 
@@ -27,6 +28,28 @@ interface Access {
 /** Jeda sebelum ketikan jadi permintaan, supaya tiap huruf tidak jadi satu query. */
 const SEARCH_DEBOUNCE_MS = 300;
 
+interface AccessData {
+  projects: Project[];
+  members: User[];
+  pending: User[];
+  access: Access[];
+  searchMinChars: number;
+}
+
+/**
+ * Jawaban terakhir yang berhasil, disimpan di luar komponen.
+ *
+ * Layout dashboard bertahan lintas navigasi tapi halamannya tidak: berpindah ke
+ * Export lalu kembali ke sini membongkar komponen ini dan membuang state-nya,
+ * jadi tiap kunjungan berikutnya dimulai dari "Memuat…" walau datanya sudah
+ * pernah ada. Disimpan di sini, kunjungan kedua langsung menampilkan yang
+ * terakhir diketahui sementara versi barunya diambil di belakang.
+ *
+ * Hidup selama tab terbuka. Itu memang yang diinginkan: menyimpannya lebih lama
+ * berarti data satu akun tertinggal di perangkat setelah orangnya keluar.
+ */
+let cached: AccessData | null = null;
+
 /**
  * Memberi user akses ke proyek — satu-satunya hal yang membuat akun baru bisa
  * dipakai. Akun yang baru mendaftar sengaja tidak punya baris di
@@ -43,6 +66,7 @@ const SEARCH_DEBOUNCE_MS = 300;
  */
 export default function AdminUsersPage() {
   const { t } = useI18n();
+  const { refresh: refreshProjects } = useProjects();
   const [projects, setProjects] = useState<Project[]>([]);
   const [members, setMembers] = useState<User[]>([]);
   const [pending, setPending] = useState<User[]>([]);
@@ -62,6 +86,16 @@ export default function AdminUsersPage() {
   /** Peran yang dipilih untuk tiap akun menunggu, sebelum tombol Beri ditekan. */
   const [pendingRole, setPendingRole] = useState<Record<string, Role>>({});
 
+  const apply = useCallback((data: AccessData) => {
+    setProjects(data.projects);
+    setMembers(data.members);
+    setPending(data.pending);
+    setAccess(data.access);
+    setMinChars(data.searchMinChars);
+    setProjectId((prev) => prev || data.projects[0]?.id || "");
+    setLoading(false);
+  }, []);
+
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/access");
     const body = await res.json();
@@ -70,18 +104,27 @@ export default function AdminUsersPage() {
       setLoading(false);
       return;
     }
-    setProjects(body.projects);
-    setMembers(body.members);
-    setPending(body.pending ?? []);
-    setAccess(body.access);
-    setMinChars(body.searchMinChars ?? 2);
-    setProjectId((prev) => prev || body.projects[0]?.id || "");
-    setLoading(false);
-  }, [t]);
 
+    cached = {
+      projects: body.projects ?? [],
+      members: body.members ?? [],
+      pending: body.pending ?? [],
+      access: body.access ?? [],
+      searchMinChars: body.searchMinChars ?? 2,
+    };
+    apply(cached);
+
+    // Daftar proyek di seluruh aplikasi ikut diperbarui: proyek yang baru
+    // dibuat harus muncul di dropdown halaman lain tanpa perlu memuat ulang.
+    await refreshProjects();
+  }, [t, apply, refreshProjects]);
+
+  // Kunjungan kedua langsung menampilkan yang terakhir diketahui, lalu
+  // menyegarkannya di belakang — bukan mengosongkan layar dulu.
   useEffect(() => {
+    if (cached) apply(cached);
     load();
-  }, [load]);
+  }, [apply, load]);
 
   // Pencarian hanya berangkat setelah ketikan berhenti sejenak dan sudah cukup
   // panjang; di bawah itu daftar hasil dikosongkan, bukan diisi tebakan.

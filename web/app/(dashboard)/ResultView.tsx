@@ -55,9 +55,22 @@ function Node({ value, depth }: { value: unknown; depth: number }) {
   return <span>{String(value)}</span>;
 }
 
-/** Teks biasa, kecuali kalau ia sebenarnya sebuah file yang bisa diunduh. */
+/**
+ * Teks biasa, kecuali kalau ia sebenarnya sebuah file yang bisa diunduh — atau
+ * salah satu kunci catatan yang dikirim add-in.
+ *
+ * `notes` dari add-in berisi kunci i18n, bukan kalimat: add-in tidak tahu bahasa
+ * apa yang sedang dipakai orang yang membacanya. Ditampilkan mentah, isinya
+ * seperti "export.local_only" — benar, dan tidak berarti apa-apa.
+ */
 function Scalar({ value }: { value: string }) {
   const { t } = useI18n();
+
+  if (/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/.test(value)) {
+    const key = `note.${value}`;
+    const translated = t(key);
+    if (translated !== key) return <span className="break-words">{translated}</span>;
+  }
 
   if (!/^https?:\/\//i.test(value)) return <span className="break-words">{value}</span>;
 

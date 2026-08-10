@@ -15,7 +15,11 @@
     "subtitle": "Q&A about standards (SNI, PUIL, IEC, NEC) — never touches Revit",
     "placeholder": "Ask about SNI/PUIL/IEC standards...",
     "send": "Send",
-    "failed": "Could not reach the standards assistant"
+    "failed": "Could not reach the standards assistant",
+    "clear": "Clear chat",
+    "clearing": "Clearing…",
+    "clearConfirm": "Clear this whole conversation? It cannot be undone.",
+    "clearFailed": "Could not clear the conversation"
   },
   "exportImport": {
     "title": "Export & Import",
@@ -183,6 +187,13 @@
   },
   "import": {
     "title": "Import into Revit",
-    "subtitle": "Two ways to bring a spreadsheet into the model. Pick the one that matches what is in the file."
+    "subtitle": "Two ways to bring a spreadsheet into the model. Pick the one that matches what is in the file.",
+    "whichTable": "Import Table — for any spreadsheet (cost estimate, cable list, a supplier table). The table is drawn into a Revit view as it stands.",
+    "whichExcel": "Import Excel — only for files that came from the Export button, because it needs an Element Id or Mark column to know which row belongs to which element. Used to update parameters on elements that already exist."
+  },
+  "note": {
+    "export.local_only": "The file is on the PC running Revit and cannot be downloaded from here yet. Fill in the Cloudinary credentials in %APPDATA%\\RevitCommandCenter\\config.json so exports arrive as download links.",
+    "print.no_bot_token": "Telegram delivery is on but the bot token is empty, so the file was not sent to any chat.",
+    "export_cad.no_setup": "Exported with no CAD export setup, so Revit defaults were used — layers and line weights are unlikely to match the office standard."
   }
 }

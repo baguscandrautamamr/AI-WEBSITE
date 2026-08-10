@@ -15,7 +15,11 @@
     "subtitle": "Tanya jawab standar (SNI, PUIL, IEC, NEC) — tidak menyentuh Revit",
     "placeholder": "Tanya standar SNI/PUIL/IEC...",
     "send": "Kirim",
-    "failed": "Gagal menghubungi asisten standar"
+    "failed": "Gagal menghubungi asisten standar",
+    "clear": "Hapus chat",
+    "clearing": "Menghapus…",
+    "clearConfirm": "Hapus seluruh percakapan ini? Tidak bisa dikembalikan.",
+    "clearFailed": "Gagal menghapus percakapan"
   },
   "exportImport": {
     "title": "Export & Import",
@@ -183,6 +187,13 @@
   },
   "import": {
     "title": "Import ke Revit",
-    "subtitle": "Dua cara membawa spreadsheet masuk ke model. Pilih yang sesuai dengan isi filenya."
+    "subtitle": "Dua cara membawa spreadsheet masuk ke model. Pilih yang sesuai dengan isi filenya.",
+    "whichTable": "Import Tabel — untuk spreadsheet apa pun (RAB, daftar kabel, tabel dari supplier). Tabelnya digambar ke sebuah view di Revit apa adanya.",
+    "whichExcel": "Import Excel — hanya untuk file yang berasal dari tombol Export, karena butuh kolom Element Id atau Mark untuk tahu baris mana milik elemen mana. Dipakai untuk memperbarui parameter elemen yang sudah ada."
+  },
+  "note": {
+    "export.local_only": "File tersimpan di PC yang menjalankan Revit dan belum bisa diunduh dari sini. Isi kredensial Cloudinary di %APPDATA%\\RevitCommandCenter\\config.json agar hasil export muncul sebagai tautan unduhan.",
+    "print.no_bot_token": "Pengiriman ke Telegram menyala tapi token bot-nya belum diisi, jadi file tidak terkirim ke chat mana pun.",
+    "export_cad.no_setup": "Diekspor tanpa CAD export setup, jadi memakai bawaan Revit — layer dan ketebalan garisnya kemungkinan tidak sesuai standar kantor."
   }
 }

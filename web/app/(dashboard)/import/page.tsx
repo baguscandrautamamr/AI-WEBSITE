@@ -14,13 +14,22 @@ export default function ImportPage() {
 
   return (
     <div className="space-y-4">
-      <div className="max-w-4xl">
+      <div className="glass-panel max-w-4xl space-y-2 p-6">
         <h1 className="text-lg font-medium">{t("import.title")}</h1>
         <p className="text-sm text-text-secondary">{t("import.subtitle")}</p>
+        <ul className="list-disc space-y-1 pl-5 text-sm text-text-secondary">
+          <li>{t("import.whichTable")}</li>
+          <li>{t("import.whichExcel")}</li>
+        </ul>
       </div>
 
-      <ImportExcel />
+      {/* Import Tabel lebih dulu: ia menerima spreadsheet apa pun, dan itu yang
+          dimaksud orang sembilan dari sepuluh kali. Import Excel menuntut kolom
+          Element Id atau Mark, yang hanya ada pada file yang berasal dari
+          Export — menaruhnya di atas membuat orang mencobanya lebih dulu lalu
+          ditolak oleh syarat yang tidak mereka ketahui. */}
       <ImportTable />
+      <ImportExcel />
     </div>
   );
 }
