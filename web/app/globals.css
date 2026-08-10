@@ -24,6 +24,25 @@ body {
   background: var(--bg-gradient);
   color: var(--text-primary);
   min-height: 100vh;
+  /* Halaman ini tidak pernah bermaksud digeser ke samping. Kalau ada satu isi
+     yang terlalu lebar, yang benar adalah isi itu yang menggulir di kotaknya
+     sendiri — bukan seluruh aplikasi ikut bergeser dan meninggalkan pita
+     kosong di kanan, yang di aplikasi terpasang terlihat seperti rusak.
+     Ini jaring pengaman, bukan pengganti min-w-0 di tempatnya. */
+  overflow-x: hidden;
+}
+
+/* Gambar dan pra-format tidak boleh melebihi kotaknya di layar sempit. */
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
+pre {
+  overflow-x: auto;
+  max-width: 100%;
 }
 
 .glass-panel {
@@ -123,4 +142,29 @@ body {
   width: 100%;
   height: auto;
   max-width: 100%;
+}
+
+/* Titik-titik "sedang mengetik" di chat standar.
+   Dianimasikan dengan opacity, bukan dengan mengubah ukuran atau posisi: kedua
+   hal itu memaksa layout dihitung ulang enam belas kali sedetik selama jawaban
+   ditunggu, yang di HP kelas menengah terasa. */
+.dot {
+  /* <i> itu inline; tanpa ini lebar dan tingginya diabaikan. */
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: currentColor;
+  opacity: 0.25;
+  animation: dot-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes dot-pulse {
+  0%, 60%, 100% { opacity: 0.25; }
+  30% { opacity: 0.9; }
+}
+
+/* Yang menyetel "kurangi gerak" di sistemnya sudah meminta ini tidak berkedip. */
+@media (prefers-reduced-motion: reduce) {
+  .dot { animation: none; opacity: 0.5; }
 }
