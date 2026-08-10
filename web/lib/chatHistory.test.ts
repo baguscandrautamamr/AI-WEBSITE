@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_HISTORY, MAX_TURN_CHARS, buildMessages } from "./chatHistory";
+import { MAX_HISTORY, MAX_TURN_CHARS, buildMessages, turnsFromChat } from "./chatHistory";
 
 const user = (content: string) => ({ role: "user", content });
 const assistant = (content: string) => ({ role: "assistant", content });
@@ -78,5 +78,85 @@ describe("buildMessages — riwayat yang tidak dipercaya", () => {
   it("memotong giliran lama yang kepanjangan", () => {
     const out = buildMessages([user("x".repeat(MAX_TURN_CHARS + 500))], "lanjut");
     expect(out[0].content.length).toBe(MAX_TURN_CHARS + "\n\nlanjut".length);
+  });
+});
+
+describe("turnsFromChat", () => {
+  it("mencatat perintah yang berangkat sebagai giliran asisten", () => {
+    const turns = turnsFromChat([
+      { role: "user", text: "pasang 6 lampu di Meeting 1" },
+      { role: "proposal", text: "", commandText: "/place_lighting Meeting_1 count=6" },
+    ]);
+
+    expect(turns).toHaveLength(2);
+    expect(turns[1].role).toBe("assistant");
+    expect(turns[1].content).toContain("/place_lighting Meeting_1 count=6");
+  });
+
+  it("tidak pernah menyatakan perintahnya berhasil", () => {
+    const [, turn] = turnsFromChat([
+      { role: "user", text: "x" },
+      { role: "proposal", text: "", commandText: "/place_lighting A count=2" },
+    ]);
+
+    // Hasilnya datang dari Revit sebagai giliran tersendiri. Riwayat yang
+    // menyatakan "berhasil" di sini membuat model melaporkan sesuatu yang belum
+    // diketahui siapa pun — itu persis kesalahan yang ditutup fungsi ini.
+    expect(turn.content).not.toMatch(/berhasil|selesai/i);
+  });
+
+  it("menyebutkan yang kurang untuk perintah yang tidak berangkat", () => {
+    const [turn] = turnsFromChat([
+      {
+        role: "proposal",
+        text: "",
+        commandText: "/place_lighting",
+        issues: ["room wajib diisi"],
+      },
+    ]);
+
+    expect(turn.content).toContain("TIDAK dikirim");
+    expect(turn.content).toContain("room wajib diisi");
+  });
+
+  it("memutus penggabungan tiga permintaan identik jadi satu giliran user", () => {
+    // Inilah bentuk yang membuat model menjawab "sudah dijalankan di langkah
+    // sebelumnya" lalu tidak memanggil tool apa pun: usulan perintah dulu
+    // dibuang dari riwayat, jadi tiga permintaan berurutan tiba sebagai SATU
+    // pesan user yang mengulang dirinya, tanpa jejak bahwa ada yang dikerjakan.
+    const bubbles = [
+      { role: "user" as const, text: "modifikasi jadi 2x5 di lounge" },
+      { role: "proposal" as const, text: "", commandText: "/modify_devices LOUNGE 5 grid=2x5" },
+      { role: "user" as const, text: "modifikasi jadi 2x5 di lounge" },
+      { role: "proposal" as const, text: "", commandText: "/modify_devices LOUNGE 5 grid=2x5" },
+    ];
+
+    const merged = buildMessages(turnsFromChat(bubbles), "modifikasi jadi 2x5 di lounge");
+
+    // Empat gelembung + pesan baru = lima giliran yang berselang-seling, bukan
+    // satu gumpalan user.
+    expect(merged).toHaveLength(5);
+    expect(merged.map((m) => m.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+      "user",
+    ]);
+  });
+
+  it("tanpa usulan, permintaan berulang memang menggumpal jadi satu", () => {
+    // Perilaku lama, dipertahankan sebagai bukti bahwa penyebabnya ada di
+    // riwayat yang hilang — bukan di buildMessages.
+    const merged = buildMessages(
+      [
+        { role: "user", content: "modifikasi jadi 2x5" },
+        { role: "user", content: "modifikasi jadi 2x5" },
+      ],
+      "modifikasi jadi 2x5"
+    );
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].role).toBe("user");
   });
 });
