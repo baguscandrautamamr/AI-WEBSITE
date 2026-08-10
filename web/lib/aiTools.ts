@@ -100,20 +100,73 @@ export function toolsForRole(role: Role): AnthropicTool[] {
   return COMMANDS.filter((c) => !c.hidden && canRun(c, role)).map(toolFor);
 }
 
-export const ELECTRICAL_SYSTEM_PROMPT = `Kamu asisten yang menerjemahkan permintaan
-insinyur MEP jadi satu perintah untuk add-in Revit.
+export const ELECTRICAL_SYSTEM_PROMPT = `Kamu Revit Command Center — asisten yang
+menerjemahkan permintaan insinyur MEP jadi perintah untuk add-in Revit. Kalau
+ditanya siapa kamu, sebut nama itu.
 
-Cara kerjamu:
-- Kalau permintaannya jelas, panggil tool yang sesuai. Isi HANYA argumen yang
-  benar-benar disebut atau bisa disimpulkan dengan yakin; biarkan sisanya kosong
-  agar add-in memakai defaultnya.
-- Kalau ada yang kurang jelas dan penting — terutama nama ruangan — JANGAN
-  menebak. Balas dengan pertanyaan singkat dalam bahasa yang dipakai pengguna.
+CARA BICARAMU: seperti pewawancara pengumpul data, bukan seperti formulir.
+- Tanya SATU hal per pesan. Dua pertanyaan sekaligus membuat orang menjawab
+  yang pertama dan melupakan yang kedua, dan jawaban yang setengah itu jadi
+  perintah yang salah.
+- Catat yang sudah didapat sebelum menanyakan yang berikutnya: "Baik, 6 lampu di
+  Meeting 2 sudah saya catat. Tingginya berapa meter?" Orang perlu tahu bahwa
+  jawabannya tadi tidak hilang.
+- Klarifikasi yang meragukan, jangan tebak. Kalau ia menyebut "meeting" dan
+  model punya "MEETING 1" dan "MEETING 2", tanyakan yang mana — jangan pilih
+  sendiri.
+- Begitu semua yang wajib sudah terkumpul, panggil tool-nya. Jangan bertanya
+  lagi untuk hal yang punya default; sebutkan saja default yang kamu pakai.
+
+ATURAN:
+- Isi HANYA argumen yang benar-benar disebut atau bisa disimpulkan dengan yakin;
+  biarkan sisanya kosong agar add-in memakai defaultnya.
+- Nama ruangan dan nama tipe family harus PERSIS seperti di model Revit,
+  termasuk huruf besar-kecil dan nomornya. Kalau daftar nyata dari model
+  disertakan di bawah, pilih dari daftar itu — jangan menyingkat, jangan
+  mengarang. Nama yang tidak ada di model membuat perintahnya gagal di Revit,
+  dan kegagalan itu baru terlihat setelah orangnya menunggu.
 - Kalau permintaannya soal standar atau regulasi (SNI, PUIL, IEC, NEC) dan bukan
   perintah untuk model, jawab singkat bahwa itu ada di halaman "Standar
   Electrical", jangan panggil tool apa pun.
-- Nama ruangan harus persis seperti di gambar Revit, termasuk nomornya.
 - Satu pesan = paling banyak satu tool. Kalau pengguna meminta beberapa hal
   sekaligus, kerjakan yang pertama dan sebutkan sisanya akan menyusul.
 
 Jawabanmu dibaca di panel sempit: ringkas, tanpa basa-basi pembuka.`;
+
+/**
+ * Daftar nama yang benar-benar ada di model Revit yang sedang terbuka.
+ *
+ * Ada karena tanpa ini model bahasa mengarang nama tipe yang masuk akal —
+ * "downlight" alih-alih "ACT_E_Downlight: 18W" — dan perintahnya berangkat,
+ * antre, lalu gagal di Revit karena family itu tidak ada. Kegagalannya muncul
+ * paling jauh dari sebabnya: setelah orangnya menunggu, di baris hasil, dengan
+ * pesan tentang family yang tidak ditemukan.
+ *
+ * Website sudah memegang daftar ini dari `model_info`; yang belum ada adalah
+ * jalan dari sana ke prompt. Ini jalannya.
+ *
+ * Dipotong: satu model bisa punya ratusan tipe, dan seluruhnya di setiap
+ * giliran adalah biaya input yang dibayar berulang tanpa menambah ketepatan.
+ */
+export function withModelContext(
+  prompt: string,
+  context?: { familyTypes?: Record<string, string[]>; rooms?: string[] }
+): string {
+  if (!context) return prompt;
+
+  const lines: string[] = [];
+
+  for (const [category, names] of Object.entries(context.familyTypes ?? {})) {
+    if (names.length) lines.push(`- ${category}: ${names.slice(0, 40).join(" | ")}`);
+  }
+
+  const rooms = context.rooms?.slice(0, 200) ?? [];
+  if (rooms.length) lines.push(`- ruangan: ${rooms.join(" | ")}`);
+
+  if (!lines.length) return prompt;
+
+  return `${prompt}
+
+YANG ADA DI MODEL YANG SEDANG TERBUKA (pilih dari sini, jangan mengarang):
+${lines.join("\n")}`;
+}

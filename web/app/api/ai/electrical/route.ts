@@ -4,7 +4,7 @@ import { roleForProject } from "@/lib/access";
 import { rateLimit, tooManyRequests } from "@/lib/rateLimit";
 import { buildMessages } from "@/lib/chatHistory";
 import { anthropic, MODEL } from "@/lib/anthropic";
-import { ELECTRICAL_SYSTEM_PROMPT, toolsForRole } from "@/lib/aiTools";
+import { ELECTRICAL_SYSTEM_PROMPT, toolsForRole, withModelContext } from "@/lib/aiTools";
 import { COMMANDS_BY_NAME, canRun } from "@/lib/commands";
 import { CommandValidationError, buildPayload } from "@/lib/queue";
 
@@ -35,7 +35,16 @@ export async function POST(req: Request) {
 
   // `history` sengaja `unknown`: bentuknya ditentukan client, jadi buildMessages
   // yang memeriksanya, bukan anotasi tipe yang cuma berlaku saat compile.
-  let body: { message?: string; projectId?: string; history?: unknown };
+  let body: {
+    message?: string;
+    projectId?: string;
+    history?: unknown;
+    // Nama tipe family dan ruangan dari model Revit yang sedang terbuka.
+    // Datang dari client karena hanya add-in yang tahu isi model, dan
+    // jawabannya sudah ada di halaman itu — mengambilnya ulang di server
+    // berarti satu putaran antrean lagi ke Revit untuk data yang sama.
+    context?: { familyTypes?: Record<string, string[]>; rooms?: string[] };
+  };
   try {
     body = await req.json();
   } catch {
@@ -75,7 +84,7 @@ export async function POST(req: Request) {
     response = await anthropic.messages.create({
       model: MODEL,
       max_tokens: 2048,
-      system: ELECTRICAL_SYSTEM_PROMPT,
+      system: withModelContext(ELECTRICAL_SYSTEM_PROMPT, body.context),
       tools: toolsForRole(role) as never,
       messages: buildMessages(body.history, message),
     });

@@ -1,6 +1,6 @@
 {
   "nav": {
-    "electrical": "Electrical AI",
+    "electrical": "Revit Command Center",
     "standard": "Electrical Standards",
     "exportImport": "Export",
     "history": "History",
@@ -8,7 +8,7 @@
     "import": "Import"
   },
   "electrical": {
-    "title": "Electrical AI Mode"
+    "title": "Revit Command Center"
   },
   "standard": {
     "title": "Electrical Standards & Codes",
