@@ -13,7 +13,11 @@
  * upgrade Next berikutnya tidak bisa merusaknya.
  */
 
-const VERSION = "v2";
+// Dinaikkan bersama setiap perubahan pada berkas statis yang disimpan di sini.
+// manifest.json termasuk yang disimpan, dan nama aplikasinya ada di dalamnya —
+// tanpa versi baru, telepon yang sudah memasang aplikasi ini akan terus
+// menyebutnya dengan nama yang lama.
+const VERSION = "v3";
 const STATIC_CACHE = `electrical-ai-static-${VERSION}`;
 
 /** Aset ber-hash dari Next dan ikon PWA: isinya tidak pernah berubah per URL. */

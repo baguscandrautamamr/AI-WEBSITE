@@ -110,7 +110,9 @@
     "haveAccount": "Already have an account? Sign in",
     "checkEmail": "Account created. Check your email to confirm, then sign in.",
     "accessNote": "A new account has no project access yet. An admin must grant it before you can send commands to Revit.",
-    "notConfigured": "Supabase is not configured on this deployment. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel, then redeploy. Check /api/health to confirm."
+    "notConfigured": "Supabase is not configured on this deployment. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel, then redeploy. Check /api/health to confirm.",
+    "logout": "Sign out",
+    "loggingOut": "Signing out…"
   },
   "common": {
     "loading": "Loading…"
@@ -152,16 +154,14 @@
     "modelRetry": "Try again"
   },
   "chat": {
-    "title": "Ask in plain language",
-    "subtitle": "Say what you want. The proposed command fills the form below — you press send.",
     "placeholder": "e.g. place 6 lights in Meeting 1 at 3 m",
     "send": "Ask",
     "sending": "Drafting…",
     "thinking": "Drafting the command…",
-    "checkForm": "Filled into the form below. Check it, then press Send to Revit.",
     "failed": "Could not reach the assistant",
     "done": "finished in Revit.",
-    "failedRun": "failed in Revit"
+    "failedRun": "failed in Revit",
+    "sentToRevit": "Sent to Revit. The result appears below."
   },
   "importExcel": {
     "title": "Import Excel",

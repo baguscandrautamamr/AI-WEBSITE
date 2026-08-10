@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { useI18n } from "@/lib/i18n";
+import { APP_NAME } from "@/lib/brand";
 
 type Mode = "signin" | "signup";
 
@@ -96,9 +97,17 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center p-6">
       <form onSubmit={handleSubmit} className="glass-panel w-full max-w-sm p-8 space-y-4">
-        <h1 className="text-xl font-medium">
-          {mode === "signin" ? t("auth.login") : t("auth.register")}
-        </h1>
+        {/* Nama sistemnya lebih dulu, baru "Masuk".
+            Ini satu-satunya halaman yang dilihat orang sebelum mereka masuk,
+            dan sebelumnya ia tidak menyebutkan sedang masuk ke apa — sebuah
+            kotak sandi tanpa nama, yang pada tautan yang dikirim lewat pesan
+            terlihat persis seperti halaman yang tidak pantas dipercaya. */}
+        <div>
+          <p className="text-xs uppercase tracking-wide text-text-secondary">{APP_NAME}</p>
+          <h1 className="text-xl font-medium">
+            {mode === "signin" ? t("auth.login") : t("auth.register")}
+          </h1>
+        </div>
 
         {/* Terlihat sebelum tombol ditekan: tanpa ini, deploy yang env var-nya
             belum terpasang hanya memberi kegagalan tanpa sebab saat submit. */}

@@ -337,9 +337,8 @@ export default function CommandRunner({
         return;
       }
 
-      // Usulan mengisi form, bukan langsung berangkat. Yang terlihat di form
-      // itulah yang akan dikirim, jadi tidak ada selisih antara yang disetujui
-      // dan yang dijalankan.
+      // Form tetap diisi, tapi ia bukan lagi gerbang yang harus dilewati: ia
+      // jadi tempat memperbaiki satu angka lalu menjalankan ulang.
       const spec = COMMANDS_BY_NAME[body.command];
       if (spec) {
         setSelected(spec);
@@ -347,12 +346,46 @@ export default function CommandRunner({
         setIssues([]);
       }
 
+      const incomplete = Boolean(body.issues?.length);
+
       addChat({
         role: "proposal",
         text: body.note ?? "",
         commandText: body.commandText ?? `/${body.command}`,
         issues: body.issues,
       });
+
+      // Langsung berangkat, seperti bot Telegram.
+      //
+      // Satu kalimat, satu perintah, hasilnya balik ke utas yang sama.
+      // Sebelumnya usulannya berhenti di form dan orangnya masih harus menekan
+      // kirim di sana — dua langkah untuk satu maksud, dan di telepon langkah
+      // kedua itu berada di luar layar, jadi yang terasa adalah chat yang
+      // mengerti permintaan lalu tidak melakukan apa-apa.
+      //
+      // Yang kurang lengkap tidak dikirim: daftar `issues` di gelembungnya
+      // menyebutkan apa yang belum disebut, dan menebak sisanya berarti
+      // menempatkan perangkat dengan angka yang tidak pernah diminta siapa pun.
+      if (!spec || incomplete) return;
+
+      // Satu pertanyaan untuk yang tidak bisa dibatalkan. Kecepatan tidak
+      // sebanding dengan menghapus perangkat di model orang lain karena satu
+      // kalimat yang salah tafsir.
+      if (spec.confirm && !window.confirm(t("command.confirm"))) return;
+
+      try {
+        const queued = await enqueue(spec.name, body.values ?? {});
+        setRuns((prev) => [
+          { id: queued.id, commandText: queued.commandText, status: "pending" },
+          ...prev,
+        ]);
+      } catch (err) {
+        const withIssues = err as Error & { issues?: string[] };
+        addChat({
+          role: "assistant",
+          text: withIssues.issues?.join(" ") ?? withIssues.message ?? t("command.sendFailed"),
+        });
+      }
     } catch (err) {
       addChat({ role: "assistant", text: err instanceof Error ? err.message : String(err) });
     } finally {

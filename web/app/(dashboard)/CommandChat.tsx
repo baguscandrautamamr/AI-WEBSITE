@@ -21,11 +21,16 @@ export type ChatEntry = ChatBody & { id: number };
 /**
  * Sisi percakapan dari mode Electrical.
  *
- * Yang diusulkan asisten tidak langsung berjalan: usulannya mengisi form di
- * bawah, dan tombol kirim di form itu yang mengantre ke Revit. Chat memberi
- * kecepatan, form memberi kesempatan meninjau — perintah yang menempatkan atau
- * menghapus perangkat di model orang lain tidak boleh berangkat dari satu
- * kalimat yang salah tafsir.
+ * Perintah yang tersusun langsung berangkat ke Revit, seperti pada bot
+ * Telegram: satu kalimat, satu perintah, hasilnya balik ke utas yang sama.
+ * Sebelumnya usulannya hanya mengisi form di bawah dan orangnya masih harus
+ * menekan kirim di sana — dua langkah untuk satu maksud, dan pada telepon
+ * langkah kedua itu berada di luar layar.
+ *
+ * Yang tetap ditahan hanyalah perintah yang mengubah model tanpa bisa
+ * dibatalkan; untuk itu satu pertanyaan muncul dulu. Form di bawah tetap terisi
+ * — ia sekarang jadi tempat memperbaiki satu angka lalu menjalankan ulang, bukan
+ * gerbang yang harus dilewati.
  */
 export default function CommandChat({
   entries,
@@ -55,11 +60,6 @@ export default function CommandChat({
 
   return (
     <div className="glass-panel p-6 space-y-3">
-      <div>
-        <h2 className="font-medium">{t("chat.title")}</h2>
-        <p className="text-sm opacity-70">{t("chat.subtitle")}</p>
-      </div>
-
       {entries.length > 0 && (
         <div className="max-h-80 space-y-2 overflow-auto pr-1">
           {entries.map((e) => {
@@ -86,6 +86,10 @@ export default function CommandChat({
               <div key={e.id} className="glass-input max-w-[92%] space-y-2 rounded-2xl text-sm">
                 {e.text && <Markdown>{e.text}</Markdown>}
                 <code className="block break-all text-xs opacity-80">{e.commandText}</code>
+                {/* Ada yang kurang berarti perintahnya TIDAK berangkat, dan
+                    daftar ini yang menjelaskan apa yang perlu disebutkan. Kalau
+                    tidak ada, ia sudah dikirim — hasilnya menyusul di gelembung
+                    berikutnya, jadi di sini cukup dikatakan ia sudah jalan. */}
                 {e.issues?.length ? (
                   <ul className="list-disc space-y-0.5 pl-5 text-xs text-amber-600 dark:text-amber-400">
                     {e.issues.map((i) => (
@@ -93,7 +97,7 @@ export default function CommandChat({
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-xs opacity-60">{t("chat.checkForm")}</p>
+                  <p className="text-xs opacity-60">{t("chat.sentToRevit")}</p>
                 )}
               </div>
             );
