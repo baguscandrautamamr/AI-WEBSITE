@@ -56,6 +56,19 @@ const SEARCH_LIMIT = 20;
 /** Panjang minimal kata kunci — mencegah "a" dipakai sebagai dump terselubung. */
 const SEARCH_MIN_CHARS = 2;
 
+/** Berapa akun menunggu yang ditampilkan sekaligus. */
+const PENDING_LIMIT = 50;
+
+/**
+ * Seberapa jauh ke belakang akun menunggu dicari.
+ *
+ * Dibatasi supaya query-nya tidak tumbuh bersama tabel `users`. Konsekuensinya
+ * jujur: akun yang mendaftar sangat lama dan tidak pernah diberi akses bisa
+ * lewat dari daftar ini kalau sudah ada banyak pendaftar yang lebih baru — ia
+ * masih bisa ditemukan lewat pencarian nama.
+ */
+const PENDING_SCAN = 200;
+
 /**
  * `%` dan `_` adalah wildcard di LIKE. Tanpa di-escape, kata kunci "%" cocok
  * dengan semua orang — persis dump yang sedang dihindari di sini.
@@ -71,12 +84,19 @@ function escapeLike(value: string) {
 // Data user butuh service role: RLS `users_self_read` sengaja menutup baris
 // orang lain, dan melonggarkannya akan membuka data itu untuk semua orang.
 //
-// Yang dikembalikan sengaja dibatasi dua lapis. Tanpa `q`, hanya orang yang
-// SUDAH ada di proyek si admin — itu yang perlu diberi nama di layar.
-// Menambahkan orang baru harus lewat pencarian bernama. Sebelumnya route ini
-// mengirimkan seluruh tabel `users`, sehingga admin satu proyek kecil ikut
-// menerima daftar setiap pengguna sistem, termasuk pengguna Telegram yang tidak
-// ada hubungannya dengan proyek mana pun miliknya.
+// Yang dikembalikan sengaja dibatasi. Sebelumnya route ini mengirimkan seluruh
+// tabel `users`, sehingga admin satu proyek kecil ikut menerima daftar setiap
+// pengguna sistem. Sekarang ada tiga kelompok, masing-masing dengan alasannya:
+//
+//   members — orang yang SUDAH ada di proyek si admin. Perlu, untuk menuliskan
+//             namanya di daftar anggota.
+//   pending — akun yang belum punya akses ke proyek mana pun. Ini justru yang
+//             harus terlihat tanpa dicari: orang yang baru mendaftar lewat
+//             email tidak bisa berbuat apa-apa sampai seorang admin memberinya
+//             akses, dan menyuruh admin menebak namanya lebih dulu membuat
+//             pendaftaran terasa seperti rusak.
+//   matches — hasil pencarian nama, untuk menambahkan orang yang sudah aktif di
+//             proyek lain.
 export async function GET(req: Request) {
   const guard = await requireAdmin();
   if ("error" in guard) return guard.error;
@@ -114,8 +134,34 @@ export async function GET(req: Request) {
     access: access ?? [],
     members: members ?? [],
     matches: matches ?? [],
+    pending: await pendingUsers(service),
     searchMinChars: SEARCH_MIN_CHARS,
   });
+}
+
+/**
+ * Akun yang belum punya baris di `user_project_access` sama sekali.
+ *
+ * Dihitung dengan dua query lalu disaring di sini, bukan dengan satu
+ * `not.in.(…)`: daftar id yang sudah punya akses ikut masuk ke URL pada bentuk
+ * itu, dan URL-nya tumbuh bersama jumlah pemberian akses sampai ditolak.
+ */
+async function pendingUsers(service: SupabaseClient) {
+  const [{ data: granted }, { data: recent }] = await Promise.all([
+    service.from("user_project_access").select("user_id"),
+    service
+      .from("users")
+      .select(`${USER_COLUMNS}, created_at`)
+      .eq("is_active", true)
+      .order("created_at", { ascending: false })
+      .limit(PENDING_SCAN),
+  ]);
+
+  const hasAccess = new Set((granted ?? []).map((row) => row.user_id as string));
+
+  return (recent ?? [])
+    .filter((user) => !hasAccess.has(user.id as string))
+    .slice(0, PENDING_LIMIT);
 }
 
 // POST — beri atau ubah peran seseorang di satu proyek.

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { useProjects } from "@/lib/useProjects";
 import { canRun, COMMANDS_BY_NAME } from "@/lib/commands";
+import ResultView from "./ResultView";
 
 type Phase = "idle" | "uploading" | "queued" | "done" | "failed";
 
@@ -155,9 +156,9 @@ export default function ImportExcel() {
           <p className="text-sm text-emerald-600">
             {dryRun ? t("importExcel.doneDry") : t("importExcel.done")}
           </p>
-          <pre className="glass-input max-h-64 overflow-auto text-xs">
-            {JSON.stringify(result, null, 2)}
-          </pre>
+          <div className="glass-input max-h-64 overflow-auto text-xs">
+            <ResultView value={result} />
+          </div>
         </div>
       )}
 
