@@ -142,6 +142,11 @@ pre {
   width: 100%;
   height: auto;
   max-width: 100%;
+  /* Diperkecil agar muat, bukan dipotong. Sebuah diagram yang lebih tinggi dari
+     layar memaksa orang menggulir untuk melihat separuhnya, dan diagram yang
+     hanya terlihat separuh tidak menjelaskan apa pun. */
+  max-height: 70vh;
+  object-fit: contain;
 }
 
 /* Titik-titik "sedang mengetik" di chat standar.

@@ -100,7 +100,10 @@ export default function HistoryPage() {
         <p className="text-sm text-text-secondary">{t("history.subtitle")}</p>
       </div>
 
-      <div className="space-y-2">
+      {/* Lima puluh baris riwayat, masing-masing bisa punya rincian yang
+          dibuka — digulir di dalam kotaknya sendiri, supaya judul halaman dan
+          keterangannya tetap terlihat. */}
+      <div className="max-h-[70vh] space-y-2 overflow-y-auto pr-1">
         {rows.map((r) => {
           const links = fileLinks(r.result_json);
           const failed = r.status === "failed" || r.status === "cancelled";
