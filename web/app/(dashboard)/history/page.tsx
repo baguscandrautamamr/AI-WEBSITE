@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useI18n } from "@/lib/i18n";
 import ResultView from "../ResultView";
+import TelegramLink from "./TelegramLink";
 
 type QueueStatus = "pending" | "processing" | "completed" | "failed" | "cancelled";
 
@@ -91,7 +92,6 @@ export default function HistoryPage() {
 
   if (loading) return <p className="opacity-60">{t("common.loading")}</p>;
   if (error) return <p className="text-sm text-red-500">{error}</p>;
-  if (rows.length === 0) return <p className="text-text-secondary">{t("history.empty")}</p>;
 
   return (
     <div className="glass-panel max-w-3xl p-6 space-y-4">
@@ -99,6 +99,13 @@ export default function HistoryPage() {
         <h1 className="text-lg font-medium">{t("history.title")}</h1>
         <p className="text-sm text-text-secondary">{t("history.subtitle")}</p>
       </div>
+
+      {/* Di atas daftarnya, dan ditampilkan juga saat riwayatnya masih kosong —
+          justru akun yang belum pernah mengirim apa pun yang paling untung
+          menautkannya sekarang, sebelum perintah pertamanya berjalan. */}
+      <TelegramLink />
+
+      {rows.length === 0 && <p className="text-text-secondary">{t("history.empty")}</p>}
 
       {/* Lima puluh baris riwayat, masing-masing bisa punya rincian yang
           dibuka — digulir di dalam kotaknya sendiri, supaya judul halaman dan

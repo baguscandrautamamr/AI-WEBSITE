@@ -221,5 +221,23 @@
     "export_cad.no_setup": "Exported with no CAD export setup, so Revit defaults were used — layers and line weights are unlikely to match the office standard.",
     "export.upload_failed": "Cloudinary credentials are present but every upload failed, so the file stayed on the Revit PC. Usually the keys were rotated and config.json still holds the old ones, or the network blocked it. Check the logs in %APPDATA%\\RevitCommandCenter\\logs.",
     "export.upload_undeliverable": "The file uploaded, but Cloudinary refused it when the link was opened. Uploaded and downloadable are two different permissions: a new Cloudinary account does not allow PDF delivery by default. Open Cloudinary → Settings → Security → Restricted media types, lift the restriction on PDF, then open the link again — files uploaded earlier become downloadable too, with nothing to reprint."
+  },
+  "notify": {
+    "title": "Telegram notifications",
+    "on": "on",
+    "off": "not linked",
+    "what": "Link this account to your Telegram chat and every command you send from the website reports its result there, export files included. Useful for long commands: send a 40-sheet print, close the tab, the result follows you to your phone.",
+    "placeholder": "Your Telegram id, e.g. 123456789",
+    "link": "Link",
+    "linking": "Linking…",
+    "linked": "Linked. Check your chat — the confirmation is already there.",
+    "unlink": "Unlink",
+    "howToFind": "The number, not the @username: send /start to this bot, or ask @userinfobot. Only your own id is used, and it can be removed at any time.",
+    "badId": "That is not a Telegram id. It needs the number, not an @username — one number only.",
+    "taken": "Another account already uses that id. If it is really yours, unlink it there first.",
+    "needStart": "The bot cannot message you yet. Open its chat in Telegram, send /start, then link again.",
+    "notFound": "Telegram found no chat with that id. Check the digits again.",
+    "unreachable": "Telegram could not be reached from the server. Try again shortly.",
+    "failed": "Could not save the notification setting."
   }
 }
