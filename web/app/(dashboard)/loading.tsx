@@ -9,7 +9,7 @@
 export default function DashboardLoading() {
   return (
     <div className="max-w-4xl space-y-4" aria-busy="true">
-      <div className="glass-panel space-y-4 p-6">
+      <div className="glass-panel space-y-4 p-4 sm:p-6">
         <div className="h-5 w-48 animate-pulse rounded-lg bg-black/10 dark:bg-white/10" />
         <div className="flex flex-wrap gap-2">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -20,7 +20,7 @@ export default function DashboardLoading() {
           ))}
         </div>
       </div>
-      <div className="glass-panel space-y-3 p-6">
+      <div className="glass-panel space-y-3 p-4 sm:p-6">
         <div className="h-4 w-64 animate-pulse rounded-lg bg-black/10 dark:bg-white/10" />
         <div className="h-4 w-40 animate-pulse rounded-lg bg-black/5 dark:bg-white/5" />
       </div>

@@ -46,3 +46,11 @@ supabase/.temp/
 # OS
 .DS_Store
 Thumbs.db
+
+# Ditulis ulang oleh `next dev` setiap kali ia jalan (lihat
+# node_modules/next/dist/server/lib/generate-agent-files.js). Isinya petunjuk
+# untuk agen AI, bukan sumber aplikasi ini — dan tanpa baris ini, satu kali
+# `npm run dev` meninggalkan dua berkas yang tidak pernah diminta siapa pun di
+# `git status`.
+web/AGENTS.md
+web/CLAUDE.md

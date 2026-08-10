@@ -13,8 +13,26 @@ import Markdown from "./Markdown";
  */
 export type ChatBody =
   | { role: "user"; text: string }
-  | { role: "assistant"; text: string }
-  | { role: "proposal"; text: string; commandText: string; issues?: string[] };
+  /** `nothingSent` = jawaban ini menyebut sebuah perintah, tapi tidak ada yang dikirim. */
+  | { role: "assistant"; text: string; nothingSent?: boolean }
+  | {
+      role: "proposal";
+      text: string;
+      commandText: string;
+      command?: string;
+      issues?: string[];
+      /**
+       * Apa yang SUDAH benar-benar terjadi pada perintah ini.
+       *
+       * Dulu gelembung ini selalu berbunyi "sudah dikirim ke Revit" begitu ia
+       * muncul — sebelum baris antreannya ada, dan tanpa pernah dikoreksi kalau
+       * penulisannya gagal. Sebuah kalimat yang menyatakan sesuatu yang belum
+       * terjadi adalah kalimat yang kadang berbohong, dan yang membacanya lalu
+       * menunggu di depan Revit yang tidak akan pernah menerima apa pun.
+       */
+      state?: "sending" | "queued" | "failed" | "held";
+      error?: string;
+    };
 
 export type ChatEntry = ChatBody & { id: number };
 
@@ -59,7 +77,7 @@ export default function CommandChat({
   }
 
   return (
-    <div className="glass-panel p-6 space-y-3">
+    <div className="glass-panel space-y-3 p-4 sm:p-6">
       {entries.length > 0 && (
         <div className="max-h-80 space-y-2 overflow-auto pr-1">
           {entries.map((e) => {
@@ -76,8 +94,18 @@ export default function CommandChat({
 
             if (e.role === "assistant") {
               return (
-                <div key={e.id} className="glass-input max-w-[92%] rounded-2xl text-sm">
+                <div key={e.id} className="glass-input max-w-[92%] space-y-1 rounded-2xl text-sm">
                   <Markdown>{e.text}</Markdown>
+                  {/* Jawaban yang menuliskan sebuah perintah tanpa ada yang
+                      dikirim. Dikatakan di sini, bukan dibiarkan — kalimat model
+                      yang berbunyi "sudah masuk antrean" tanpa baris antrean
+                      mana pun adalah satu-satunya bentuk kegagalan di panel ini
+                      yang terlihat persis seperti keberhasilan. */}
+                  {e.nothingSent && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      {t("chat.nothingSent")}
+                    </p>
+                  )}
                 </div>
               );
             }
@@ -87,17 +115,26 @@ export default function CommandChat({
                 {e.text && <Markdown>{e.text}</Markdown>}
                 <code className="block break-all text-xs opacity-80">{e.commandText}</code>
                 {/* Ada yang kurang berarti perintahnya TIDAK berangkat, dan
-                    daftar ini yang menjelaskan apa yang perlu disebutkan. Kalau
-                    tidak ada, ia sudah dikirim — hasilnya menyusul di gelembung
-                    berikutnya, jadi di sini cukup dikatakan ia sudah jalan. */}
+                    daftar ini yang menjelaskan apa yang perlu disebutkan. */}
                 {e.issues?.length ? (
                   <ul className="list-disc space-y-0.5 pl-5 text-xs text-amber-600 dark:text-amber-400">
                     {e.issues.map((i) => (
                       <li key={i}>{i}</li>
                     ))}
                   </ul>
-                ) : (
+                ) : e.state === "failed" ? (
+                  <p className="text-xs text-red-500">
+                    {t("chat.notSent")}
+                    {e.error ? ` — ${e.error}` : ""}
+                  </p>
+                ) : e.state === "held" ? (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">{t("chat.held")}</p>
+                ) : e.state === "queued" ? (
                   <p className="text-xs opacity-60">{t("chat.sentToRevit")}</p>
+                ) : (
+                  // Masih dalam perjalanan ke commands_queue. Belum boleh disebut
+                  // terkirim, karena penulisannya masih bisa gagal.
+                  <p className="text-xs opacity-60">{t("chat.sendingToRevit")}</p>
                 )}
               </div>
             );

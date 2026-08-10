@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { CommandValidationError, enqueueCommand } from "@/lib/queue";
 import { roleForProject } from "@/lib/access";
 
@@ -75,4 +75,69 @@ export async function GET(req: Request) {
   if (!data) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   return NextResponse.json(data);
+}
+
+/**
+ * PATCH ?id=<uuid> — membatalkan perintah sendiri yang masih menunggu.
+ *
+ * Sebuah baris `pending` yang tidak pernah diambil add-in — Revit tertutup,
+ * add-in belum dipasang, atau perintahnya memang salah kirim — tidak punya jalan
+ * keluar apa pun dari website sebelum ini. Ia tetap di depan antrean, dan begitu
+ * Revit dibuka ia langsung dijalankan: perintah dari sejam lalu, ke model yang
+ * sudah berubah, tanpa ada yang memintanya lagi.
+ *
+ * Hanya milik sendiri, dan hanya yang masih `pending`. Yang sudah `processing`
+ * berarti Revit sedang mengerjakannya — membatalkannya di database tidak
+ * menghentikan apa pun di sana, hanya membuat statusnya berbohong.
+ */
+export async function PATCH(req: Request) {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const id = new URL(req.url).searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "parameter `id` wajib" }, { status: 400 });
+
+  // Dibaca dengan klien user, jadi RLS yang menentukan barisnya boleh dilihat
+  // atau tidak — bukan pemeriksaan di sini yang bisa ketinggalan.
+  const { data: row, error } = await supabase
+    .from("commands_queue")
+    .select("id, status, user_id")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  if (row.user_id !== user.id) {
+    return NextResponse.json(
+      { error: "hanya perintah yang kamu kirim sendiri yang bisa dibatalkan" },
+      { status: 403 }
+    );
+  }
+  if (row.status !== "pending") {
+    return NextResponse.json(
+      { error: `perintah ini sudah ${row.status} — tidak bisa dibatalkan lagi` },
+      { status: 409 }
+    );
+  }
+
+  // Service client untuk menulisnya: policy update pada commands_queue milik
+  // add-in (ia yang menandai processing/completed), dan tidak ada jaminan user
+  // web punya izin update di sana. Batasnya sudah ditegakkan di atas.
+  const { error: updateError } = await createServiceClient()
+    .from("commands_queue")
+    .update({ status: "cancelled", error_message: "dibatalkan dari website" })
+    .eq("id", id)
+    // Sekali lagi di WHERE, bukan hanya di pemeriksaan di atas: antara membaca
+    // dan menulis, add-in bisa mengambil barisnya.
+    .eq("status", "pending");
+
+  if (updateError) {
+    console.error("[api/commands] cancel failed", updateError);
+    return NextResponse.json({ error: "gagal membatalkan perintah" }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, id, status: "cancelled" });
 }

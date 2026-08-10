@@ -46,6 +46,8 @@ export interface ChatBubble {
   role: "user" | "assistant" | "proposal";
   text: string;
   commandText?: string;
+  /** Nama tool yang dipanggil, mis. `place_lighting`. */
+  command?: string;
   issues?: string[];
 }
 
@@ -69,21 +71,40 @@ export interface ChatBubble {
  * sini: bahwa perintahnya berhasil. Itu belum diketahui siapa pun pada saat ini,
  * dan hasil sebenarnya masuk sebagai giliran asisten tersendiri begitu Revit
  * menjawab.
+ *
+ * BENTUKNYA penting, bukan cuma isinya. Catatan ini dulu berupa baris perintah
+ * telanjang diikuti "Perintah ini dikirim ke antrean Revit." — persis rupa
+ * sebuah jawaban asisten. Model lalu meniru bentuk yang ia lihat sebagai
+ * jawabannya sendiri: pada giliran berikutnya ia MENULIS baris perintah itu
+ * sebagai teks, lengkap dengan kalimat "dikirim ke antrean Revit", dan tidak
+ * memanggil tool apa pun. Tidak ada baris yang masuk commands_queue, tidak ada
+ * apa pun di Revit, sementara chat-nya berbunyi seperti sudah berangkat — dan
+ * satu-satunya cara mengetahuinya adalah dari model Revit yang tidak berubah.
+ *
+ * Karena itu catatan ini sekarang menyebut dirinya catatan sistem, menyebut
+ * bahwa yang memasukkan ke antrean adalah SISTEM setelah tool dipanggil, dan
+ * mengatakan terus terang bahwa menulis teks tidak mengirim apa-apa.
  */
 export function turnsFromChat(entries: readonly ChatBubble[]): Turn[] {
   return entries.map((entry) => {
     if (entry.role === "user") return { role: "user" as const, content: entry.text };
     if (entry.role === "assistant") return { role: "assistant" as const, content: entry.text };
 
-    const dispatched = entry.issues?.length
-      ? `Perintah ini TIDAK dikirim karena masih ada yang kurang: ${entry.issues.join("; ")}`
-      : "Perintah ini dikirim ke antrean Revit. Hasilnya belum tentu ada di giliran ini.";
+    const tool = entry.command ?? nameFromCommandText(entry.commandText) ?? "tool";
+    const asked = entry.commandText ? ` Argumennya: ${entry.commandText}` : "";
 
-    return {
-      role: "assistant" as const,
-      content: `${entry.commandText ?? ""}\n${dispatched}`.trim(),
-    };
+    const dispatched = entry.issues?.length
+      ? `[CATATAN SISTEM] Kamu memanggil tool ${tool}, tapi perintahnya TIDAK dikirim karena masih ada yang kurang: ${entry.issues.join("; ")}.${asked} Tanyakan yang kurang itu, lalu panggil tool-nya lagi.`
+      : `[CATATAN SISTEM] Kamu memanggil tool ${tool}; sistem yang memasukkannya ke antrean Revit.${asked} Hasilnya belum tentu ada di giliran ini. Catatan ini bukan contoh cara menjawab — menuliskan baris perintah sebagai teks tidak mengirim apa pun ke Revit.`;
+
+    return { role: "assistant" as const, content: dispatched };
   });
+}
+
+/** `/place_lighting "LOUNGE 5" count=10` → `place_lighting`. */
+function nameFromCommandText(commandText?: string): string | null {
+  const m = /^\/([a-z_]+)/.exec((commandText ?? "").trim());
+  return m ? m[1] : null;
 }
 
 export function buildMessages(rawHistory: unknown, message: string): Turn[] {

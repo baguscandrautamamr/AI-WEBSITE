@@ -94,7 +94,7 @@ export default function HistoryPage() {
   if (error) return <p className="text-sm text-red-500">{error}</p>;
 
   return (
-    <div className="glass-panel max-w-3xl p-6 space-y-4">
+    <div className="glass-panel max-w-3xl space-y-4 p-4 sm:p-6">
       <div>
         <h1 className="text-lg font-medium">{t("history.title")}</h1>
         <p className="text-sm text-text-secondary">{t("history.subtitle")}</p>

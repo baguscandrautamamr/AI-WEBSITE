@@ -6,6 +6,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useI18n } from "@/lib/i18n";
 import { createClient } from "@/lib/supabase/client";
+import { APP_NAME } from "@/lib/brand";
+import BrandMark from "@/app/BrandMark";
 import type { Role } from "@/lib/commands";
 
 export default function DashboardNav({ role }: { role: Role }) {
@@ -66,17 +68,28 @@ export default function DashboardNav({ role }: { role: Role }) {
     // pada mode kolom — `w-56` yang berlaku di semua ukuran adalah yang membuat
     // layar telepon kehabisan tempat.
     <nav
-      className="glass-panel m-3 flex shrink-0 gap-2 overflow-x-auto p-3
-                 md:m-4 md:h-fit md:w-56 md:flex-col md:overflow-visible md:p-4"
+      className="glass-panel m-2.5 flex shrink-0 items-center gap-1.5 overflow-x-auto p-2
+                 md:m-4 md:h-fit md:w-56 md:flex-col md:items-stretch md:gap-2
+                 md:overflow-visible md:p-4"
     >
+      {/* Tandanya hanya di layar lebar, di atas daftar menu. Di telepon baris ini
+          adalah satu-satunya tempat menu bisa muat, dan sebuah logo di situ
+          memakan ruang yang dibutuhkan nama halaman. */}
+      <div className="mb-1 hidden items-center gap-2 px-1 md:flex">
+        <BrandMark size={22} />
+        <span className="truncate text-xs font-medium text-text-secondary">{APP_NAME}</span>
+      </div>
+
       {items
         .filter((i) => i.roles.includes(role))
         .map((item) => (
           <Link
             key={item.href}
             href={item.href}
-            className={`whitespace-nowrap rounded-xl px-3 py-2 text-sm ${
-              pathname === item.href ? "bg-accent text-white" : "hover:bg-black/5 dark:hover:bg-white/5"
+            className={`shrink-0 whitespace-nowrap rounded-xl px-3 py-1.5 text-sm transition md:py-2 ${
+              pathname === item.href
+                ? "bg-accent text-white"
+                : "text-text-secondary hover:bg-black/5 hover:text-[var(--text-primary)] dark:hover:bg-white/5"
             }`}
           >
             {item.label}
@@ -86,17 +99,17 @@ export default function DashboardNav({ role }: { role: Role }) {
       {/* Ikut mengalir di baris menu saat di HP, dan turun ke bawah daftar saat
           jadi kolom. ms-auto mendorongnya ke ujung kanan baris supaya tidak
           terselip di antara menu. */}
-      <div className="ms-auto flex shrink-0 items-center gap-2 text-xs text-text-secondary md:ms-0 md:mt-4">
+      <div className="ms-auto flex shrink-0 items-center gap-1.5 text-xs text-text-secondary md:ms-0 md:mt-4">
         <button
           onClick={() => setLocale(locale === "id" ? "en" : "id")}
-          className="glass-input px-2 py-1"
+          className="glass-input px-2 py-1 text-xs"
           aria-label="Bahasa"
         >
           {locale.toUpperCase()}
         </button>
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          className="glass-input px-2 py-1"
+          className="glass-input px-2 py-1 text-xs"
           aria-label="Tema"
         >
           {theme === "dark" ? "🌙" : "☀️"}
@@ -104,7 +117,7 @@ export default function DashboardNav({ role }: { role: Role }) {
         <button
           onClick={signOut}
           disabled={leaving}
-          className="glass-input px-2 py-1 disabled:opacity-40"
+          className="glass-input px-2 py-1 text-xs disabled:opacity-40"
           title={t("auth.logout")}
         >
           {leaving ? t("auth.loggingOut") : t("auth.logout")}

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { useI18n } from "@/lib/i18n";
 import { APP_NAME } from "@/lib/brand";
+import BrandMark from "@/app/BrandMark";
 
 type Mode = "signin" | "signup";
 
@@ -95,18 +96,30 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-6">
-      <form onSubmit={handleSubmit} className="glass-panel w-full max-w-sm p-8 space-y-4">
+    <main className="flex min-h-screen items-center justify-center p-5">
+      {/* Satu kolom sempit, ditengahkan.
+          Ini satu-satunya halaman yang dilihat orang sebelum masuk, dan yang
+          dibutuhkannya cuma tiga hal: nama sistemnya, dua kolom, satu tombol. */}
+      <form
+        onSubmit={handleSubmit}
+        className="glass-panel w-full max-w-[21rem] space-y-4 p-6 sm:p-7"
+      >
         {/* Nama sistemnya lebih dulu, baru "Masuk".
-            Ini satu-satunya halaman yang dilihat orang sebelum mereka masuk,
-            dan sebelumnya ia tidak menyebutkan sedang masuk ke apa — sebuah
+            Sebelumnya halaman ini tidak menyebutkan sedang masuk ke apa — sebuah
             kotak sandi tanpa nama, yang pada tautan yang dikirim lewat pesan
-            terlihat persis seperti halaman yang tidak pantas dipercaya. */}
-        <div>
-          <p className="text-xs uppercase tracking-wide text-text-secondary">{APP_NAME}</p>
-          <h1 className="text-xl font-medium">
-            {mode === "signin" ? t("auth.login") : t("auth.register")}
-          </h1>
+            terlihat persis seperti halaman yang tidak pantas dipercaya.
+
+            Tandanya kecil, 34 piksel, sebaris dengan namanya. Logo sebesar
+            separuh kartu tidak menambah satu keterangan pun; yang perlu dikenali
+            di layar sekecil telepon adalah namanya. */}
+        <div className="flex items-center gap-2.5">
+          <BrandMark size={34} />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium leading-tight">{APP_NAME}</p>
+            <p className="text-xs text-text-secondary">
+              {mode === "signin" ? t("auth.login") : t("auth.register")}
+            </p>
+          </div>
         </div>
 
         {/* Terlihat sebelum tombol ditekan: tanpa ini, deploy yang env var-nya
@@ -115,47 +128,49 @@ export default function LoginPage() {
           <p className="text-sm text-red-500">{t("auth.notConfigured")}</p>
         )}
 
-        {mode === "signup" && (
+        <div className="space-y-2">
+          {mode === "signup" && (
+            <input
+              className="glass-input w-full"
+              type="text"
+              placeholder={t("auth.fullName")}
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              autoComplete="name"
+            />
+          )}
+
           <input
             className="glass-input w-full"
-            type="text"
-            placeholder={t("auth.fullName")}
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            autoComplete="name"
+            type="email"
+            placeholder={t("auth.email")}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+            required
           />
-        )}
-
-        <input
-          className="glass-input w-full"
-          type="email"
-          placeholder={t("auth.email")}
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          autoComplete="email"
-          required
-        />
-        <input
-          className="glass-input w-full"
-          type="password"
-          placeholder={t("auth.password")}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete={mode === "signin" ? "current-password" : "new-password"}
-          minLength={6}
-          required
-        />
+          <input
+            className="glass-input w-full"
+            type="password"
+            placeholder={t("auth.password")}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete={mode === "signin" ? "current-password" : "new-password"}
+            minLength={6}
+            required
+          />
+        </div>
 
         {error && <p className="text-sm text-red-500">{error}</p>}
         {notice && <p className="text-sm text-emerald-600">{notice}</p>}
 
         <button type="submit" disabled={loading} className="btn-accent w-full">
-          {mode === "signin" ? t("auth.login") : t("auth.register")}
+          {loading ? t("common.loading") : mode === "signin" ? t("auth.login") : t("auth.register")}
         </button>
 
         <button
           type="button"
-          className="w-full text-center text-sm opacity-70 hover:opacity-100"
+          className="w-full text-center text-xs text-text-secondary hover:text-[var(--text-primary)]"
           onClick={() => {
             setMode(mode === "signin" ? "signup" : "signin");
             setError(null);
@@ -166,7 +181,7 @@ export default function LoginPage() {
         </button>
 
         {mode === "signup" && (
-          <p className="text-xs opacity-60">{t("auth.accessNote")}</p>
+          <p className="text-xs leading-relaxed text-text-secondary">{t("auth.accessNote")}</p>
         )}
       </form>
     </main>

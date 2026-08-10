@@ -106,7 +106,7 @@ export default function ImportTable() {
   const busy = phase === "uploading" || phase === "queued";
 
   return (
-    <div className="glass-panel max-w-4xl space-y-4 p-6">
+    <div className="glass-panel max-w-4xl space-y-4 p-4 sm:p-6">
       <div>
         <h2 className="font-medium">{t("importTable.title")}</h2>
         <p className="text-sm opacity-70">{t("importTable.subtitle")}</p>

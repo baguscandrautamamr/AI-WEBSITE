@@ -3,7 +3,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { useProjects, type ProjectAccess } from "@/lib/useProjects";
-import { COMMANDS, COMMANDS_BY_NAME, canRun, type CommandField, type CommandSpec } from "@/lib/commands";
+import {
+  COMMANDS,
+  COMMANDS_BY_NAME,
+  canRun,
+  familyCategoryOf,
+  modifyCategoryFor,
+  modifyValuesFrom,
+  type CommandField,
+  type CommandSpec,
+} from "@/lib/commands";
+import { familyTypesFor } from "@/lib/families";
+import { autoGrid, awkwardCount, flip, formatGrid, friendlierCounts, gridCount, parseGrid } from "@/lib/grid";
 import { turnsFromChat } from "@/lib/chatHistory";
 import CommandChat, { type ChatBody, type ChatEntry } from "./CommandChat";
 import ResultView from "./ResultView";
@@ -48,6 +59,33 @@ interface ActiveCommand {
 interface SheetOption {
   number: string;
   name: string;
+}
+
+/** Apa yang sudah terpasang di satu ruangan untuk satu kategori, menurut Revit. */
+interface RoomContents {
+  count: number;
+  marks: string[];
+}
+
+/**
+ * Pilihan yang harus diambil orangnya sebelum perintahnya berangkat: ruangannya
+ * ternyata sudah berisi.
+ */
+interface Crossroads {
+  room: string;
+  category: string;
+  found: RoomContents;
+  /**
+   * Kenapa "tata ulang" tidak bisa ditawarkan, kalau memang tidak bisa.
+   *
+   * `count` — belum ada jumlah maupun grid baru, jadi tidak ada yang bisa
+   * ditata ulang menjadi apa.
+   *
+   * `dryRun` — "Uji coba saja" dicentang. /modify_devices tidak punya kolom itu,
+   * jadi berpindah ke sana berarti centangnya hilang tanpa suara dan modelnya
+   * benar-benar berubah — kebalikan persis dari yang diminta orangnya.
+   */
+  modifyBlocked: null | "count" | "dryRun";
 }
 
 /** Jawaban /model_info: file yang sedang dibuka Revit dan setup di dalamnya. */
@@ -100,9 +138,33 @@ export default function CommandRunner({
    */
   const [active, setActive] = useState<ActiveCommand[]>([]);
 
+  /** Kapan add-in terakhir menyelesaikan sesuatu di proyek ini, dan apakah ia sedang sibuk. */
+  const [addin, setAddin] = useState<{ busy: boolean; lastSeen: string | null }>({
+    busy: false,
+    lastSeen: null,
+  });
+
   const [chatEntries, setChatEntries] = useState<ChatEntry[]>([]);
   const [chatBusy, setChatBusy] = useState(false);
   const chatId = useRef(0);
+
+  /**
+   * Isi ruangan yang sudah dibaca dari Revit, per ruangan dan kategori.
+   *
+   * Disimpan karena setiap pembacaan adalah satu baris antrean yang harus diambil
+   * add-in — bukan sesuatu yang boleh diulang setiap kali tombol kirim ditekan.
+   * Dikosongkan begitu ada perintah yang mengubah model, karena sejak itu ia tidak
+   * lagi benar.
+   */
+  const [roomContents, setRoomContents] = useState<Record<string, RoomContents>>({});
+  const [checkingRoom, setCheckingRoom] = useState(false);
+
+  /** Menunggu orangnya memilih: tata ulang, tambah di atasnya, atau batal. */
+  const [crossroads, setCrossroads] = useState<Crossroads | null>(null);
+  const crossroadsChoice = useRef<((choice: "modify" | "add" | "cancel") => void) | null>(null);
+
+  /** Kotak formulir, untuk dibawa ke depan mata saat sebuah command dipilih. */
+  const formBox = useRef<HTMLDivElement>(null);
 
   const [rooms, setRooms] = useState<string[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(false);
@@ -143,18 +205,38 @@ export default function CommandRunner({
     setModel(null);
   }, [project?.projectId]);
 
-  function addChat(entry: ChatBody) {
-    setChatEntries((prev) => [...prev, { ...entry, id: ++chatId.current }]);
+  /** Menambah satu gelembung dan mengembalikan id-nya, supaya ia bisa dikoreksi nanti. */
+  function addChat(entry: ChatBody): number {
+    const id = ++chatId.current;
+    setChatEntries((prev) => [...prev, { ...entry, id }]);
+    return id;
   }
 
-  function pick(spec: CommandSpec) {
+  /** Mengoreksi gelembung yang sudah tampil — dipakai saat hasil pengirimannya diketahui. */
+  function patchChat(id: number, patch: Partial<ChatEntry>) {
+    setChatEntries((prev) =>
+      prev.map((e) => (e.id === id ? ({ ...e, ...patch } as ChatEntry) : e))
+    );
+  }
+
+  function pick(spec: CommandSpec, initial?: Record<string, unknown>) {
     setSelected(spec);
     setIssues([]);
     // Default dari katalog dipakai sebagai nilai awal, jadi apa yang terlihat
     // di form sama dengan apa yang akan dijalankan add-in.
     const init: Record<string, unknown> = {};
     for (const f of spec.fields) if (f.default !== undefined) init[f.name] = f.default;
-    setValues(init);
+    setValues({ ...init, ...initial });
+
+    // Formulirnya dibawa ke depan mata.
+    //
+    // Di telepon, formulir ini berada di bawah panel percakapan dan di bawah
+    // deretan tombol — jadi menekan sebuah tombol perintah tidak mengubah apa pun
+    // yang terlihat di layar. Yang tampak: tombol yang tidak bekerja. Yang
+    // sebenarnya terjadi: formulirnya terbuka, satu layar penuh di bawah sana.
+    requestAnimationFrame(() => {
+      formBox.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 
   /** Mengantre satu command; dipakai tombol kirim dan pemuat daftar ruangan. */
@@ -189,6 +271,165 @@ export default function CommandRunner({
     return active.find((a) => !a.mine && a.commandText === commandText);
   }
 
+  /**
+   * Menjalankan satu perintah baca lalu menunggu jawabannya.
+   *
+   * Jawabannya datang lewat antrean yang sama seperti perintah lain, jadi ini
+   * hanya berhasil kalau Revit terbuka dan add-in berjalan — dan itu memang
+   * satu-satunya sumber yang tahu isi model. Dibatasi jumlah percobaan supaya
+   * Revit yang tertutup tidak membuat tombolnya berputar selamanya.
+   */
+  const runAndWait = useCallback(
+    async (commandName: string, vals: Record<string, unknown>, tries = 30) => {
+      const { id } = await enqueue(commandName, vals);
+
+      for (let i = 0; i < tries; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const res = await fetch(`/api/commands?id=${encodeURIComponent(id)}`);
+        if (!res.ok) continue;
+
+        const cmd = (await res.json()) as QueuedCommand;
+        if (!TERMINAL.includes(cmd.status)) continue;
+        if (cmd.status !== "completed") {
+          throw new Error(cmd.error_message ?? t("command.roomsFailed"));
+        }
+        return cmd.result_json;
+      }
+
+      throw new Error(t("command.roomsTimeout"));
+    },
+    [enqueue, t]
+  );
+
+  /** Daftar `{ id, label }` yang dikembalikan query dan list_sheets. */
+  function itemsOf(result: unknown) {
+    return (result as { items?: { id?: string; label?: string }[] })?.items ?? [];
+  }
+
+  function contentsKey(room: string, category: string) {
+    return `${category}|${room.trim().toLowerCase()}`;
+  }
+
+  /**
+   * Apa yang sudah terpasang di sebuah ruangan, dibaca dari Revit.
+   *
+   * Dipakai untuk menjawab satu pertanyaan yang sebelumnya tidak pernah
+   * ditanyakan sebelum perintah berangkat: apakah ruangan ini sudah berisi?
+   * "Pasang 10 lampu" di ruangan yang sudah punya 9 armatur bukan permintaan
+   * untuk 19 armatur bertumpuk di satu plafon — dua grid dengan jarak berbeda,
+   * sirkuit ganda, dan schedule yang menghitung dua kali. Maksudnya "jadikan
+   * 10", dan itu perintah yang berbeda.
+   *
+   * Batas percobaannya lebih pendek daripada pembacaan lain: ini berdiri tepat di
+   * depan tombol kirim, dan menahan pengiriman satu menit karena Revit tertutup
+   * lebih buruk daripada tidak memeriksa sama sekali.
+   */
+  const readRoom = useCallback(
+    async (room: string, category: string, force = false): Promise<RoomContents | null> => {
+      const key = contentsKey(room, category);
+      if (!force && roomContents[key]) return roomContents[key];
+
+      setCheckingRoom(true);
+      try {
+        const result = await runAndWait(
+          "query",
+          { room, what: category, detail: "list", limit: 500 },
+          8
+        );
+        const items = itemsOf(result);
+        const reported = (result as { count?: unknown })?.count;
+        const found: RoomContents = {
+          count: typeof reported === "number" ? reported : items.length,
+          marks: items.map((it) => it.id ?? it.label ?? "").filter(Boolean),
+        };
+        setRoomContents((prev) => ({ ...prev, [key]: found }));
+        return found;
+      } catch {
+        // Revit tertutup, atau ruangannya tidak ada. Keduanya bukan alasan
+        // menahan perintahnya: yang hilang cuma pemeriksaan tambahan ini, dan
+        // add-in tetap punya kata terakhir soal ruangan yang tidak ditemukan.
+        return null;
+      } finally {
+        setCheckingRoom(false);
+      }
+    },
+    [runAndWait, roomContents]
+  );
+
+  /** Menunggu orangnya memutuskan apa yang harus terjadi pada ruangan yang sudah berisi. */
+  function askCrossroads(info: Crossroads): Promise<"modify" | "add" | "cancel"> {
+    return new Promise((resolve) => {
+      crossroadsChoice.current = resolve;
+      setCrossroads(info);
+      requestAnimationFrame(() => {
+        formBox.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
+  }
+
+  function answerCrossroads(choice: "modify" | "add" | "cancel") {
+    const resolve = crossroadsChoice.current;
+    crossroadsChoice.current = null;
+    setCrossroads(null);
+    resolve?.(choice);
+  }
+
+
+  /**
+   * Mengirim satu perintah, dengan satu pertanyaan yang perlu ditanyakan lebih
+   * dulu: kalau ruangannya sudah berisi kategori itu, yang dimaksud hampir selalu
+   * menata ulang — bukan menumpuk satu set lagi di atasnya.
+   *
+   * Satu jalan untuk formulir DAN untuk percakapan. Pemeriksaan yang hanya ada di
+   * salah satunya adalah pemeriksaan yang bisa dilewati dengan mengetik kalimat.
+   */
+  const dispatch = useCallback(
+    async (spec: CommandSpec, vals: Record<string, unknown>) => {
+      let name = spec.name;
+      let payload = vals;
+
+      const category = modifyCategoryFor(spec.name);
+      const room = String(vals[spec.positional?.name ?? "room"] ?? "").trim();
+
+      // Hanya kalau modelnya memang bisa ditanya. Tanpa Revit yang menjawab,
+      // pemeriksaan ini cuma jeda enam belas detik sebelum perintahnya tetap
+      // berangkat seperti apa adanya.
+      if (category && room && model) {
+        const found = await readRoom(room, category);
+        if (found && found.count > 0) {
+          const modifyValues = modifyValuesFrom(spec, category, vals);
+          const dryRun = vals.dry_run === true || vals.dry_run === "true";
+          const modifyBlocked = dryRun
+            ? ("dryRun" as const)
+            : modifyValues.count === undefined && modifyValues.grid === undefined
+              ? ("count" as const)
+              : null;
+
+          const choice = await askCrossroads({ room, category, found, modifyBlocked });
+
+          if (choice === "cancel") return null;
+          if (choice === "modify") {
+            name = "modify_devices";
+            payload = modifyValues;
+          }
+        }
+      }
+
+      const body = await enqueue(name, payload);
+
+      // Modelnya berubah sesudah ini, jadi yang kita ketahui tentang isi ruangan
+      // sudah tidak benar lagi.
+      setRoomContents({});
+
+      setRuns((prev) => [
+        { id: body.id, commandText: body.commandText, status: "pending" },
+        ...prev,
+      ]);
+      return body;
+    },
+    [enqueue, model, readRoom]
+  );
+
   async function send() {
     if (!selected || !project) return;
     if (selected.confirm && !window.confirm(t("command.confirm"))) return;
@@ -197,7 +438,8 @@ export default function CommandRunner({
     setIssues([]);
 
     try {
-      const body = await enqueue(selected.name, values);
+      const body = await dispatch(selected, values);
+      if (!body) return;
 
       // Diperiksa setelah perintahnya tersusun, karena yang dibandingkan adalah
       // teks akhirnya — dan teks itu baru ada setelah nilai formulir divalidasi
@@ -209,8 +451,6 @@ export default function CommandRunner({
           t("command.clash").replace("{who}", clash.who || t("command.clashSomeone")),
         ]);
       }
-
-      setRuns((prev) => [{ id: body.id, commandText: body.commandText, status: "pending" }, ...prev]);
     } catch (err) {
       const withIssues = err as Error & { issues?: string[] };
       setIssues(withIssues.issues ?? [withIssues.message || t("command.sendFailed")]);
@@ -240,6 +480,7 @@ export default function CommandRunner({
         what: "all",
         marks: marks.join(","),
       });
+      setRoomContents({});
       setRuns((prev) => [
         { id: body.id, commandText: body.commandText, status: "pending" },
         ...prev,
@@ -249,6 +490,32 @@ export default function CommandRunner({
       setIssues(withIssues.issues ?? [withIssues.message || t("command.sendFailed")]);
     } finally {
       setSending(false);
+    }
+  }
+
+  /**
+   * Membatalkan perintah sendiri yang masih menunggu diambil add-in.
+   *
+   * Sebuah baris `pending` yang tidak pernah diambil — Revit tertutup, add-in
+   * belum dipasang, atau perintahnya memang salah kirim — sebelumnya tidak punya
+   * jalan keluar dari sini sama sekali. Ia tetap paling depan di antrean, dan
+   * begitu Revit dibuka ia langsung berjalan: perintah dari sejam lalu, ke model
+   * yang sudah berubah, tanpa ada yang memintanya lagi.
+   */
+  async function cancelRun(id: string) {
+    try {
+      const res = await fetch(`/api/commands?id=${encodeURIComponent(id)}`, { method: "PATCH" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setIssues([body.error ?? t("command.cancelFailed")]);
+        return;
+      }
+      setRuns((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, status: "cancelled" as QueueStatus } : r))
+      );
+      void refreshActive();
+    } catch {
+      setIssues([t("command.cancelFailed")]);
     }
   }
 
@@ -292,11 +559,12 @@ export default function CommandRunner({
     // menjanjikan urutan apa pun soal kapan tiap baris masuk antrean.
     for (const item of staged) {
       try {
-        const body = await enqueue(item.name, item.values);
-        setRuns((prev) => [
-          { id: body.id, commandText: body.commandText, status: "pending" },
-          ...prev,
-        ]);
+        const spec = COMMANDS_BY_NAME[item.name];
+        if (!spec) throw new Error(`command tidak dikenal: ${item.name}`);
+        // Lewat dispatch, bukan enqueue: pemeriksaan "ruangan ini sudah berisi"
+        // harus berlaku juga untuk perintah yang ditumpuk, kalau tidak ia bisa
+        // dilewati hanya dengan menekan "Tambah ke antrean" lebih dulu.
+        await dispatch(spec, item.values);
       } catch (err) {
         const withIssues = err as Error & { issues?: string[] };
         // Yang gagal disebut namanya lalu dilewati. Menghentikan seluruh
@@ -311,41 +579,6 @@ export default function CommandRunner({
     setStaged(failures.length ? staged.filter((s) => failures.some((f) => f.startsWith(`${s.name}:`))) : []);
     setIssues(failures);
     setSending(false);
-  }
-
-  /**
-   * Menjalankan satu perintah baca lalu menunggu jawabannya.
-   *
-   * Jawabannya datang lewat antrean yang sama seperti perintah lain, jadi ini
-   * hanya berhasil kalau Revit terbuka dan add-in berjalan — dan itu memang
-   * satu-satunya sumber yang tahu isi model. Dibatasi 30 kali supaya Revit yang
-   * tertutup tidak membuat tombolnya berputar selamanya.
-   */
-  const runAndWait = useCallback(
-    async (commandName: string, vals: Record<string, unknown>) => {
-      const { id } = await enqueue(commandName, vals);
-
-      for (let i = 0; i < 30; i++) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const res = await fetch(`/api/commands?id=${encodeURIComponent(id)}`);
-        if (!res.ok) continue;
-
-        const cmd = (await res.json()) as QueuedCommand;
-        if (!TERMINAL.includes(cmd.status)) continue;
-        if (cmd.status !== "completed") {
-          throw new Error(cmd.error_message ?? t("command.roomsFailed"));
-        }
-        return cmd.result_json;
-      }
-
-      throw new Error(t("command.roomsTimeout"));
-    },
-    [enqueue, t]
-  );
-
-  /** Daftar `{ id, label }` yang dikembalikan query dan list_sheets. */
-  function itemsOf(result: unknown) {
-    return (result as { items?: { id?: string; label?: string }[] })?.items ?? [];
   }
 
   /**
@@ -500,27 +733,38 @@ export default function CommandRunner({
       }
 
       if (body.kind === "reply") {
-        addChat({ role: "assistant", text: body.text });
+        addChat({ role: "assistant", text: body.text, nothingSent: Boolean(body.nothingSent) });
         return;
       }
 
       // Form tetap diisi, tapi ia bukan lagi gerbang yang harus dilewati: ia
       // jadi tempat memperbaiki satu angka lalu menjalankan ulang.
       const spec = COMMANDS_BY_NAME[body.command];
-      if (spec) {
-        setSelected(spec);
-        setValues(body.values ?? {});
-        setIssues([]);
-      }
+      if (spec) pick(spec, body.values ?? {});
 
       const incomplete = Boolean(body.issues?.length);
 
-      addChat({
+      const bubble = addChat({
         role: "proposal",
         text: body.note ?? "",
         commandText: body.commandText ?? `/${body.command}`,
+        command: body.command,
         issues: body.issues,
+        // Belum "terkirim". Baris antreannya baru ada beberapa ratus milidetik
+        // dari sekarang, dan penulisannya masih bisa gagal.
+        state: incomplete ? undefined : "sending",
       });
+
+      // Perintah di luar katalog: model menyebut nama yang tidak ada, jadi tidak
+      // ada apa pun yang bisa dikirim. Dulu gelembungnya tetap berbunyi "sudah
+      // dikirim ke Revit" — kalimat yang tidak pernah benar.
+      if (!spec) {
+        patchChat(bubble, {
+          state: "failed",
+          error: `perintah "${body.command}" tidak ada di katalog`,
+        });
+        return;
+      }
 
       // Langsung berangkat, seperti bot Telegram.
       //
@@ -533,24 +777,32 @@ export default function CommandRunner({
       // Yang kurang lengkap tidak dikirim: daftar `issues` di gelembungnya
       // menyebutkan apa yang belum disebut, dan menebak sisanya berarti
       // menempatkan perangkat dengan angka yang tidak pernah diminta siapa pun.
-      if (!spec || incomplete) return;
+      if (incomplete) return;
 
       // Satu pertanyaan untuk yang tidak bisa dibatalkan. Kecepatan tidak
       // sebanding dengan menghapus perangkat di model orang lain karena satu
       // kalimat yang salah tafsir.
-      if (spec.confirm && !window.confirm(t("command.confirm"))) return;
+      if (spec.confirm && !window.confirm(t("command.confirm"))) {
+        patchChat(bubble, { state: "held" });
+        return;
+      }
 
       try {
-        const queued = await enqueue(spec.name, body.values ?? {});
-        setRuns((prev) => [
-          { id: queued.id, commandText: queued.commandText, status: "pending" },
-          ...prev,
-        ]);
+        const queued = await dispatch(spec, body.values ?? {});
+        // null = orangnya membatalkan di persimpangan "ruangan ini sudah berisi".
+        if (!queued) {
+          patchChat(bubble, { state: "held" });
+          return;
+        }
+        // Teks perintahnya diperbarui: yang berangkat bisa berbeda dari yang
+        // diusulkan — modifikasi alih-alih penambahan, dan grid yang dihitung
+        // dari jumlahnya. Gelembung ini harus menyebut yang benar-benar dikirim.
+        patchChat(bubble, { state: "queued", commandText: queued.commandText });
       } catch (err) {
         const withIssues = err as Error & { issues?: string[] };
-        addChat({
-          role: "assistant",
-          text: withIssues.issues?.join(" ") ?? withIssues.message ?? t("command.sendFailed"),
+        patchChat(bubble, {
+          state: "failed",
+          error: withIssues.issues?.join(" ") ?? withIssues.message ?? t("command.sendFailed"),
         });
       }
     } catch (err) {
@@ -575,8 +827,15 @@ export default function CommandRunner({
         `/api/commands/active?projectId=${encodeURIComponent(project.projectId)}`
       );
       if (!res.ok) return;
-      const body = (await res.json()) as { commands: ActiveCommand[] };
+      const body = (await res.json()) as {
+        commands: ActiveCommand[];
+        addin?: { busy?: boolean; lastSeen?: string | null };
+      };
       setActive(body.commands ?? []);
+      setAddin({
+        busy: Boolean(body.addin?.busy),
+        lastSeen: body.addin?.lastSeen ?? null,
+      });
     } catch {
       // Jaringan yang sedang buruk bukan alasan menampilkan galat di panel ini:
       // isinya sudah kedaluwarsa beberapa detik dan itu memang wajar. Daftar
@@ -636,11 +895,38 @@ export default function CommandRunner({
     }
   }, [runs, chat, t]);
 
+  /**
+   * Kategori yang sedang jadi pokok formulir ini, untuk menampilkan isi ruangan.
+   *
+   * Untuk /modify_devices dan /delete_devices ia dipilih di kolom "Kategori";
+   * untuk perintah `place_*` ia melekat pada perintahnya sendiri.
+   */
+  const focusCategory = useMemo(() => {
+    if (!selected) return "";
+    if (selected.name === "modify_devices" || selected.name === "delete_devices") {
+      const what = String(values.what ?? "");
+      return what === "all" ? "" : what;
+    }
+    return modifyCategoryFor(selected.name) ?? "";
+  }, [selected, values.what]);
+
+  const roomValue = String(values[selected?.positional?.name ?? "room"] ?? "").trim();
+
+  /** Isi ruangan yang sudah pernah dibaca — kalau ada. */
+  const knownContents =
+    roomValue && focusCategory ? (roomContents[contentsKey(roomValue, focusCategory)] ?? null) : null;
+
+  /** Family armatur yang benar-benar termuat di model yang sedang terbuka. */
+  const lightingFamilies = useMemo(
+    () => familyTypesFor(model?.familyTypes, "lighting"),
+    [model]
+  );
+
   if (projectsLoading) return <p className="opacity-60">{t("common.loading")}</p>;
 
   if (!projects.length) {
     return (
-      <div className="glass-panel max-w-2xl p-6 space-y-2">
+      <div className="glass-panel max-w-2xl space-y-2 p-4 sm:p-6">
         <h1 className="text-lg font-medium">{title}</h1>
         <p className="opacity-70 text-sm">{t("command.noProject")}</p>
       </div>
@@ -648,14 +934,14 @@ export default function CommandRunner({
   }
 
   return (
-    <div className="max-w-4xl space-y-4">
-      <div className="glass-panel p-6 space-y-4">
+    <div className="max-w-4xl space-y-3 sm:space-y-4">
+      <div className="glass-panel space-y-4 p-4 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-lg font-medium">{title}</h1>
-          <label className="flex items-center gap-2 text-sm">
-            <span className="opacity-70">{t("command.project")}</span>
+          <h1 className="text-base font-medium sm:text-lg">{title}</h1>
+          <label className="flex min-w-0 items-center gap-2 text-sm">
+            <span className="shrink-0 opacity-70">{t("command.project")}</span>
             <select
-              className="glass-input"
+              className="glass-input min-w-0 max-w-[60vw] truncate py-1.5 text-sm"
               value={project?.projectId ?? ""}
               onChange={(e) =>
                 setProject(projects.find((p) => p.projectId === e.target.value) ?? null)
@@ -711,13 +997,36 @@ export default function CommandRunner({
           )}
         </div>
 
-        {/* Tombol per command — inilah yang menembak ke add-in Revit. */}
-        <div className="flex flex-wrap gap-2">
+        {/* Family armatur yang benar-benar termuat di file ini.
+            Ada di sini, di luar formulir, karena ini pertanyaan yang muncul
+            SEBELUM memilih perintah: "lampu apa saja yang tersedia di model
+            ini". Tanpa daftar, satu-satunya jawabannya adalah mengetik nama dari
+            ingatan — dan nama family yang salah baru ditolak Revit beberapa menit
+            kemudian, dengan gambar yang tetap kosong. */}
+        {lightingFamilies.length > 0 && (
+          <details className="text-xs">
+            <summary className="cursor-pointer opacity-70">
+              {t("command.familiesTitle").replace("{n}", String(lightingFamilies.length))}
+            </summary>
+            <ul className="mt-2 max-h-40 space-y-0.5 overflow-auto">
+              {lightingFamilies.map((name) => (
+                <li key={name} className="break-all opacity-75">
+                  <code>{name}</code>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+
+        {/* Tombol per command — inilah yang menembak ke add-in Revit.
+            Satu baris yang bisa digeser di telepon: dibungkus jadi lima baris,
+            deretan ini mendorong formulirnya sejauh satu layar penuh ke bawah. */}
+        <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible">
           {available.map((c) => (
             <button
               key={c.name}
               onClick={() => pick(c)}
-              className={`glass-input text-sm transition ${
+              className={`glass-input shrink-0 whitespace-nowrap py-1.5 text-sm transition ${
                 selected?.name === c.name ? "ring-2 ring-[var(--accent)]" : "hover:opacity-80"
               }`}
             >
@@ -741,12 +1050,34 @@ export default function CommandRunner({
       )}
 
       {selected && (
-        <div className="glass-panel p-6 space-y-4">
+        <div ref={formBox} className="glass-panel space-y-4 p-4 sm:p-6">
           <div>
             <h2 className="font-medium">{selected.label[locale]}</h2>
             <p className="text-sm opacity-70 mt-1">{selected.description[locale]}</p>
             <code className="mt-2 block text-xs opacity-50">{selected.example}</code>
           </div>
+
+          {/* Isi ruangan sekarang, sebelum apa pun dikirim.
+              Ini yang membedakan "pasang 10 lampu" dari "jadikan 10 lampu", dan
+              sebelumnya tidak ada di mana pun di layar: perintah pemasangan di
+              ruangan yang sudah berisi menambahkan satu set lagi di atas set yang
+              ada, dan itu baru terlihat di gambar. */}
+          {focusCategory && roomValue && (
+            <RoomContentsNote
+              room={roomValue}
+              category={focusCategory}
+              contents={knownContents}
+              loading={checkingRoom}
+              placing={Boolean(modifyCategoryFor(selected.name))}
+              reachable={Boolean(model)}
+              onRead={() => void readRoom(roomValue, focusCategory, true)}
+              onSwitchToModify={() =>
+                pick(COMMANDS_BY_NAME.modify_devices, {
+                  ...modifyValuesFrom(selected, focusCategory, values),
+                })
+              }
+            />
+          )}
 
           <div className="grid gap-3 sm:grid-cols-2">
             {selected.positional && (
@@ -763,6 +1094,7 @@ export default function CommandRunner({
                 model={model}
                 modelLoading={modelLoading}
                 onLoadModel={loadModel}
+                familyOptions={familyOptionsFor(selected.positional, values, model)}
                 onChange={(v) =>
                   setValues((s) => ({ ...s, [selected.positional!.name]: v }))
                 }
@@ -783,6 +1115,16 @@ export default function CommandRunner({
                 model={model}
                 modelLoading={modelLoading}
                 onLoadModel={loadModel}
+                familyOptions={familyOptionsFor(f, values, model)}
+                extra={
+                  f.name === "grid" ? (
+                    <GridNote
+                      count={values.count}
+                      grid={values.grid}
+                      onUse={(text) => setValues((s) => ({ ...s, grid: text }))}
+                    />
+                  ) : undefined
+                }
                 onChange={(v) => setValues((s) => ({ ...s, [f.name]: v }))}
               />
             ))}
@@ -797,8 +1139,16 @@ export default function CommandRunner({
           )}
 
           <div className="flex flex-wrap items-center gap-2">
-            <button onClick={send} disabled={sending} className="btn-accent">
-              {sending ? t("command.sending") : t("command.send")}
+            <button
+              onClick={send}
+              disabled={sending || Boolean(crossroads)}
+              className="btn-accent"
+            >
+              {sending
+                ? checkingRoom
+                  ? t("command.checkingRoom")
+                  : t("command.sending")
+                : t("command.send")}
             </button>
             {/* Menumpuk, bukan mengirim. Ada di samping tombol kirim karena
                 keputusannya diambil pada saat yang sama — setelah formulirnya
@@ -852,11 +1202,24 @@ export default function CommandRunner({
         </div>
       )}
 
+      {/* Persimpangan "ruangan ini sudah berisi", di panelnya sendiri.
+          Di luar kotak formulir, bukan di dalamnya: formulir itu bisa hilang di
+          tengah-tengah — proyeknya diganti, dan perintah yang terpilih tidak
+          tersedia di proyek yang baru. Kalau panel ini ikut hilang, janji yang
+          ditunggu `dispatch` tidak pernah dijawab: tombol kirim tinggal
+          "Mengirim…" selamanya, dan tidak ada tombol tersisa yang bisa
+          membebaskannya. */}
+      {crossroads && (
+        <div className="glass-panel p-4 sm:p-6">
+          <Crossroad info={crossroads} onAnswer={answerCrossroads} />
+        </div>
+      )}
+
       {/* Antrean proyek: siapa sedang menjalankan apa.
           Di bawah formulir, di atas hasil — tempat orang melihatnya saat
           memutuskan apakah aman mengirim sesuatu sekarang. */}
       {active.length > 0 && (
-        <div className="glass-panel space-y-2 p-6">
+        <div className="glass-panel space-y-2 p-4 sm:p-6">
           <h2 className="font-medium">{t("command.activeTitle")}</h2>
           <p className="text-xs opacity-60">{t("command.activeNote")}</p>
           <ul className="space-y-1 text-xs">
@@ -880,14 +1243,20 @@ export default function CommandRunner({
       )}
 
       {runs.length > 0 && (
-        <div className="glass-panel space-y-3 p-6">
+        <div className="glass-panel space-y-3 p-4 sm:p-6">
           <h2 className="font-medium">{t("command.results")}</h2>
           {/* Digulir di dalam kotaknya. Satu sesi kerja menumpuk puluhan
               perintah, dan daftar yang tumbuh tanpa batas mendorong segalanya
               ke bawah sampai form perintahnya sendiri hilang dari layar. */}
           <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
             {runs.map((r) => (
-              <RunRow key={r.id} run={r} onUndo={undoRun} />
+              <RunRow
+                key={r.id}
+                run={r}
+                onUndo={undoRun}
+                addin={addin}
+                onCancel={cancelRun}
+              />
             ))}
           </div>
         </div>
@@ -896,13 +1265,236 @@ export default function CommandRunner({
   );
 }
 
+/** Family Revit yang boleh dipilih untuk sebuah kolom, dari model yang terbuka. */
+function familyOptionsFor(
+  field: CommandField,
+  values: Record<string, unknown>,
+  model: ModelInfo | null
+): string[] {
+  return familyTypesFor(model?.familyTypes, familyCategoryOf(field, values));
+}
+
+/**
+ * Apa yang sudah ada di ruangan itu — dan apa artinya untuk perintah ini.
+ *
+ * Perintah pemasangan di ruangan yang sudah berisi tidak menggantikan apa pun;
+ * ia menambahkan satu set lagi di atas yang ada. Dua grid dengan jarak berbeda
+ * di satu plafon, sirkuit ganda, schedule yang menghitung dua kali — dan
+ * satu-satunya tempat itu terlihat adalah gambarnya, setelah semuanya terpasang.
+ */
+function RoomContentsNote({
+  room,
+  category,
+  contents,
+  loading,
+  placing,
+  reachable,
+  onRead,
+  onSwitchToModify,
+}: {
+  room: string;
+  category: string;
+  contents: RoomContents | null;
+  loading: boolean;
+  /** Perintah yang terpilih adalah pemasangan, jadi isi yang ada akan ditumpuki. */
+  placing: boolean;
+  /** Model bisa ditanya. Kalau tidak, tidak ada gunanya menawarkan tombol baca. */
+  reachable: boolean;
+  onRead: () => void;
+  onSwitchToModify: () => void;
+}) {
+  const { t } = useI18n();
+  const occupied = Boolean(contents && contents.count > 0);
+
+  return (
+    <div
+      className={`space-y-1 rounded-xl border p-3 text-xs ${
+        placing && occupied
+          ? "border-amber-400/50 bg-amber-400/10"
+          : "border-black/5 dark:border-white/10"
+      }`}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="opacity-60">{t("command.roomHas")}</span>
+        <code className="break-all">{room}</code>
+        <span className="opacity-60">·</span>
+        <code>{category}</code>
+        <span className="font-medium">
+          {loading
+            ? t("command.checkingRoom")
+            : contents
+              ? t("command.roomHasCount").replace("{n}", String(contents.count))
+              : t("command.roomUnknown")}
+        </span>
+        {reachable && !loading && (
+          <button type="button" onClick={onRead} className="text-accent underline">
+            {contents ? t("command.roomReread") : t("command.roomRead")}
+          </button>
+        )}
+      </div>
+
+      {placing && occupied && (
+        <>
+          <p className="text-amber-700 dark:text-amber-300">{t("command.roomOccupied")}</p>
+          <button
+            type="button"
+            onClick={onSwitchToModify}
+            className="text-accent underline"
+          >
+            {t("command.roomSwitchToModify")}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Persimpangan tepat sebelum perintahnya berangkat: ruangannya sudah berisi.
+ *
+ * Bukan `window.confirm`. Pilihannya ada tiga — tata ulang, tambah di atasnya,
+ * batal — dan sebuah dialog "OK/Batal" hanya bisa menyodorkan dua, sehingga yang
+ * ketiga harus diterka dari mana. Ini juga tempat menyebutkan jumlah yang
+ * ditemukan, dan jumlah itulah yang biasanya menjawab pertanyaannya.
+ */
+function Crossroad({
+  info,
+  onAnswer,
+}: {
+  info: Crossroads;
+  onAnswer: (choice: "modify" | "add" | "cancel") => void;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <div className="space-y-2 rounded-xl border border-amber-400/50 bg-amber-400/10 p-3 text-sm">
+      <p>
+        {t("command.crossroadTitle")
+          .replace("{room}", info.room)
+          .replace("{n}", String(info.found.count))
+          .replace("{what}", info.category)}
+      </p>
+      {info.modifyBlocked && (
+        <p className="text-xs opacity-70">
+          {info.modifyBlocked === "dryRun"
+            ? t("command.crossroadDryRun")
+            : t("command.crossroadNeedCount")}
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {!info.modifyBlocked && (
+          <button type="button" onClick={() => onAnswer("modify")} className="btn-accent text-sm">
+            {t("command.crossroadModify")}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => onAnswer("add")}
+          className="glass-input px-3 py-1.5 text-sm"
+        >
+          {t("command.crossroadAdd")}
+        </button>
+        <button
+          type="button"
+          onClick={() => onAnswer("cancel")}
+          className="glass-input px-3 py-1.5 text-sm"
+        >
+          {t("command.crossroadCancel")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Grid yang akan dipakai, terlihat sebelum perintahnya dikirim.
+ *
+ * Angka inilah yang membuat sepuluh lampu jadi 5x2 dan bukan 4x3 dengan dua
+ * lubang. Ia dihitung di server supaya jalur percakapan ikut mendapatkannya,
+ * tapi ia harus TERLIHAT di sini: orang yang tahu ruangannya lebih dalam daripada
+ * lebar perlu bisa membalikkannya, dan pembalikan itu satu ketukan.
+ */
+function GridNote({
+  count,
+  grid,
+  onUse,
+}: {
+  count: unknown;
+  grid: unknown;
+  onUse: (text: string) => void;
+}) {
+  const { t } = useI18n();
+
+  const n = Number(count);
+  if (!Number.isInteger(n) || n < 1) return null;
+
+  const typed = parseGrid(grid);
+  if (typed) {
+    // Grid yang tidak memuat jumlahnya ditolak server; disebutkan di sini supaya
+    // ketahuan sebelum tombol kirim, bukan sesudahnya.
+    if (gridCount(typed) === n) return null;
+    const right = autoGrid(n);
+    return (
+      <span className="block text-xs text-red-500">
+        {t("command.gridMismatch")
+          .replace("{grid}", formatGrid(typed))
+          .replace("{slots}", String(gridCount(typed)))
+          .replace("{n}", String(n))}
+        {right && (
+          <button
+            type="button"
+            onClick={() => onUse(formatGrid(right))}
+            className="ml-1 text-accent underline"
+          >
+            {t("command.gridUse").replace("{grid}", formatGrid(right))}
+          </button>
+        )}
+      </span>
+    );
+  }
+
+  const derived = autoGrid(n);
+  if (!derived) return null;
+  const other = flip(derived);
+
+  return (
+    <span className="block space-x-1 text-xs opacity-70">
+      <span>
+        {t("command.gridAuto")
+          .replace("{n}", String(n))
+          .replace("{grid}", formatGrid(derived))}
+      </span>
+      {other.cols !== derived.cols && (
+        <button
+          type="button"
+          onClick={() => onUse(formatGrid(other))}
+          className="text-accent underline"
+        >
+          {t("command.gridUse").replace("{grid}", formatGrid(other))}
+        </button>
+      )}
+      {awkwardCount(n) && (
+        <span className="text-amber-600 dark:text-amber-400">
+          {t("command.gridAwkward")
+            .replace("{n}", String(n))
+            .replace("{alts}", friendlierCounts(n).join(" / "))}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function RunRow({
   run,
   onUndo,
+  addin,
+  onCancel,
 }: {
   run: RunEntry;
   /** Absen kalau perintah ini tidak bisa dibatalkan. */
   onUndo?: (room: string, marks: string[]) => void;
+  addin: { busy: boolean; lastSeen: string | null };
+  onCancel: (id: string) => void;
 }) {
   const { t } = useI18n();
   const done = TERMINAL.includes(run.status);
@@ -925,7 +1517,34 @@ function RunRow({
       {!done && (
         // Baris masih menunggu add-in mengambilnya. Kalau Revit tertutup,
         // status akan bertahan di "pending" — itu informasi, bukan kegagalan.
-        <p className="text-xs opacity-60">{t("command.waitingAddin")}</p>
+        //
+        // Tapi "menunggu diambil add-in" sendirian adalah satu kalimat untuk dua
+        // keadaan yang sangat berbeda: antrean yang bergerak, dan add-in yang
+        // tidak mengambil apa pun karena Revit tertutup atau add-in-nya menunggu
+        // di proyek yang lain. Yang kedua bisa ditunggu selamanya, dan itu persis
+        // yang dialami orang yang melihat "menunggu" lalu tidak menemukan apa pun
+        // di Revit. Jadi keadaan add-in disebutkan, dan disediakan jalan keluar.
+        <div className="space-y-1">
+          <p className="text-xs opacity-60">{t("command.waitingAddin")}</p>
+          {run.status === "pending" && (
+            <p className="text-xs opacity-60">
+              {addin.busy
+                ? t("command.addinBusy")
+                : addin.lastSeen
+                  ? t("command.addinLastSeen").replace("{when}", sinceText(addin.lastSeen, t))
+                  : t("command.addinNever")}
+            </p>
+          )}
+          {run.status === "pending" && (
+            <button
+              type="button"
+              onClick={() => onCancel(run.id)}
+              className="text-xs text-red-500 underline"
+            >
+              {t("command.cancel")}
+            </button>
+          )}
+        </div>
       )}
 
       {run.error && <p className="text-xs text-red-500">{run.error}</p>}
@@ -939,6 +1558,20 @@ function RunRow({
       {onUndo && <UndoButton result={run.result} onUndo={onUndo} />}
     </div>
   );
+}
+
+/** "3 menit lalu" — cukup untuk memutuskan apakah add-in-nya hidup. */
+function sinceText(iso: string, t: (key: string) => string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return t("command.sinceJustNow");
+
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return t("command.sinceJustNow");
+  if (minutes < 60) return t("command.sinceMinutes").replace("{n}", String(minutes));
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t("command.sinceHours").replace("{n}", String(hours));
+  return t("command.sinceDays").replace("{n}", String(Math.floor(hours / 24)));
 }
 
 /**
@@ -1006,6 +1639,8 @@ function Field({
   model,
   modelLoading,
   onLoadModel,
+  familyOptions,
+  extra,
   onChange,
 }: {
   field: CommandField;
@@ -1020,22 +1655,32 @@ function Field({
   model: ModelInfo | null;
   modelLoading: boolean;
   onLoadModel: () => void;
+  /**
+   * Nama family Revit yang boleh dipilih di kolom ini.
+   *
+   * Datang dari luar, bukan diterka di sini. Terkaannya dulu "buang akhiran
+   * `_type` dari nama kolom", yang mencari kunci `fixture` di jawaban model_info
+   * — kunci yang tidak pernah ada di sana. Jadi daftarnya selalu kosong, kolom
+   * "Tipe armatur" selalu berupa kotak teks, dan satu-satunya cara mengisinya
+   * adalah mengetik nama family dari ingatan.
+   */
+  familyOptions: string[];
+  /** Keterangan tambahan di bawah kolom, mis. grid yang dihitung dari jumlah. */
+  extra?: React.ReactNode;
   onChange: (v: unknown) => void;
 }) {
   const { t } = useI18n();
   const isRoom = field.name === "room";
   const isSheets = field.name === "sheets";
 
-  // Field tipe perangkat diisi dari family yang benar-benar ada di model.
-  // Nama family diketik dari ingatan adalah cara paling mudah sebuah perintah
-  // gagal — dan gagalnya baru ketahuan setelah menunggu Revit menjawab.
-  const typeOptions = field.name.endsWith("_type")
-    ? (model?.familyTypes?.[field.name.replace(/_type$/, "")] ?? [])
-    : [];
+  const typeOptions = familyOptions;
 
   // Sudah memilih untuk mengetik sendiri, karena family yang dibutuhkan belum
   // ada di daftar yang terakhir dibaca dari model.
   const [typedByHand, setTypedByHand] = useState(false);
+
+  /** Kolom ini memang kolom nama family, entah daftarnya sudah terbaca atau belum. */
+  const isFamilyField = Boolean(field.familyCategory || field.familyCategoryFrom);
 
   // Pilihan yang hanya diketahui model yang sedang terbuka.
   if (field.optionsFrom) {
@@ -1140,6 +1785,20 @@ function Field({
             {roomsLoading ? t("command.roomsLoading") : t("command.roomsLoad")}
           </button>
         )}
+        {/* Kolom nama family tanpa daftar: satu-satunya sebabnya adalah model yang
+            belum menjawab. Tombolnya di sini, bukan cuma di baris atas halaman —
+            di sinilah pertanyaannya muncul, dan tanpa jalan dari sini yang tersisa
+            hanya mengetik nama family dari ingatan. */}
+        {isFamilyField && typeOptions.length === 0 && (
+          <button
+            type="button"
+            onClick={onLoadModel}
+            disabled={modelLoading}
+            className="text-xs text-accent underline disabled:opacity-40"
+          >
+            {modelLoading ? t("command.modelLoading") : t("command.familiesLoad")}
+          </button>
+        )}
       </span>
 
       {field.type === "select" ? (
@@ -1226,8 +1885,16 @@ function Field({
               {t("command.typeBackToList")}
             </button>
           )}
+          {/* Kolom family yang belum punya daftar. Dikatakan terus terang bahwa
+              yang diketik di sini harus persis sama dengan nama di Revit. */}
+          {isFamilyField && typeOptions.length === 0 && (
+            <span className="block text-xs opacity-55">
+              {model ? t("command.familiesNone") : t("command.familiesAsk")}
+            </span>
+          )}
         </>
       )}
+      {extra}
       {field.hint && <span className="block text-xs opacity-55">{field.hint[locale]}</span>}
     </label>
   );

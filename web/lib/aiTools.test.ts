@@ -1,0 +1,81 @@
+import { describe, expect, it } from "vitest";
+import { ELECTRICAL_SYSTEM_PROMPT, mentionsCommand, toolsForRole } from "./aiTools";
+
+describe("mentionsCommand", () => {
+  // Ini penjaga terhadap satu bentuk kegagalan yang terlihat persis seperti
+  // keberhasilan: jawaban berupa teks `/place_lighting …` plus kalimat "sudah
+  // dikirim ke antrean Revit", tanpa satu pun tool dipanggil — jadi tidak ada
+  // baris di commands_queue, tidak ada apa pun di Revit, dan yang dibaca orangnya
+  // adalah pernyataan bahwa perintahnya sudah berangkat.
+  it("mengenali jawaban yang menuliskan perintah alih-alih memanggilnya", () => {
+    expect(
+      mentionsCommand(
+        '/place_lighting LOUNGE 5 count=10 height=3 fixture_type="ACT_E_DOWNLIGHT 22WATT" Perintah ini dikirim ke antrean Revit.'
+      )
+    ).toBe(true);
+    expect(mentionsCommand("Saya kirim `/modify_devices Lounge grid=2x5` sekarang.")).toBe(true);
+    expect(mentionsCommand("/delete_devices Pantry what=lighting")).toBe(true);
+  });
+
+  it("tidak menyeret pertanyaan klarifikasi yang wajar", () => {
+    // Kalau ini ikut terdeteksi, giliran berikutnya dipaksa memanggil tool — dan
+    // tool yang dipanggil di tengah pertanyaan memasang perangkat dengan angka
+    // yang belum pernah disebut siapa pun.
+    for (const text of [
+      "Baik, 6 lampu di Meeting 2 sudah saya catat. Tingginya berapa meter?",
+      "Mau saya kirim sekarang, atau tunggu tingginya disebut dulu?",
+      "Ruangan mana? Model punya MEETING 1 dan MEETING 2.",
+      "Itu ada di halaman Standar Electrical.",
+      "",
+    ]) {
+      expect(mentionsCommand(text), text).toBe(false);
+    }
+  });
+
+  it("tidak tertipu nama yang cuma mirip", () => {
+    expect(mentionsCommand("path/place_lighting_helper.cs")).toBe(false);
+    expect(mentionsCommand("/place_lightingxyz")).toBe(false);
+  });
+});
+
+describe("toolsForRole", () => {
+  it("viewer tidak pernah ditawari perintah yang mengubah model", () => {
+    const names = toolsForRole("viewer").map((tool) => tool.name);
+    expect(names).toContain("query");
+    expect(names).not.toContain("place_lighting");
+    expect(names).not.toContain("delete_devices");
+  });
+
+  it("editor mendapat perintah perangkat, tanpa yang tersembunyi", () => {
+    const names = toolsForRole("editor").map((tool) => tool.name);
+    expect(names).toContain("place_lighting");
+    expect(names).toContain("modify_devices");
+    // Argumennya URL berkas yang baru ada setelah unggahan; model tidak mungkin
+    // mengisinya.
+    expect(names).not.toContain("import_excel");
+  });
+
+  it("tidak menawarkan enum kosong, yang tidak bisa dipenuhi apa pun", () => {
+    for (const tool of toolsForRole("admin")) {
+      for (const [name, prop] of Object.entries(tool.input_schema.properties)) {
+        if (prop.enum) {
+          expect(prop.enum.length, `${tool.name}.${name}`).toBeGreaterThan(0);
+        }
+      }
+    }
+  });
+});
+
+describe("ELECTRICAL_SYSTEM_PROMPT", () => {
+  it("menyatakan bahwa menulis teks tidak mengirim apa pun", () => {
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/TIDAK mengirim apa pun/);
+  });
+
+  it("menyuruh memakai modify_devices untuk ruangan yang sudah berisi", () => {
+    expect(ELECTRICAL_SYSTEM_PROMPT).toContain("modify_devices");
+  });
+
+  it("menyuruh membiarkan grid kosong kalau yang disebut adalah jumlah", () => {
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/biarkan .*grid.* kosong/i);
+  });
+});

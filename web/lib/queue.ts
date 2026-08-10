@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { COMMANDS_BY_NAME, canRun, type CommandField, type CommandSpec, type Role } from "./commands";
+import { autoGrid, formatGrid, gridCount, parseGrid } from "./grid";
 
 // Penyambung website ke add-in Revit.
 //
@@ -110,6 +111,8 @@ export function buildPayload(
     issues.push("isi salah satu: jumlah baru atau grid baru");
   }
 
+  applyGridRules(spec, payload, issues);
+
   if (issues.length) throw new CommandValidationError(issues);
 
   // Teks yang dibaca manusia, disimpan di command_text supaya riwayat di
@@ -117,11 +120,77 @@ export function buildPayload(
   const positionalValue = spec.positional ? payload[spec.positional.name] : undefined;
   const rest = Object.entries(payload)
     .filter(([k]) => k !== spec.positional?.name)
-    .map(([k, v]) => `${k}=${typeof v === "string" && v.includes(" ") ? `"${v}"` : v}`)
+    .map(([k, v]) => `${k}=${quoteIfNeeded(v)}`)
     .join(" ");
-  const commandText = `/${spec.name}${positionalValue ? ` ${positionalValue}` : ""}${rest ? ` ${rest}` : ""}`;
+  const positionalText = positionalValue ? ` ${quoteIfNeeded(positionalValue)}` : "";
+  const commandText = `/${spec.name}${positionalText}${rest ? ` ${rest}` : ""}`;
 
   return { payload, commandText };
+}
+
+/**
+ * Nilai bersepasi ditulis di antara tanda kutip — argumen posisional juga.
+ *
+ * Argumen bernama sudah dikutip sejak awal; yang posisional tidak, dan itulah
+ * satu-satunya tempat nama ruangan muncul. `/delete_devices LOUNGE 5 what=all`
+ * terbaca sebagai ruangan bernama "LOUNGE" dengan sebuah "5" yang menggantung
+ * oleh parser mana pun yang memecah teks ini per spasi — dan setiap ruangan
+ * bernomor di gambar ini bersepasi. Payload JSON-nya memang selalu benar, tapi
+ * teks ini yang dibaca orang di Riwayat dan yang disalin ulang ke Telegram, jadi
+ * ia tidak boleh berbeda arti dari perintah yang sebenarnya dijalankan.
+ */
+function quoteIfNeeded(value: unknown): string {
+  const text = String(value);
+  return /\s/.test(text) ? `"${text}"` : text;
+}
+
+/**
+ * Grid dan jumlah harus sepakat, dan kalau hanya jumlahnya yang disebut, grid
+ * yang tepat dihitung di sini.
+ *
+ * Tanpa ini "10 lampu" berangkat tanpa tata letak, add-in mencari grid yang
+ * CUKUP memuat sepuluh, dan yang cukup memuat sepuluh adalah 4x3 — dua belas
+ * titik dengan dua lubang di deret terakhir. Jarak antar armatur jadi tidak
+ * seragam, dan itu bukan soal selera: perhitungan lux per titik memang
+ * mengandaikan jarak yang sama.
+ *
+ * Grid dihitung DI SINI, bukan di komponen form, karena ia harus ikut berlaku
+ * untuk perintah yang datang dari percakapan — jalur itu tidak pernah menyentuh
+ * form sama sekali. Hasilnya tampak di `command_text`, jadi yang dikirim tetap
+ * bisa dibaca sebelum dan sesudahnya.
+ */
+function applyGridRules(
+  spec: CommandSpec,
+  payload: Record<string, unknown>,
+  issues: string[]
+): void {
+  const hasGridField = spec.fields.some((f) => f.name === "grid");
+  if (!hasGridField) return;
+
+  const count = typeof payload.count === "number" ? payload.count : undefined;
+
+  if (payload.grid === undefined) {
+    if (count === undefined) return;
+    const grid = autoGrid(count);
+    if (grid) payload.grid = formatGrid(grid);
+    return;
+  }
+
+  // Keduanya disebut: yang tidak boleh lolos adalah grid yang tidak memuat
+  // jumlahnya. 10 lampu pada grid 3x3 hanya bisa berakhir dua cara — satu
+  // armatur hilang, atau satu armatur menumpuk di titik yang sama.
+  const grid = parseGrid(payload.grid);
+  if (!grid || count === undefined) return;
+
+  if (gridCount(grid) !== count) {
+    const suggestion = autoGrid(count);
+    issues.push(
+      `grid ${formatGrid(grid)} memuat ${gridCount(grid)} titik, sedangkan jumlahnya ${count}` +
+        (suggestion
+          ? ` — pakai ${formatGrid(suggestion)}, atau kosongkan gridnya agar dihitung otomatis`
+          : " — kosongkan salah satunya")
+    );
+  }
 }
 
 /**

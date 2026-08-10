@@ -145,6 +145,60 @@ describe("buildPayload — aturan antar-field", () => {
   });
 });
 
+describe("buildPayload — grid diturunkan dari jumlah", () => {
+  // Ini aturan yang menentukan gambarnya benar atau tidak. "10 lampu" tanpa grid
+  // membuat add-in mencari grid yang CUKUP memuat sepuluh — 4x3, dua belas titik,
+  // dua lubang di deret terakhir. Sepuluh punya jawaban tepat: 5x2.
+  it("mengisi grid yang memuat persis sejumlah titiknya", () => {
+    const cases: [number, string][] = [
+      [10, "5x2"],
+      [9, "3x3"],
+      [6, "3x2"],
+      [12, "4x3"],
+      [8, "4x2"],
+      [4, "2x2"],
+      [1, "1x1"],
+    ];
+
+    for (const [count, grid] of cases) {
+      const { payload } = buildPayload(spec("place_lighting"), { room: "Lounge", count });
+      expect(payload.grid, `jumlah ${count}`).toBe(grid);
+    }
+  });
+
+  it("ikut berlaku untuk modify_devices, yang punya kolom grid yang sama", () => {
+    const { payload, commandText } = buildPayload(spec("modify_devices"), {
+      room: "Lounge",
+      what: "lighting",
+      count: 10,
+    });
+    expect(payload.grid).toBe("5x2");
+    // Terlihat di teks perintahnya, jadi yang dikirim tetap bisa dibaca.
+    expect(commandText).toContain("grid=5x2");
+  });
+
+  it("tidak menyentuh grid yang memang disebut orangnya", () => {
+    const { payload } = buildPayload(spec("place_lighting"), {
+      room: "Lounge",
+      count: 10,
+      grid: "2x5",
+    });
+    expect(payload.grid).toBe("2x5");
+  });
+
+  it("menolak grid yang tidak memuat jumlahnya, dan menyebutkan yang benar", () => {
+    const issues = issuesOf("place_lighting", { room: "Lounge", count: 10, grid: "3x3" });
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toContain("memuat 9 titik");
+    expect(issues[0]).toContain("5x2");
+  });
+
+  it("tidak mengarang grid untuk perintah yang tidak punya kolomnya", () => {
+    const { payload } = buildPayload(spec("place_receptacle"), { room: "Lounge", count: 10 });
+    expect(payload).not.toHaveProperty("grid");
+  });
+});
+
 describe("buildPayload — command_text", () => {
   it("menaruh argumen posisional lebih dulu, lalu pasangan kunci=nilai", () => {
     const { commandText } = buildPayload(spec("modify_devices"), {
@@ -164,8 +218,20 @@ describe("buildPayload — command_text", () => {
   });
 
   it("tidak menyisakan spasi ganda saat tidak ada field selain posisional", () => {
-    const { commandText } = buildPayload(spec("place_lighting"), { room: "Meeting 1" });
-    expect(commandText).toBe("/place_lighting Meeting 1");
+    const { commandText } = buildPayload(spec("place_lighting"), { room: "Meeting1" });
+    expect(commandText).toBe("/place_lighting Meeting1");
+  });
+
+  it("mengapit nama ruangan bersepasi, sama seperti argumen bernama", () => {
+    // Setiap ruangan bernomor di gambar ini bersepasi ("LOUNGE 5"), dan tanpa
+    // kutip teks ini terbaca sebagai ruangan "LOUNGE" dengan sebuah "5" yang
+    // menggantung. command_json-nya memang selalu benar; yang dibaca orang di
+    // Riwayat dan disalin ulang ke Telegram adalah teks ini.
+    const { commandText } = buildPayload(spec("delete_devices"), {
+      room: "LOUNGE 5",
+      what: "lighting",
+    });
+    expect(commandText).toBe('/delete_devices "LOUNGE 5" what=lighting');
   });
 });
 
@@ -211,7 +277,7 @@ describe("enqueueCommand", () => {
       commandName: "place_lighting",
     });
 
-    expect(result).toEqual({ id: "row-1", commandText: "/place_lighting Meeting 1" });
+    expect(result).toEqual({ id: "row-1", commandText: '/place_lighting "Meeting 1"' });
 
     const row = insert.mock.calls[0][0];
     expect(row).toMatchObject({
