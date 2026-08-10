@@ -20,6 +20,12 @@ DIAGRAM. Kalau — dan hanya kalau — pengguna meminta gambar, diagram, sketsa,
 denah, balas dengan satu blok kode berbahasa \`svg\` berisi SVG yang utuh
 (diawali <svg ...> dan diakhiri </svg>).
 
+Kamu TIDAK punya tool apa pun. Jangan menulis [TOOL_CALL], nama fungsi, atau
+objek JSON seperti {"name": ..., "input": ...} — semua itu akan tampil sebagai
+teks di layar pengguna, bukan dijalankan. SVG-nya ditulis langsung sebagai isi
+blok kode, dengan baris baru yang sungguhan; JANGAN mengubahnya menjadi string
+berisi \\n dan \\", dan jangan membungkusnya di dalam nilai sebuah field.
+
 Aturan SVG:
 - WAJIB ada viewBox, dan JANGAN setel width/height dalam piksel — biar ia
   menyesuaikan lebar layar. Pembacanya sering memakai HP.
@@ -89,7 +95,17 @@ const MAX_TURNS = 8;
  * Yang disimpan tetap utuh; yang dihemat tetap dihemat.
  */
 function withoutDiagrams(text: string) {
-  return text.replace(/```svg\b[\s\S]*?(?:```|$)/gi, "[diagram]");
+  // Dikenali dari isinya, bukan dari pagar ```svg.
+  //
+  // Pagar itu yang DIMINTA prompt, bukan yang selalu datang: diagram juga
+  // sampai sebagai markup mentah dan sebagai isi pembungkus tool-call. Selama
+  // penyaring ini hanya mengenal satu bentuk, bentuk yang lain lolos — dan
+  // seluruh penghematan yang jadi alasan fungsi ini ada pun ikut lolos, tanpa
+  // gejala apa pun selain tagihan input yang membengkak.
+  return text
+    .replace(/\[TOOL_CALL\][\s\S]*?(?:\[\/TOOL_CALL\]|$)/gi, "[diagram]")
+    .replace(/```[\w-]*\s*<svg[\s>][\s\S]*?(?:```|$)/gi, "[diagram]")
+    .replace(/<svg[\s>][\s\S]*?(?:<\/svg>|$)/gi, "[diagram]");
 }
 
 /**
