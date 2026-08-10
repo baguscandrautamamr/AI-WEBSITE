@@ -38,6 +38,86 @@ form di UI dibangun otomatis dari sana.
 | `/history` | 50 perintah terakhir milik sendiri dari `commands_queue`, beserta status dan hasilnya. |
 | `/admin/users` | Memberi/mencabut akses proyek (`user_project_access`). Hanya untuk admin proyek. |
 
+## Aturan yang menentukan gambarnya benar atau tidak
+
+Empat hal di bawah bukan kenyamanan. Masing-masing pernah menghasilkan gambar
+yang salah tanpa satu pun galat muncul di mana pun.
+
+**Grid diturunkan dari jumlah** (`web/lib/grid.ts`, dipakai `buildPayload`).
+"Pasang 10 lampu" tanpa grid dibaca add-in sebagai "cari grid yang cukup memuat
+sepuluh", dan yang cukup memuat sepuluh adalah 4x3: dua belas titik, sepuluh
+terpakai, dua lubang di deret terakhir. Sepuluh punya jawaban tepat — 5 kolom x
+2 baris — jadi grid itu dihitung dan ikut dikirim. Dihitung di `buildPayload`,
+bukan di form, supaya perintah yang datang dari percakapan ikut mendapatkannya.
+Grid yang disebut sendiri tidak disentuh, dan grid yang TIDAK memuat jumlahnya
+(10 lampu pada 3x3) ditolak dengan menyebutkan angka yang benar. Lanskap secara
+bawaan; form menyediakan satu ketukan untuk membalikkannya jadi 2x5.
+
+**Ruangan yang sudah berisi ditata ulang, bukan ditumpuki.** Sebelum sebuah
+perintah `place_*` berangkat, isi ruangan dibaca dari Revit (`/query`). Kalau
+sudah ada isinya, muncul satu pilihan: tata ulang (`/modify_devices`, set lama
+keluar, set baru masuk), tambah di atasnya, atau batal. Tanpa ini "pasang 10
+lampu" di ruangan berisi 9 armatur menghasilkan 19 armatur pada satu plafon —
+dua grid dengan jarak berbeda, sirkuit ganda, schedule yang menghitung dua kali.
+Jalannya satu untuk form dan untuk percakapan (`dispatch` di `CommandRunner`);
+pemeriksaan yang hanya ada di salah satunya bisa dilewati dengan mengetik
+kalimat. Dilewati kalau Revit tidak menjawab — pemeriksaan tambahan tidak boleh
+jadi alasan perintahnya tertahan.
+
+**Nama family dipilih dari model, tidak diketik.** `model_info` mengembalikan
+`family_types`; `web/lib/families.ts` mencocokkan kuncinya dengan kategori yang
+disebut katalog (`familyCategory` pada field), tahan terhadap ejaan — huruf
+besar-kecil, spasi, garis bawah, dan bentuk jamak diabaikan, karena add-in
+menamainya menurut kategori Revit ("Lighting Fixtures") sementara form menamai
+kolomnya menurut argumen perintah (`fixture_type`). Pemetaan sebelumnya adalah
+"buang akhiran `_type`", yang mencari kunci `fixture` — kunci yang tidak pernah
+ada, jadi dropdown-nya tidak pernah muncul sekali pun. Untuk `/modify_devices`,
+daftarnya mengikuti kolom "Kategori" di sebelahnya. `fixture_type` juga tidak
+lagi punya default `LED_15W`: nilai itu terisi otomatis di form dan karenanya
+ikut terkirim setiap kali orang tidak menyentuh kolomnya, membawa nama family
+yang tidak ada di model mana pun.
+
+**Nama ruangan bersepasi dikutip di `command_text`.** Argumen bernama sudah
+dikutip sejak awal; yang posisional tidak — dan di situlah nama ruangan berada.
+`/delete_devices LOUNGE 5 what=all` terbaca sebagai ruangan "LOUNGE" dengan
+sebuah "5" yang menggantung oleh parser mana pun yang memecah per spasi.
+`command_json`-nya memang selalu benar, tapi teks itu yang dibaca orang di
+Riwayat dan disalin ulang ke Telegram.
+
+## Kalau chat mengaku sudah mengirim padahal tidak
+
+Ini bentuk kegagalan yang paling mahal di mode percakapan, karena ia terlihat
+persis seperti keberhasilan: gelembung berbunyi
+`/place_lighting "LOUNGE 5" count=10 …` diikuti "perintah ini dikirim ke antrean
+Revit", sementara `commands_queue` kosong dan Revit tidak menerima apa pun.
+
+Sebabnya ada di riwayat. Usulan yang berangkat dicatat sebagai giliran asisten,
+dan bentuk catatannya dulu adalah baris perintah telanjang plus kalimat "dikirim
+ke antrean Revit" — persis rupa sebuah jawaban. Model meniru bentuk yang ia lihat
+sebagai jawabannya sendiri: pada giliran berikutnya ia MENULIS baris itu sebagai
+teks dan tidak memanggil tool apa pun. Memanggil tool adalah satu-satunya hal
+yang benar-benar menulis baris ke antrean.
+
+Tiga lapis penjagaannya sekarang:
+
+1. `turnsFromChat` menandai catatan itu sebagai catatan sistem dan menyebutkan
+   terus terang bahwa menulis teks tidak mengirim apa pun (`web/lib/chatHistory.ts`).
+2. `/api/ai/electrical` mendeteksi jawaban yang menyebut perintah dari katalog
+   tanpa memanggil tool, lalu mencoba **sekali lagi dengan `tool_choice: any`**.
+   Kalau tetap tidak ada tool, jawabannya dikembalikan dengan tanda `nothingSent`
+   dan panel chat mengatakan tidak ada perintah yang dikirim.
+3. Gelembung usulan hanya berbunyi "sudah dikirim" setelah baris antreannya
+   benar-benar ada, dan berubah jadi galat kalau penulisannya gagal.
+
+Kalau baris antreannya ADA tapi Revit tetap tidak mengerjakannya, yang salah
+bukan website: baris hasil menyebutkan kapan add-in terakhir menyelesaikan
+sesuatu di proyek ini (dari `/api/commands/active`), dan "belum pernah" di situ
+berarti add-in tidak sedang mengambil dari proyek yang dipilih di halaman ini —
+Revit tertutup, add-in belum terpasang, atau kode proyeknya berbeda. Perintah
+yang masih `pending` bisa dibatalkan dari situ (`PATCH /api/commands?id=…`, hanya
+milik sendiri dan hanya yang belum diambil), supaya ia tidak berjalan sejam
+kemudian ke model yang sudah berubah.
+
 ## Batas dan penjagaan
 
 Setiap route yang bisa menyentuh sebuah proyek memeriksa peran pemanggil di
@@ -103,6 +183,15 @@ npm run build
 `public/manifest.json` + `public/sw.js`, keduanya ditulis tangan dan
 didaftarkan oleh `app/ServiceWorker.tsx` — hanya di produksi, karena service
 worker di `next dev` menyimpan aset yang berubah setiap detik.
+
+Ikonnya dihasilkan tanpa dependensi apa pun (zlib + struct saja); lihat riwayat
+commit untuk skripnya. Kilatnya menempati sekitar 52% sisi ubin, bukan hampir
+seluruhnya seperti sebelumnya — ikon tanpa ruang kosong terlihat seperti satu
+blok biru di pratinjau tautan dan di daftar aplikasi. Ada satu berkas `maskable`
+tersendiri karena Android memotong ikonnya jadi bentuk apa pun: latarnya penuh
+sampai tepi dan kilatnya dijaga di dalam zona aman. Di dalam halaman, tandanya
+bukan PNG melainkan `app/BrandMark.tsx` — SVG sebaris, tajam pada ukuran berapa
+pun, tanpa permintaan jaringan.
 
 Dulu ini dihasilkan `next-pwa`. Paket itu sudah dilepas: ia berhenti dipelihara
 sebelum App Router ada, mengikat repo ke webpack (Next 16 mem-build dengan

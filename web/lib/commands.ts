@@ -10,6 +10,8 @@
 // Telegram dan tidak dipakai website, karena di sini command dipilih dari
 // tombol, bukan diketik.
 
+import type { FamilyCategory } from "./families";
+
 export type Role = "viewer" | "editor" | "admin";
 
 export type FieldType = "text" | "number" | "integer" | "boolean" | "select" | "grid";
@@ -32,6 +34,24 @@ export interface CommandField {
    * saja yang ada.
    */
   optionsFrom?: "print_setups" | "cad_setups";
+  /**
+   * Kolom ini berisi nama family Revit, dan daftar pilihannya adalah family
+   * kategori ini yang ada di model yang sedang terbuka.
+   *
+   * Dinyatakan di sini, bukan diterka dari nama kolom. Terkaannya dulu
+   * "buang akhiran `_type`", yang mengubah `fixture_type` jadi `fixture` —
+   * kunci yang tidak pernah dikirim add-in, sehingga dropdown-nya tidak pernah
+   * muncul dan kolom nama family selalu berupa kotak teks kosong.
+   */
+  familyCategory?: FamilyCategory;
+  /**
+   * Kategori family-nya ditentukan nilai kolom lain, bukan tetap.
+   *
+   * Untuk /modify_devices: kolom "Kategori" (`what`) yang memutuskan apakah
+   * "Tipe" berarti armatur, saklar, atau kamera — jadi daftarnya harus ikut
+   * berubah saat kategorinya diganti.
+   */
+  familyCategoryFrom?: string;
   min?: number;
   max?: number;
   /** Keterangan singkat di bawah field. */
@@ -117,8 +137,8 @@ export const COMMANDS: CommandSpec[] = [
         max: 500,
         label: { id: "Jumlah", en: "Count" },
         hint: {
-          id: "Kosongkan agar dihitung dari target lux.",
-          en: "Leave empty to size it from the lux target.",
+          id: "Kosongkan agar dihitung dari target lux. Gridnya disusun otomatis dari jumlah ini.",
+          en: "Leave empty to size it from the lux target. The grid is derived from this count.",
         },
       },
       {
@@ -126,8 +146,8 @@ export const COMMANDS: CommandSpec[] = [
         type: "grid",
         label: { id: "Grid (kolom x baris)", en: "Grid (columns x rows)" },
         hint: {
-          id: "mis. 3x2 — tata letak eksplisit, mengalahkan perhitungan lux.",
-          en: "e.g. 3x2 — explicit layout, overrides the lux calculation.",
+          id: "Kosongkan saja — disusun otomatis dari jumlah, hasil kalinya persis sama dengan jumlahnya.",
+          en: "Leave it empty — derived from the count so the layout holds exactly that many points.",
         },
       },
       height(2.8),
@@ -142,11 +162,19 @@ export const COMMANDS: CommandSpec[] = [
       {
         name: "fixture_type",
         type: "text",
-        default: "LED_15W",
+        // Sengaja tanpa default.
+        //
+        // Dulu "LED_15W" — nama yang enak dibaca dan tidak ada di model mana
+        // pun. Karena form mengisi nilai awalnya dari default katalog, nama itu
+        // IKUT TERKIRIM setiap kali orang tidak menyentuh kolomnya, jadi
+        // perintah yang tampak lengkap berangkat membawa family yang tidak ada.
+        // Kosong berarti add-in memakai family bawaannya sendiri — satu-satunya
+        // pihak di rantai ini yang tahu apa yang benar-benar termuat di file.
+        familyCategory: "lighting",
         label: { id: "Tipe armatur", en: "Fixture type" },
         hint: {
-          id: "Nama family di Revit.",
-          en: "Revit family name.",
+          id: "Nama family di Revit. Kosongkan untuk memakai bawaan add-in.",
+          en: "Revit family name. Leave empty to use the add-in's own default.",
         },
       },
       mounting("ceiling"),
@@ -204,7 +232,12 @@ export const COMMANDS: CommandSpec[] = [
         label: { id: "Mengendalikan", en: "Controls" },
         hint: { id: "id sirkuit, mark armatur, atau nama grup.", en: "A circuit id, fixture mark, or group name." },
       },
-      { name: "family", type: "text", label: { id: "Family Revit", en: "Revit family" } },
+      {
+        name: "family",
+        type: "text",
+        familyCategory: "lighting_device",
+        label: { id: "Family Revit", en: "Revit family" },
+      },
     ],
     example: "/place_lighting_device Meeting_1 type=three_gang count=1 controls=LF-001",
   },
@@ -507,7 +540,12 @@ export const COMMANDS: CommandSpec[] = [
         default: true,
         label: { id: "Pertahankan hanger lama", en: "Preserve existing hangers" },
       },
-      { name: "hanger_family", type: "text", label: { id: "Family hanger", en: "Hanger family" } },
+      {
+        name: "hanger_family",
+        type: "text",
+        familyCategory: "hanger",
+        label: { id: "Family hanger", en: "Hanger family" },
+      },
     ],
     example: "/create_cable_tray CT-A1 follow=\"Thin Lines\" size=300x300",
   },
@@ -528,7 +566,12 @@ export const COMMANDS: CommandSpec[] = [
         label: { id: "Mode", en: "Mode" },
       },
       { name: "preserve_existing", type: "boolean", default: true, label: { id: "Pertahankan yang ada", en: "Preserve existing" } },
-      { name: "hanger_family", type: "text", label: { id: "Family hanger", en: "Hanger family" } },
+      {
+        name: "hanger_family",
+        type: "text",
+        familyCategory: "hanger",
+        label: { id: "Family hanger", en: "Hanger family" },
+      },
     ],
     example: "/add_hangers CT-A1 spacing=1500",
   },
@@ -584,10 +627,26 @@ export const COMMANDS: CommandSpec[] = [
         ],
         label: { id: "Kategori", en: "Category" },
       },
-      { name: "count", type: "integer", min: 1, label: { id: "Jumlah baru", en: "New count" } },
+      {
+        name: "count",
+        type: "integer",
+        min: 1,
+        label: { id: "Jumlah baru", en: "New count" },
+        hint: {
+          id: "Gridnya disusun otomatis dari jumlah ini.",
+          en: "The grid is derived from this count.",
+        },
+      },
       { name: "grid", type: "grid", label: { id: "Grid baru", en: "New grid" } },
       { name: "height", type: "number", label: { id: "Ketinggian (m)", en: "Height (m)" } },
-      { name: "fixture_type", type: "text", label: { id: "Tipe armatur", en: "Fixture type" } },
+      {
+        name: "fixture_type",
+        type: "text",
+        // Daftarnya mengikuti kolom "Kategori" di sebelahnya: mengubah kategori
+        // ke `security` harus mengubah pilihannya jadi kamera, bukan armatur.
+        familyCategoryFrom: "what",
+        label: { id: "Tipe / family", en: "Type / family" },
+      },
     ],
     example: "/modify_devices Meeting_1 what=lighting grid=2x3",
   },
@@ -965,6 +1024,79 @@ for (const spec of COMMANDS) {
 export const COMMANDS_BY_NAME: Record<string, CommandSpec> = Object.fromEntries(
   COMMANDS.map((c) => [c.name, c])
 );
+
+/** Kategori yang bisa ditata ulang /modify_devices, diambil dari katalog sendiri. */
+export const MODIFY_CATEGORIES: string[] =
+  COMMANDS_BY_NAME.modify_devices?.fields.find((f) => f.name === "what")?.options ?? [];
+
+/**
+ * Kategori /modify_devices yang setara dengan sebuah perintah `place_*`.
+ *
+ * Dipakai untuk memutuskan hal yang selama ini tidak pernah diperiksa: ruangan
+ * yang SUDAH punya armatur tidak boleh diberi satu set lagi di atasnya.
+ * "Pasang 10 lampu" di ruangan yang sudah berisi 9 armatur berarti 19 armatur
+ * bertumpuk pada satu plafon — dua grid dengan jarak yang berbeda, sirkuit
+ * ganda, dan schedule yang menghitung dua kali. Yang dimaksud orangnya hampir
+ * selalu "jadikan 10", dan itu /modify_devices.
+ *
+ * Diturunkan dari nama perintahnya (`place_lighting` → `lighting`) lalu
+ * dicocokkan dengan daftar kategori yang benar-benar diterima modify — jadi
+ * perintah `place_*` berikutnya ikut terlindungi tanpa ada yang perlu ingat
+ * menambahkannya di sini, dan yang tidak punya padanan tetap mengembalikan null.
+ */
+export function modifyCategoryFor(commandName: string): string | null {
+  if (!commandName.startsWith("place_")) return null;
+  const category = commandName.slice("place_".length);
+  return MODIFY_CATEGORIES.includes(category) ? category : null;
+}
+
+/**
+ * Nilai formulir sebuah perintah `place_*` diterjemahkan jadi nilai
+ * /modify_devices yang setara.
+ *
+ * Hanya kolom yang benar-benar diterima modify yang ikut; sisanya (target lux,
+ * pemasangan, luas) memang tidak ada di sana. `quantity` ikut dibaca karena
+ * /place_communication menamai jumlahnya begitu, dan `family` karena
+ * /place_lighting_device menamai tipenya begitu — tanpa keduanya, pindah ke
+ * modifikasi berarti kehilangan justru angka yang baru saja diketik.
+ */
+export function modifyValuesFrom(
+  spec: CommandSpec,
+  category: string,
+  values: Record<string, unknown>
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    room: values[spec.positional?.name ?? "room"],
+    what: category,
+  };
+
+  const count = values.count ?? values.quantity;
+  if (count !== undefined && count !== "") out.count = count;
+  if (values.grid) out.grid = values.grid;
+  if (values.height !== undefined && values.height !== "") out.height = values.height;
+
+  const family = values.fixture_type ?? values.family;
+  if (family) out.fixture_type = family;
+
+  return out;
+}
+
+/**
+ * Kategori family untuk sebuah kolom, mengingat isian formulir saat ini.
+ *
+ * Kosong berarti kolom ini bukan kolom nama family — atau kategorinya belum bisa
+ * ditentukan, seperti /modify_devices yang kolom "Kategori"-nya belum dipilih.
+ */
+export function familyCategoryOf(
+  field: CommandField,
+  values: Record<string, unknown>
+): string {
+  if (field.familyCategory) return field.familyCategory;
+  if (!field.familyCategoryFrom) return "";
+
+  const from = String(values[field.familyCategoryFrom] ?? "");
+  return from === "all" ? "" : from;
+}
 
 const RANK: Record<Role, number> = { viewer: 0, editor: 1, admin: 2 };
 

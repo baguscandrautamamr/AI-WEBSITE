@@ -3,27 +3,49 @@
 @tailwind utilities;
 
 :root {
-  --bg-gradient: linear-gradient(180deg, #eef1f5 0%, #dfe6ee 100%);
-  --glass-bg: rgba(255, 255, 255, 0.6);
-  --glass-border: rgba(255, 255, 255, 0.4);
+  --bg-gradient: linear-gradient(180deg, #f7f8fa 0%, #e9edf3 100%);
+  /* Dua lampu lembut di belakang kaca. Tanpa sesuatu di belakangnya, sebuah
+     panel tembus pandang hanya terlihat sebagai kotak abu-abu — yang membuatnya
+     terbaca sebagai kaca adalah warna yang berubah di baliknya. */
+  --bg-glow-1: rgba(0, 113, 227, 0.1);
+  --bg-glow-2: rgba(120, 90, 255, 0.08);
+  --glass-bg: rgba(255, 255, 255, 0.62);
+  --glass-border: rgba(255, 255, 255, 0.55);
+  --glass-hairline: rgba(0, 0, 0, 0.06);
+  --glass-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 28px -12px rgba(15, 23, 42, 0.18);
+  --field-bg: rgba(255, 255, 255, 0.68);
   --text-primary: #1d1d1f;
   --text-secondary: #6e6e73;
   --accent: #0071e3;
 }
 
 .dark {
-  --bg-gradient: linear-gradient(180deg, #1c1c1e 0%, #000000 100%);
-  --glass-bg: rgba(30, 30, 32, 0.55);
-  --glass-border: rgba(255, 255, 255, 0.08);
+  --bg-gradient: linear-gradient(180deg, #17181b 0%, #000000 100%);
+  --bg-glow-1: rgba(41, 151, 255, 0.14);
+  --bg-glow-2: rgba(120, 90, 255, 0.1);
+  --glass-bg: rgba(28, 28, 31, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-hairline: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px -14px rgba(0, 0, 0, 0.7);
+  --field-bg: rgba(255, 255, 255, 0.07);
   --text-primary: #f5f5f7;
   --text-secondary: #a1a1a6;
   --accent: #2997ff;
 }
 
 body {
-  background: var(--bg-gradient);
+  background:
+    radial-gradient(60rem 40rem at 12% -10%, var(--bg-glow-1), transparent 60%),
+    radial-gradient(50rem 35rem at 95% 8%, var(--bg-glow-2), transparent 60%),
+    var(--bg-gradient);
+  background-attachment: fixed;
   color: var(--text-primary);
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  /* Ruang untuk notch dan garis geser di iPhone, karena aplikasi ini dipasang di
+     layar utama dan berjalan tanpa bilah peramban. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
   /* Halaman ini tidak pernah bermaksud digeser ke samping. Kalau ada satu isi
      yang terlalu lebar, yang benar adalah isi itu yang menggulir di kotaknya
      sendiri — bukan seluruh aplikasi ikut bergeser dan meninggalkan pita
@@ -45,35 +67,65 @@ pre {
   max-width: 100%;
 }
 
+/* Kaca, bukan sekadar kotak setengah tembus.
+   Tiga hal yang membuatnya terbaca sebagai kaca: latar di belakangnya yang
+   diburamkan DAN dinaikkan saturasinya, satu garis terang di tepi atas seperti
+   cahaya yang tertangkap di lengkungan kaca, dan bayangan yang sangat lembut
+   supaya ia terlihat melayang beberapa milimeter di atas latarnya. */
 .glass-panel {
   background: var(--glass-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
   border: 1px solid var(--glass-border);
-  border-radius: 20px;
+  border-radius: 22px;
+  box-shadow: var(--glass-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+.dark .glass-panel {
+  box-shadow: var(--glass-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .glass-input {
-  background: rgba(255, 255, 255, 0.5);
-  border: 1px solid var(--glass-border);
-  border-radius: 12px;
+  background: var(--field-bg);
+  border: 1px solid var(--glass-hairline);
+  border-radius: 14px;
   padding: 10px 14px;
   color: var(--text-primary);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  /* 16px supaya Safari di iPhone tidak memperbesar halaman setiap kali sebuah
+     kolom disentuh — pembesaran itu tidak pernah dibatalkan sendiri, dan yang
+     tersisa adalah tata letak yang menggeser ke samping. */
+  font-size: 16px;
 }
-.dark .glass-input {
-  background: rgba(255, 255, 255, 0.06);
+@media (min-width: 640px) {
+  .glass-input { font-size: 14px; }
+}
+.glass-input:focus,
+.glass-input:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .btn-accent {
   background: var(--accent);
   color: white;
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 10px 18px;
   font-weight: 500;
-  transition: opacity 0.15s ease;
+  font-size: 15px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  transition: opacity 0.15s ease, transform 0.1s ease;
 }
-.btn-accent:hover { opacity: 0.85; }
+.btn-accent:hover { opacity: 0.9; }
+.btn-accent:active { transform: scale(0.985); }
 .btn-accent:disabled { opacity: 0.4; }
+.btn-accent:disabled:active { transform: none; }
+
+/* Bidang sentuh. Tombol teks berukuran 11px yang bisa dipencet dengan tepat oleh
+   tetikus tidak bisa dipencet dengan tepat oleh jempol. */
+@media (pointer: coarse) {
+  button { touch-action: manipulation; }
+}
 
 /* Jawaban asisten datang sebagai markdown. Tanpa aturan di bawah, Tailwind
    preflight menghapus semua gaya bawaan elemen, sehingga tabel, judul, dan

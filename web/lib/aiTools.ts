@@ -100,6 +100,27 @@ export function toolsForRole(role: Role): AnthropicTool[] {
   return COMMANDS.filter((c) => !c.hidden && canRun(c, role)).map(toolFor);
 }
 
+/**
+ * Jawaban yang MENULIS sebuah perintah alih-alih memanggil tool-nya.
+ *
+ * Inilah bentuk kegagalan yang paling mahal di mode ini, karena ia tidak
+ * terlihat seperti kegagalan. Model menjawab dengan teks
+ * `/place_lighting "LOUNGE 5" count=10 …` diikuti kalimat bahwa perintahnya
+ * sudah masuk antrean Revit; tidak ada tool yang dipanggil, jadi tidak ada baris
+ * di commands_queue, tidak ada apa pun di Revit, dan panel chat menampilkan
+ * pernyataan itu apa adanya. Yang dialami orangnya: perintah yang katanya
+ * diantre, antrean yang kosong, dan model yang tidak berubah.
+ *
+ * Dideteksi lewat nama perintah dari katalog, bukan lewat kata seperti "kirim"
+ * atau "antre": pertanyaan klarifikasi yang wajar penuh kata-kata itu, dan
+ * memaksa tool dipanggil di tengah pertanyaan berarti memasang perangkat dengan
+ * angka yang belum pernah disebut siapa pun.
+ */
+export function mentionsCommand(text: string): boolean {
+  if (!text) return false;
+  return COMMANDS.some((c) => new RegExp(`(^|[^a-z_])/${c.name}\\b`, "i").test(text));
+}
+
 export const ELECTRICAL_SYSTEM_PROMPT = `Kamu Revit Command Center — asisten yang
 menerjemahkan permintaan insinyur MEP jadi perintah untuk add-in Revit. Kalau
 ditanya siapa kamu, sebut nama itu.
@@ -127,11 +148,30 @@ ATURAN:
   disertakan di bawah, pilih dari daftar itu — jangan menyingkat, jangan
   mengarang. Nama yang tidak ada di model membuat perintahnya gagal di Revit,
   dan kegagalan itu baru terlihat setelah orangnya menunggu.
+- Kalau orangnya menyebut JUMLAH, isi \`count\` saja dan biarkan \`grid\` kosong.
+  Grid-nya dihitung sistem dari jumlah itu — 10 lampu jadi 5x2, hasil kalinya
+  persis sepuluh. Grid yang kamu karang sendiri bisa memuat lebih banyak titik
+  daripada jumlahnya dan meninggalkan lubang di deret terakhir. Isi \`grid\` hanya
+  kalau orangnya sendiri yang menyebut bentuknya ("2x5", "dua baris lima kolom").
+- Ruangan yang SUDAH punya kategori itu ditata ulang, bukan ditambahi: pakai
+  \`modify_devices\` (dengan \`what\`), bukan \`place_*\`. "Pasang 10 lampu" di ruangan
+  yang sudah berisi 9 armatur berarti 19 armatur bertumpuk pada satu plafon.
+  Website memeriksa isi ruangannya sebelum mengirim dan akan menawarkan
+  penggantian kalau kamu keliru memilih, tapi pilihlah yang benar sejak awal.
 - Kalau permintaannya soal standar atau regulasi (SNI, PUIL, IEC, NEC) dan bukan
   perintah untuk model, jawab singkat bahwa itu ada di halaman "Standar
   Electrical", jangan panggil tool apa pun.
 - Satu pesan = paling banyak satu tool. Kalau pengguna meminta beberapa hal
   sekaligus, kerjakan yang pertama dan sebutkan sisanya akan menyusul.
+
+SATU-SATUNYA CARA MENGIRIM PERINTAH ADALAH MEMANGGIL TOOL:
+- Menulis baris perintah sebagai teks — mis. \`/place_lighting "LOUNGE 5" count=10\`
+  — TIDAK mengirim apa pun. Tidak ada yang membaca teksmu lalu menjalankannya;
+  yang masuk antrean Revit hanya tool yang benar-benar kamu panggil. Kalau
+  maksudmu mengirim, panggil tool-nya. Kalau kamu belum mau mengirim, jangan
+  menuliskan baris perintahnya sama sekali — cukup tanyakan yang kurang.
+- Riwayat percakapan ini memuat catatan sistem yang berbentuk seperti baris
+  perintah. Itu catatan, bukan contoh cara menjawab.
 
 YANG TIDAK BOLEH KAMU KATAKAN:
 - JANGAN pernah menyatakan sebuah perintah sudah dijalankan, sedang berjalan,

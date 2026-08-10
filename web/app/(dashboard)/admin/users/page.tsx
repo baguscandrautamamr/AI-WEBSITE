@@ -200,7 +200,7 @@ export default function AdminUsersPage() {
   // jalan untuk mulai bekerja.
   if (projects.length === 0) {
     return (
-      <div className="glass-panel max-w-2xl space-y-4 p-6">
+      <div className="glass-panel max-w-2xl space-y-4 p-4 sm:p-6">
         <div>
           <h1 className="text-lg font-medium">{t("admin.title")}</h1>
           <p className="text-sm text-text-secondary">{t("admin.notAdmin")}</p>
@@ -218,7 +218,7 @@ export default function AdminUsersPage() {
   const waiting = pending.filter((u) => !onProject.some((a) => a.user_id === u.id));
 
   return (
-    <div className="glass-panel max-w-2xl p-6 space-y-5">
+    <div className="glass-panel max-w-2xl space-y-5 p-4 sm:p-6">
       <div>
         <h1 className="text-lg font-medium">{t("admin.title")}</h1>
         <p className="text-sm text-text-secondary">{t("admin.subtitle")}</p>

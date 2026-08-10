@@ -81,7 +81,29 @@ export async function GET(req: Request) {
     }
   }
 
+  // Kapan add-in terakhir benar-benar mengerjakan sesuatu di proyek ini.
+  //
+  // Tanpa ini "Menunggu diambil add-in" adalah satu kalimat untuk dua keadaan
+  // yang sangat berbeda: antrean yang bergerak tapi panjang, dan add-in yang
+  // tidak mengambil apa pun karena Revit tertutup — atau karena add-in-nya
+  // menunggu di project Supabase/kode proyek yang lain. Yang kedua bisa
+  // ditunggu selamanya tanpa pernah terjadi apa-apa, dan itu persis keadaan
+  // yang paling perlu dikatakan.
+  const { data: lastDone } = await service
+    .from("commands_queue")
+    .select("completed_at")
+    .eq("project_id", projectId)
+    .not("completed_at", "is", null)
+    .order("completed_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
   return NextResponse.json({
+    addin: {
+      // Ada baris `processing` = add-in sedang memegang sesuatu SEKARANG.
+      busy: queue.some((row) => row.status === "processing"),
+      lastSeen: (lastDone?.completed_at as string | null) ?? null,
+    },
     commands: queue.map((row) => ({
       id: row.id,
       commandType: row.command_type,

@@ -105,6 +105,38 @@ describe("turnsFromChat", () => {
     expect(turn.content).not.toMatch(/berhasil|selesai/i);
   });
 
+  it("menandai dirinya catatan sistem, bukan contoh cara menjawab", () => {
+    // Bentuk lamanya adalah baris perintah telanjang plus "Perintah ini dikirim
+    // ke antrean Revit." — persis rupa sebuah jawaban asisten. Model lalu meniru
+    // bentuk itu pada giliran berikutnya: ia MENULIS baris perintahnya sebagai
+    // teks, mengaku sudah mengirimnya, dan tidak memanggil tool apa pun. Tidak
+    // ada baris di commands_queue, tidak ada apa pun di Revit, dan chat-nya
+    // berbunyi seperti sudah berangkat.
+    const [turn] = turnsFromChat([
+      {
+        role: "proposal",
+        text: "",
+        command: "place_lighting",
+        commandText: '/place_lighting "LOUNGE 5" count=10',
+      },
+    ]);
+
+    expect(turn.content).toContain("[CATATAN SISTEM]");
+    expect(turn.content).toContain("memanggil tool place_lighting");
+    // Yang paling penting: dikatakan terus terang bahwa menulis teks tidak
+    // mengirim apa pun.
+    expect(turn.content).toMatch(/tidak mengirim apa pun/i);
+    // Dan barisnya tidak lagi berdiri sendiri di awal sebagai jawaban.
+    expect(turn.content.startsWith("/place_lighting")).toBe(false);
+  });
+
+  it("menyebutkan nama tool dari teks perintah kalau tidak dikirim terpisah", () => {
+    const [turn] = turnsFromChat([
+      { role: "proposal", text: "", commandText: "/modify_devices Lounge grid=2x5" },
+    ]);
+    expect(turn.content).toContain("memanggil tool modify_devices");
+  });
+
   it("menyebutkan yang kurang untuk perintah yang tidak berangkat", () => {
     const [turn] = turnsFromChat([
       {
