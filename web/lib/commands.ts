@@ -71,8 +71,12 @@ const room = (labelId: string, labelEn: string): CommandField => ({
   required: true,
   label: { id: labelId, en: labelEn },
   hint: {
-    id: "Tulis persis seperti di gambar, termasuk nomornya — mis. \"meeting 1\".",
-    en: "Type it exactly as on the drawing, including its number — e.g. \"meeting 1\".",
+    // Room maupun Space MEP sama-sama diterima add-in, dan itu perlu disebut:
+    // model MEP yang ruangannya dibuat sebagai Space dulu terbaca seolah tidak
+    // punya ruangan sama sekali, dan tidak ada apa pun di form ini yang
+    // memberi tahu bahwa itulah sebabnya.
+    id: "Tulis persis seperti di gambar, termasuk nomornya — mis. \"meeting 1\". Room maupun Space MEP sama-sama bisa.",
+    en: "Type it exactly as on the drawing, including its number — e.g. \"meeting 1\". Either a Room or an MEP Space works.",
   },
 });
 

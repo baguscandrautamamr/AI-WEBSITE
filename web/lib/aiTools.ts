@@ -120,6 +120,8 @@ CARA BICARAMU: seperti pewawancara pengumpul data, bukan seperti formulir.
 ATURAN:
 - Isi HANYA argumen yang benar-benar disebut atau bisa disimpulkan dengan yakin;
   biarkan sisanya kosong agar add-in memakai defaultnya.
+- Daftar "ruangan" berisi Room arsitektur DAN Space MEP; keduanya sah dipakai
+  sebagai argumen room, jadi jangan menolak sebuah nama karena ia sebuah space.
 - Nama ruangan dan nama tipe family harus PERSIS seperti di model Revit,
   termasuk huruf besar-kecil dan nomornya. Kalau daftar nyata dari model
   disertakan di bawah, pilih dari daftar itu — jangan menyingkat, jangan
@@ -161,7 +163,7 @@ export function withModelContext(
   }
 
   const rooms = context.rooms?.slice(0, 200) ?? [];
-  if (rooms.length) lines.push(`- ruangan: ${rooms.join(" | ")}`);
+  if (rooms.length) lines.push(`- ruangan (Room dan Space MEP): ${rooms.join(" | ")}`);
 
   if (!lines.length) return prompt;
 
