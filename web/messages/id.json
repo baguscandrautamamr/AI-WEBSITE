@@ -200,6 +200,7 @@
     "export.local_only": "File tersimpan di PC yang menjalankan Revit dan belum bisa diunduh dari sini. Isi kredensial Cloudinary di %APPDATA%\\RevitCommandCenter\\config.json agar hasil export muncul sebagai tautan unduhan.",
     "print.no_bot_token": "Pengiriman ke Telegram menyala tapi token bot-nya belum diisi, jadi file tidak terkirim ke chat mana pun.",
     "export_cad.no_setup": "Diekspor tanpa CAD export setup, jadi memakai bawaan Revit — layer dan ketebalan garisnya kemungkinan tidak sesuai standar kantor.",
-    "export.upload_failed": "Kredensial Cloudinary ada tapi unggahannya gagal, jadi file tetap di PC Revit. Biasanya karena kunci sudah diganti dan belum diperbarui di config.json, atau jaringan memblokirnya. Cek logs di %APPDATA%\\RevitCommandCenter\\logs."
+    "export.upload_failed": "Kredensial Cloudinary ada tapi unggahannya gagal, jadi file tetap di PC Revit. Biasanya karena kunci sudah diganti dan belum diperbarui di config.json, atau jaringan memblokirnya. Cek logs di %APPDATA%\\RevitCommandCenter\\logs.",
+    "export.upload_undeliverable": "File berhasil diunggah, tapi Cloudinary menolak saat tautannya dibuka. Terunggah dan bisa diunduh adalah dua izin berbeda: akun Cloudinary baru secara bawaan tidak mengizinkan PDF diunduh. Buka Cloudinary → Settings → Security → Restricted media types, matikan pembatasan untuk PDF, lalu buka tautannya lagi — file lamanya pun langsung bisa diunduh tanpa perlu dicetak ulang."
   }
 }
