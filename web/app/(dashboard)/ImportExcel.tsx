@@ -45,6 +45,10 @@ export default function ImportExcel() {
     try {
       const form = new FormData();
       form.append("file", file);
+      // Proyeknya ikut dikirim: route unggah memeriksa peran di proyek ini
+      // sebelum menerima apa pun, jadi file yang tidak boleh diimpor ditolak
+      // sebelum naik, bukan setelah.
+      form.append("projectId", active);
 
       const uploaded = await fetch("/api/files/upload", { method: "POST", body: form });
       const uploadBody = await uploaded.json();

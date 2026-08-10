@@ -7,8 +7,8 @@ node_modules/
 web/.next/
 web/out/
 web/next-env.d.ts
-web/public/sw.js
-web/public/workbox-*.js
+# web/public/sw.js TIDAK di-ignore lagi: sejak next-pwa dilepas, file itu
+# ditulis tangan dan jadi bagian dari source, bukan keluaran build.
 
 # production build
 build/

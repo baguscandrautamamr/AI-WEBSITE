@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { roleForProject } from "@/lib/access";
+import { rateLimit, tooManyRequests } from "@/lib/rateLimit";
 import { uploadBuffer } from "@/lib/cloudinary";
+import { COMMANDS_BY_NAME, canRun } from "@/lib/commands";
 
 // cloudinary + Buffer butuh Node runtime, bukan edge.
 export const runtime = "nodejs";
 
 const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
+
+/** 10 unggahan per jam per user — cukup untuk kerja normal, tidak untuk menguras kuota. */
+const UPLOADS_PER_HOUR = 10;
 
 // Hanya tipe yang memang dipakai alur import ke add-in Revit.
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -42,19 +48,45 @@ function safePublicId(originalName: string) {
   return `${cleaned || "upload"}-${Date.now()}`;
 }
 
-// Upload generik: dipanggil halaman export-import sebelum insert command
-// `import_pdf`, supaya add-in bisa menarik file lewat URL.
+// Upload: dipanggil halaman export-import sebelum insert command `import_excel`,
+// supaya add-in bisa menarik file lewat URL.
+//
+// Butuh `projectId`, dan peran di proyek itu harus boleh menjalankan
+// import_excel. Login saja tidak cukup: akun yang baru mendaftar sengaja tidak
+// punya proyek apa pun (lihat migrasi 0008), dan tanpa syarat ini ia tetap bisa
+// menaruh file berukuran penuh di Cloudinary berulang kali — file yang tidak
+// akan pernah bisa dipakai, tapi tetap dibayar.
 export async function POST(req: Request) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const limit = rateLimit(`upload:${user.id}`, UPLOADS_PER_HOUR, 60 * 60 * 1000);
+  if (!limit.ok) return tooManyRequests(limit);
 
   let form: FormData;
   try {
     form = await req.formData();
   } catch {
     return NextResponse.json({ error: "expected multipart/form-data" }, { status: 400 });
+  }
+
+  const projectId = form.get("projectId");
+  if (typeof projectId !== "string" || !projectId) {
+    return NextResponse.json({ error: "field `projectId` is required" }, { status: 400 });
+  }
+
+  // Diperiksa terhadap spesifikasi command yang akan memakai file ini, bukan
+  // terhadap peran yang ditulis di sini — kalau import_excel suatu saat naik
+  // jadi khusus admin, syarat unggahnya ikut naik dengan sendirinya.
+  const role = await roleForProject(supabase, user.id, projectId);
+  const spec = COMMANDS_BY_NAME["import_excel"];
+  if (!role || !spec || !canRun(spec, role)) {
+    return NextResponse.json(
+      { error: "kamu tidak punya izin mengunggah file ke proyek ini" },
+      { status: 403 }
+    );
   }
 
   const file = form.get("file");

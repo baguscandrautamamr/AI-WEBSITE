@@ -1,10 +1,10 @@
 name: CI
 
+# Jalan di semua branch, bukan hanya main: branch kerja yang belum di-PR dulu
+# tidak diperiksa sama sekali, jadi kegagalannya baru muncul saat PR dibuka.
 on:
   push:
-    branches: ["main"]
   pull_request:
-    branches: ["main"]
 
 # Batalkan run lama kalau ada push baru di branch/PR yang sama.
 concurrency:
@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   build:
-    name: Typecheck & build (web)
+    name: Lint, test, typecheck & build (web)
     runs-on: ubuntu-latest
 
     defaults:
@@ -32,8 +32,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
       - name: Typecheck
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
       - name: Build
         # Halaman /login di-prerender saat build dan membuat Supabase client,

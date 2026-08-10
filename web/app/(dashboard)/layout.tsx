@@ -17,7 +17,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   let signedIn = false;
 
   try {
-    const supabase = createClient();
+    const supabase = await createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
