@@ -13,7 +13,7 @@ import {
   type CommandField,
   type CommandSpec,
 } from "@/lib/commands";
-import { familyTypesFor } from "@/lib/families";
+import { familiesFor, type RevitFamily } from "@/lib/families";
 import { autoGrid, awkwardCount, flip, formatGrid, friendlierCounts, gridCount, parseGrid } from "@/lib/grid";
 import { turnsFromChat } from "@/lib/chatHistory";
 import CommandChat, { type ChatBody, type ChatEntry } from "./CommandChat";
@@ -916,12 +916,6 @@ export default function CommandRunner({
   const knownContents =
     roomValue && focusCategory ? (roomContents[contentsKey(roomValue, focusCategory)] ?? null) : null;
 
-  /** Family armatur yang benar-benar termuat di model yang sedang terbuka. */
-  const lightingFamilies = useMemo(
-    () => familyTypesFor(model?.familyTypes, "lighting"),
-    [model]
-  );
-
   if (projectsLoading) return <p className="opacity-60">{t("common.loading")}</p>;
 
   if (!projects.length) {
@@ -996,27 +990,6 @@ export default function CommandRunner({
             </button>
           )}
         </div>
-
-        {/* Family armatur yang benar-benar termuat di file ini.
-            Ada di sini, di luar formulir, karena ini pertanyaan yang muncul
-            SEBELUM memilih perintah: "lampu apa saja yang tersedia di model
-            ini". Tanpa daftar, satu-satunya jawabannya adalah mengetik nama dari
-            ingatan — dan nama family yang salah baru ditolak Revit beberapa menit
-            kemudian, dengan gambar yang tetap kosong. */}
-        {lightingFamilies.length > 0 && (
-          <details className="text-xs">
-            <summary className="cursor-pointer opacity-70">
-              {t("command.familiesTitle").replace("{n}", String(lightingFamilies.length))}
-            </summary>
-            <ul className="mt-2 max-h-40 space-y-0.5 overflow-auto">
-              {lightingFamilies.map((name) => (
-                <li key={name} className="break-all opacity-75">
-                  <code>{name}</code>
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
 
         {/* Tombol per command — inilah yang menembak ke add-in Revit.
             Satu baris yang bisa digeser di telepon: dibungkus jadi lima baris,
@@ -1270,8 +1243,8 @@ function familyOptionsFor(
   field: CommandField,
   values: Record<string, unknown>,
   model: ModelInfo | null
-): string[] {
-  return familyTypesFor(model?.familyTypes, familyCategoryOf(field, values));
+): RevitFamily[] {
+  return familiesFor(model?.familyTypes, familyCategoryOf(field, values));
 }
 
 /**
@@ -1664,7 +1637,7 @@ function Field({
    * "Tipe armatur" selalu berupa kotak teks, dan satu-satunya cara mengisinya
    * adalah mengetik nama family dari ingatan.
    */
-  familyOptions: string[];
+  familyOptions: RevitFamily[];
   /** Keterangan tambahan di bawah kolom, mis. grid yang dihitung dari jumlah. */
   extra?: React.ReactNode;
   onChange: (v: unknown) => void;
@@ -1838,9 +1811,15 @@ function Field({
             }}
           >
             <option value="">{t("command.typePick")}</option>
-            {typeOptions.map((name) => (
-              <option key={name} value={name}>
-                {name}
+            {/* Nilainya nama family saja, tanpa ": Tipe" di belakangnya.
+                Bentuk `Family: Type` adalah cara Revit MENAMPILKAN sebuah tipe,
+                dan mengirimkannya kembali sebagai argumen tidak cocok dengan apa
+                pun: perintahnya tetap berjalan, tetap melaporkan sepuluh armatur
+                terpasang, dan yang terpasang adalah family bawaan add-in. */}
+            {typeOptions.map((option) => (
+              <option key={option.name} value={option.name}>
+                {option.name}
+                {option.types.length > 1 ? ` (${option.types.length} tipe)` : ""}
               </option>
             ))}
             {/* Jalan keluar, bukan jalan utama: daftar ini hanya sebaik model

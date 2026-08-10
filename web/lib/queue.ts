@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { COMMANDS_BY_NAME, canRun, type CommandField, type CommandSpec, type Role } from "./commands";
 import { autoGrid, formatGrid, gridCount, parseGrid } from "./grid";
+import { familyNameOf } from "./families";
 
 // Penyambung website ke add-in Revit.
 //
@@ -100,7 +101,7 @@ export function buildPayload(
       if (field.required) issues.push(`${field.name} wajib diisi`);
       continue;
     }
-    payload[field.name] = v;
+    payload[field.name] = namesFamily(field) && typeof v === "string" ? familyNameOf(v) : v;
   }
 
   // Aturan yang tidak bisa dinyatakan per-field.
@@ -126,6 +127,11 @@ export function buildPayload(
   const commandText = `/${spec.name}${positionalText}${rest ? ` ${rest}` : ""}`;
 
   return { payload, commandText };
+}
+
+/** Kolom ini berisi nama family Revit. */
+function namesFamily(field: CommandField): boolean {
+  return Boolean(field.familyCategory || field.familyCategoryFrom);
 }
 
 /**

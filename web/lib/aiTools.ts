@@ -1,4 +1,5 @@
 import { COMMANDS, canRun, type CommandField, type CommandSpec, type Role } from "./commands";
+import { familyNameOf } from "./families";
 
 /**
  * Katalog command diubah jadi tool Anthropic.
@@ -143,6 +144,10 @@ ATURAN:
   biarkan sisanya kosong agar add-in memakai defaultnya.
 - Daftar "ruangan" berisi Room arsitektur DAN Space MEP; keduanya sah dipakai
   sebagai argumen room, jadi jangan menolak sebuah nama karena ia sebuah space.
+- Untuk kolom family (\`fixture_type\`, \`family\`): kirim NAMA FAMILY saja, persis
+  seperti di daftar di bawah. Jangan menambahkan ": Tipe" di belakangnya —
+  bentuk itu cara Revit menampilkan sebuah tipe, bukan nilai yang bisa dicocokkan,
+  dan perintahnya akan berjalan tanpa galat sambil memasang family yang salah.
 - Nama ruangan dan nama tipe family harus PERSIS seperti di model Revit,
   termasuk huruf besar-kecil dan nomornya. Kalau daftar nyata dari model
   disertakan di bawah, pilih dari daftar itu — jangan menyingkat, jangan
@@ -215,7 +220,16 @@ export function withModelContext(
 
   const lines: string[] = [];
 
-  for (const [category, names] of Object.entries(context.familyTypes ?? {})) {
+  // Nama FAMILY, bukan bentuk tampilan `Family: Type` yang dikirim add-in.
+  //
+  // Daftar inilah yang disalin model ke argumennya, jadi bentuk yang salah di
+  // sini langsung jadi perintah yang salah: `fixture_type="ACT_E_DOWNLIGHT
+  // 22WATT: DOWNLIGHT 22 WATT"` tidak cocok dengan apa pun di model, perintahnya
+  // tetap berjalan tanpa galat, melaporkan sepuluh armatur terpasang — dan yang
+  // terpasang adalah family bawaan add-in.
+  for (const [category, entries] of Object.entries(context.familyTypes ?? {})) {
+    if (!Array.isArray(entries) || !entries.length) continue;
+    const names = [...new Set(entries.map(familyNameOf).filter(Boolean))];
     if (names.length) lines.push(`- ${category}: ${names.slice(0, 40).join(" | ")}`);
   }
 

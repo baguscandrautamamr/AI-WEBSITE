@@ -90,6 +90,60 @@ const ALIASES: Record<FamilyCategory, string[]> = {
   cable_tray: ["cable_tray", "cable_trays", "cabletrays", "tray"],
 };
 
+/**
+ * Nama family-nya saja, dari sebuah entri `model_info`.
+ *
+ * Add-in melaporkan tipe dalam bentuk tampilan Revit: `Family: Type` —
+ * "ACT_E_DOWNLIGHT 22WATT: DOWNLIGHT 22 WATT". Yang dikirim balik sebagai
+ * argumen TIDAK boleh berbentuk itu: perintah dengan
+ * `fixture_type="ACT_E_DOWNLIGHT 22WATT: DOWNLIGHT 22 WATT"` berjalan tanpa
+ * galat, melaporkan sepuluh armatur terpasang, dan yang benar-benar dipasang
+ * adalah family bawaan add-in — RECESSED 600x600, bukan downlight yang diminta.
+ * Kegagalan pencocokan namanya tidak diteruskan ke mana pun; ia hanya jadi
+ * gambar yang salah.
+ *
+ * Yang dikirim sekarang bagian sebelum titik dua, dan itu bentuk yang sama
+ * dengan contoh di katalog (`fixture_type=act_e_downlight`).
+ */
+export function familyNameOf(entry: string): string {
+  const cut = entry.indexOf(":");
+  return (cut === -1 ? entry : entry.slice(0, cut)).trim();
+}
+
+/**
+ * Family per kategori — satu baris per family, bukan satu per tipe.
+ *
+ * Yang dipilih orang dan yang dikirim ke add-in adalah nama family, jadi dua
+ * tipe dari family yang sama tidak boleh muncul sebagai dua pilihan yang
+ * mengirim nilai yang persis sama.
+ */
+export interface RevitFamily {
+  /** Nama family — inilah yang dikirim sebagai argumen. */
+  name: string;
+  /** Nama tipe di dalamnya, seperti dilaporkan model_info. */
+  types: string[];
+}
+
+export function familiesFor(
+  familyTypes: Record<string, string[]> | undefined | null,
+  category: string | undefined | null
+): RevitFamily[] {
+  const grouped = new Map<string, string[]>();
+
+  for (const entry of familyTypesFor(familyTypes, category)) {
+    const name = familyNameOf(entry);
+    if (!name) continue;
+    const cut = entry.indexOf(":");
+    const type = cut === -1 ? "" : entry.slice(cut + 1).trim();
+
+    const types = grouped.get(name) ?? [];
+    if (type && !types.includes(type)) types.push(type);
+    grouped.set(name, types);
+  }
+
+  return [...grouped].map(([name, types]) => ({ name, types }));
+}
+
 /** Huruf dan angka saja, tanpa akhiran jamak — supaya "Lighting Fixtures" = "lighting_fixture". */
 function normalize(key: string): string {
   const flat = key.toLowerCase().replace(/[^a-z0-9]/g, "");

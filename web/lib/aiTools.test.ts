@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { ELECTRICAL_SYSTEM_PROMPT, mentionsCommand, toolsForRole } from "./aiTools";
+import {
+  ELECTRICAL_SYSTEM_PROMPT,
+  mentionsCommand,
+  toolsForRole,
+  withModelContext,
+} from "./aiTools";
 
 describe("mentionsCommand", () => {
   // Ini penjaga terhadap satu bentuk kegagalan yang terlihat persis seperti
@@ -77,5 +82,40 @@ describe("ELECTRICAL_SYSTEM_PROMPT", () => {
 
   it("menyuruh membiarkan grid kosong kalau yang disebut adalah jumlah", () => {
     expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/biarkan .*grid.* kosong/i);
+  });
+});
+
+describe("withModelContext", () => {
+  // Daftar inilah yang disalin model ke argumennya. Kalau ia memuat bentuk
+  // tampilan Revit (`Family: Type`), perintahnya berangkat membawa nilai yang
+  // tidak cocok dengan apa pun — dan add-in memasang family bawaannya sendiri
+  // tanpa satu pun galat muncul.
+  it("menyebut nama family, bukan bentuk tampilan Revit", () => {
+    const prompt = withModelContext(ELECTRICAL_SYSTEM_PROMPT, {
+      familyTypes: {
+        "Lighting Fixtures": [
+          "ACT_E_DOWNLIGHT 22WATT: DOWNLIGHT 22 WATT",
+          "ACT_E_DOWNLIGHT 22WATT: DOWNLIGHT 18 WATT",
+        ],
+      },
+      rooms: ["LOUNGE 5"],
+    });
+
+    expect(prompt).toContain("ACT_E_DOWNLIGHT 22WATT");
+    expect(prompt).not.toContain("DOWNLIGHT 22 WATT");
+    // Satu family, satu kali — dua tipe di dalamnya bukan dua pilihan.
+    expect(prompt.match(/ACT_E_DOWNLIGHT 22WATT/g)).toHaveLength(1);
+  });
+
+  it("menyebut ruangan yang ada di model", () => {
+    const prompt = withModelContext(ELECTRICAL_SYSTEM_PROMPT, { rooms: ["LOUNGE 5", "PANTRY"] });
+    expect(prompt).toContain("LOUNGE 5 | PANTRY");
+  });
+
+  it("tidak menambah apa pun kalau modelnya belum dibaca", () => {
+    expect(withModelContext(ELECTRICAL_SYSTEM_PROMPT, undefined)).toBe(ELECTRICAL_SYSTEM_PROMPT);
+    expect(withModelContext(ELECTRICAL_SYSTEM_PROMPT, { familyTypes: {}, rooms: [] })).toBe(
+      ELECTRICAL_SYSTEM_PROMPT
+    );
   });
 });
