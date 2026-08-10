@@ -44,6 +44,22 @@ export default function StandardPage() {
   const [clearing, setClearing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+
+  /**
+   * Apakah gulirnya masih mengikuti jawaban yang sedang ditulis.
+   *
+   * Ada karena jawaban yang mengalir membuat efek gulir berjalan puluhan kali,
+   * dan tiap kali ia menarik layar kembali ke bawah. Akibatnya, justru selama
+   * menunggu — satu-satunya waktu orang punya jeda untuk membaca lagi
+   * percakapan sebelumnya — layar tidak bisa digulir ke atas sama sekali:
+   * potongan teks berikutnya menariknya turun lagi dalam sepersekian detik.
+   *
+   * Sebuah ref, bukan state: nilainya dibaca di dalam efek gulir dan tidak
+   * boleh memicu render ulang setiap kali jari bergerak.
+   */
+  const following = useRef(true);
+  const [atBottom, setAtBottom] = useState(true);
 
   // Utas tersimpan di standards_threads, jadi percakapan kemarin masih ada
   // saat halaman dibuka lagi — termasuk yang dimulai dari Telegram.
@@ -69,11 +85,40 @@ export default function StandardPage() {
     })();
   }, []);
 
-  // Tanpa "smooth": efek ini kini berjalan tiap potongan teks datang, dan
-  // animasi gulir yang dimulai ulang puluhan kali per jawaban terlihat gemetar.
+  // Tanpa "smooth": efek ini berjalan tiap potongan teks datang, dan animasi
+  // gulir yang dimulai ulang puluhan kali per jawaban terlihat gemetar.
+  //
+  // Hanya kalau pembacanya memang sedang berada di bawah. Menggulir ke atas
+  // adalah cara orang mengatakan "saya sedang membaca yang lain"; menariknya
+  // turun setelah itu bukan membantu, itu mengambil kembali kendali yang baru
+  // saja ia pakai.
   useEffect(() => {
-    bottom.current?.scrollIntoView({ block: "end" });
+    if (following.current) bottom.current?.scrollIntoView({ block: "end" });
   }, [messages]);
+
+  /**
+   * Menandai posisi guliran setiap kali daftarnya digulir.
+   *
+   * Ambangnya 80 piksel, bukan nol: "di bawah" bagi pembaca tidak sama dengan
+   * di bawah bagi browser — satu baris teks baru yang datang saat ia persis di
+   * dasar sudah cukup membuat jaraknya tidak lagi nol, dan tanpa ambang itu
+   * gulirnya berhenti mengikuti tepat ketika seharusnya paling mengikuti.
+   */
+  function onListScroll() {
+    const element = list.current;
+    if (!element) return;
+
+    const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
+    following.current = distance < 80;
+    setAtBottom(following.current);
+  }
+
+  /** Kembali mengikuti, dan turun ke jawaban terbaru. */
+  function jumpToLatest() {
+    following.current = true;
+    setAtBottom(true);
+    bottom.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }
 
   /**
    * Mengosongkan utas, di layar dan di server sekaligus.
@@ -106,6 +151,12 @@ export default function StandardPage() {
   async function send() {
     const question = input.trim();
     if (!question || loading) return;
+
+    // Mengirim pertanyaan berarti minta melihat jawabannya. Kalau gulirnya
+    // ditinggal di tempat pembacanya berhenti membaca tadi, pertanyaan yang
+    // baru dikirim muncul di luar layar dan halamannya tampak tidak menanggapi.
+    following.current = true;
+    setAtBottom(true);
 
     setMessages((prev) => [...prev, { role: "user", content: question }]);
     setInput("");
@@ -211,35 +262,53 @@ export default function StandardPage() {
         )}
       </div>
 
-      <div className="flex-1 space-y-2 overflow-auto">
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`rounded-2xl px-3 py-2 text-sm ${
-              m.role === "user"
-                ? "bg-accent text-white ml-auto max-w-[80%] whitespace-pre-wrap"
-                : "glass-input max-w-[92%]"
-            }`}
+      {/* relative: tombol "turun ke terbaru" mengapung di atas daftar ini, dan
+          harus ikut daftarnya — bukan halamannya. */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div ref={list} onScroll={onListScroll} className="flex-1 space-y-2 overflow-auto">
+          {messages.map((m, i) => (
+            <div
+              key={i}
+              className={`rounded-2xl px-3 py-2 text-sm ${
+                m.role === "user"
+                  ? "bg-accent text-white ml-auto max-w-[80%] whitespace-pre-wrap"
+                  : "glass-input max-w-[92%]"
+              }`}
+            >
+              {m.role === "user" ? m.content : <Answer text={m.content} />}
+            </div>
+          ))}
+          {/* Gelembung menunggu, sampai huruf pertama datang. Sesudah itu teks
+              yang tumbuh sendiri sudah menunjukkan jawabannya sedang ditulis, dan
+              indikator kedua di bawahnya hanya menambah kesibukan di layar.
+              Bentuknya sengaja sama dengan gelembung jawaban supaya jelas di situ
+              jawabannya akan muncul. */}
+          {loading && messages[messages.length - 1]?.content === "" && (
+            <div className="glass-input flex max-w-[92%] items-center gap-2 rounded-2xl text-sm">
+              <span className="flex gap-1" aria-hidden>
+                <i className="dot" />
+                <i className="dot" style={{ animationDelay: "0.15s" }} />
+                <i className="dot" style={{ animationDelay: "0.3s" }} />
+              </span>
+              <span className="text-xs opacity-60">{t("standard.thinking")}</span>
+            </div>
+          )}
+          <div ref={bottom} />
+        </div>
+
+        {/* Kalau pembacanya sedang di atas, jawaban yang datang di bawah tidak
+            terlihat sama sekali. Tombol ini yang menyebutkan bahwa ada sesuatu
+            di bawah sana, dan sekaligus jalan kembali ke sana — mencari dasar
+            halaman dengan jari sambil teksnya masih memanjang itu tidak mudah. */}
+        {!atBottom && messages.length > 0 && (
+          <button
+            type="button"
+            onClick={jumpToLatest}
+            className="glass-input absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 text-xs shadow-lg"
           >
-            {m.role === "user" ? m.content : <Answer text={m.content} />}
-          </div>
-        ))}
-        {/* Gelembung menunggu, sampai huruf pertama datang. Sesudah itu teks
-            yang tumbuh sendiri sudah menunjukkan jawabannya sedang ditulis, dan
-            indikator kedua di bawahnya hanya menambah kesibukan di layar.
-            Bentuknya sengaja sama dengan gelembung jawaban supaya jelas di situ
-            jawabannya akan muncul. */}
-        {loading && messages[messages.length - 1]?.content === "" && (
-          <div className="glass-input flex max-w-[92%] items-center gap-2 rounded-2xl text-sm">
-            <span className="flex gap-1" aria-hidden>
-              <i className="dot" />
-              <i className="dot" style={{ animationDelay: "0.15s" }} />
-              <i className="dot" style={{ animationDelay: "0.3s" }} />
-            </span>
-            <span className="text-xs opacity-60">{t("standard.thinking")}</span>
-          </div>
+            {loading ? t("standard.jumpWriting") : t("standard.jumpLatest")}
+          </button>
         )}
-        <div ref={bottom} />
       </div>
 
       {error && <p className="text-sm text-red-500">{error}</p>}

@@ -23,7 +23,9 @@
     "drawing": "Drawing the diagram…",
     "thinking": "Writing the answer…",
     "savePng": "Save as image (PNG)",
-    "saving": "Saving…"
+    "saving": "Saving…",
+    "jumpLatest": "↓ Jump to latest",
+    "jumpWriting": "↓ Still writing below"
   },
   "exportImport": {
     "title": "Export & Import",
