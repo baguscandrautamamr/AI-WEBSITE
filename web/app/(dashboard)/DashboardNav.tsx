@@ -30,14 +30,21 @@ export default function DashboardNav({ role }: { role: Role }) {
   ];
 
   return (
-    <nav className="glass-panel m-4 w-56 flex flex-col p-4 gap-2 h-fit">
+    // Di HP: baris menu yang bisa digeser ke samping, menempel di atas. Di layar
+    // sedang ke atas: kolom di kiri seperti sebelumnya. Lebarnya dibatasi hanya
+    // pada mode kolom — `w-56` yang berlaku di semua ukuran adalah yang membuat
+    // layar telepon kehabisan tempat.
+    <nav
+      className="glass-panel m-3 flex shrink-0 gap-2 overflow-x-auto p-3
+                 md:m-4 md:h-fit md:w-56 md:flex-col md:overflow-visible md:p-4"
+    >
       {items
         .filter((i) => i.roles.includes(role))
         .map((item) => (
           <Link
             key={item.href}
             href={item.href}
-            className={`rounded-xl px-3 py-2 text-sm ${
+            className={`whitespace-nowrap rounded-xl px-3 py-2 text-sm ${
               pathname === item.href ? "bg-accent text-white" : "hover:bg-black/5 dark:hover:bg-white/5"
             }`}
           >
@@ -45,11 +52,22 @@ export default function DashboardNav({ role }: { role: Role }) {
           </Link>
         ))}
 
-      <div className="mt-4 flex gap-2 text-xs text-text-secondary">
-        <button onClick={() => setLocale(locale === "id" ? "en" : "id")} className="glass-input px-2 py-1">
+      {/* Ikut mengalir di baris menu saat di HP, dan turun ke bawah daftar saat
+          jadi kolom. ms-auto mendorongnya ke ujung kanan baris supaya tidak
+          terselip di antara menu. */}
+      <div className="ms-auto flex shrink-0 items-center gap-2 text-xs text-text-secondary md:ms-0 md:mt-4">
+        <button
+          onClick={() => setLocale(locale === "id" ? "en" : "id")}
+          className="glass-input px-2 py-1"
+          aria-label="Bahasa"
+        >
           {locale.toUpperCase()}
         </button>
-        <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="glass-input px-2 py-1">
+        <button
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          className="glass-input px-2 py-1"
+          aria-label="Tema"
+        >
           {theme === "dark" ? "🌙" : "☀️"}
         </button>
       </div>

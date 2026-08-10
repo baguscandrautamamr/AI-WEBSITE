@@ -48,9 +48,20 @@ export default async function DashboardLayout({ children }: { children: React.Re
     // Provider di layout, bukan di tiap halaman: layout bertahan lintas
     // navigasi, jadi daftar proyek diambil sekali — bukan setiap klik menu.
     <ProjectsProvider>
-      <div className="flex min-h-screen">
+      {/* Menumpuk di HP, bersebelahan mulai layar sedang. Sebelumnya selalu
+          bersebelahan, jadi sidebar 224px memakan lebar layar telepon dan
+          sisanya terdorong keluar. */}
+      <div className="flex min-h-screen flex-col md:flex-row">
         <DashboardNav role={highest} />
-        <main className="flex-1 p-6">{children}</main>
+
+        {/* min-w-0 adalah inti perbaikannya.
+            Anak sebuah flex container punya min-width:auto, artinya ia menolak
+            menyusut di bawah lebar isinya. Satu tabel lebar atau satu blok kode
+            panjang karena itu melebarkan seluruh halaman, dan yang terlihat
+            adalah aplikasi yang bisa digeser ke kanan dengan latar kosong.
+            Dengan min-w-0 ia boleh menyusut, dan isi yang lebar menggulir di
+            dalam kotaknya sendiri. */}
+        <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
       </div>
     </ProjectsProvider>
   );

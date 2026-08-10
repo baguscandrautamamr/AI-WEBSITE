@@ -20,7 +20,8 @@
     "clearing": "Menghapus…",
     "clearConfirm": "Hapus seluruh percakapan ini? Tidak bisa dikembalikan.",
     "clearFailed": "Gagal menghapus percakapan",
-    "drawing": "Menggambar diagram…"
+    "drawing": "Menggambar diagram…",
+    "thinking": "Menyusun jawaban…"
   },
   "exportImport": {
     "title": "Export & Import",
@@ -195,6 +196,7 @@
   "note": {
     "export.local_only": "File tersimpan di PC yang menjalankan Revit dan belum bisa diunduh dari sini. Isi kredensial Cloudinary di %APPDATA%\\RevitCommandCenter\\config.json agar hasil export muncul sebagai tautan unduhan.",
     "print.no_bot_token": "Pengiriman ke Telegram menyala tapi token bot-nya belum diisi, jadi file tidak terkirim ke chat mana pun.",
-    "export_cad.no_setup": "Diekspor tanpa CAD export setup, jadi memakai bawaan Revit — layer dan ketebalan garisnya kemungkinan tidak sesuai standar kantor."
+    "export_cad.no_setup": "Diekspor tanpa CAD export setup, jadi memakai bawaan Revit — layer dan ketebalan garisnya kemungkinan tidak sesuai standar kantor.",
+    "export.upload_failed": "Kredensial Cloudinary ada tapi unggahannya gagal, jadi file tetap di PC Revit. Biasanya karena kunci sudah diganti dan belum diperbarui di config.json, atau jaringan memblokirnya. Cek logs di %APPDATA%\\RevitCommandCenter\\logs."
   }
 }

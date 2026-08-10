@@ -161,7 +161,12 @@ export default function StandardPage() {
     // Selebar dan setinggi area yang tersedia. Jawaban standar sering memuat
     // tabel dan daftar bertingkat, dan kolom sempit membuat tiap barisnya
     // terlipat sampai tabelnya tidak terbaca lagi.
-    <div className="glass-panel flex h-[calc(100vh-3rem)] w-full flex-col space-y-4 p-6">
+    // Tinggi layar dikurangi tempat yang dipakai menu: di HP menu ada di atas
+    // dan ikut memakan tinggi, di layar lebar ia di samping dan tidak.
+    <div
+      className="glass-panel flex h-[calc(100vh-9rem)] w-full flex-col space-y-4 p-4
+                 md:h-[calc(100vh-3rem)] md:p-6"
+    >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h1 className="text-lg font-medium">{t("standard.title")}</h1>
@@ -192,10 +197,20 @@ export default function StandardPage() {
             {m.role === "user" ? m.content : <Markdown>{m.content}</Markdown>}
           </div>
         ))}
-        {/* Hanya sampai huruf pertama datang: sesudah itu teks yang tumbuh
-            sendiri sudah menunjukkan bahwa jawabannya sedang ditulis. */}
+        {/* Gelembung menunggu, sampai huruf pertama datang. Sesudah itu teks
+            yang tumbuh sendiri sudah menunjukkan jawabannya sedang ditulis, dan
+            indikator kedua di bawahnya hanya menambah kesibukan di layar.
+            Bentuknya sengaja sama dengan gelembung jawaban supaya jelas di situ
+            jawabannya akan muncul. */}
         {loading && messages[messages.length - 1]?.content === "" && (
-          <p className="text-xs opacity-60">{t("common.loading")}</p>
+          <div className="glass-input flex max-w-[92%] items-center gap-2 rounded-2xl text-sm">
+            <span className="flex gap-1" aria-hidden>
+              <i className="dot" />
+              <i className="dot" style={{ animationDelay: "0.15s" }} />
+              <i className="dot" style={{ animationDelay: "0.3s" }} />
+            </span>
+            <span className="text-xs opacity-60">{t("standard.thinking")}</span>
+          </div>
         )}
         <div ref={bottom} />
       </div>
