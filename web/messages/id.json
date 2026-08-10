@@ -156,7 +156,19 @@
     "typePick": "— pilih tipe dari model —",
     "typeManual": "Ketik nama lain…",
     "typeBackToList": "← pilih dari daftar model",
-    "typeCount": "{n} tipe dari family di model ini."
+    "typeCount": "{n} tipe dari family di model ini.",
+    "clash": "{who} sedang menjalankan perintah yang sama persis di proyek ini. Berkas hasilnya memakai nama yang sama, jadi yang selesai terakhir akan menimpa yang pertama — sepakati dulu siapa yang menjalankan.",
+    "clashSomeone": "Orang lain",
+    "activeTitle": "Sedang berjalan di proyek ini",
+    "activeNote": "Satu Revit mengerjakan satu perintah pada satu waktu. Perintah di bawah dikerjakan lebih dulu, jadi milikmu menunggu di belakangnya.",
+    "activeMine": "Kamu",
+    "stageAdd": "+ Tambah ke antrean",
+    "stageTitle": "{n} perintah menunggu dikirim, dijalankan berurutan dari atas.",
+    "stageRemove": "hapus",
+    "stageSend": "Kirim {n} perintah",
+    "stageClear": "Kosongkan",
+    "undo": "Batalkan perintah ini ({n} perangkat)",
+    "undoConfirm": "Hapus {n} perangkat yang dipasang perintah ini? Hanya yang ini — perangkat yang ditambahkan orang lain tidak tersentuh."
   },
   "chat": {
     "placeholder": "mis. pasang 6 lampu di Meeting 1 tinggi 3 meter",
@@ -209,5 +221,23 @@
     "export_cad.no_setup": "Diekspor tanpa CAD export setup, jadi memakai bawaan Revit — layer dan ketebalan garisnya kemungkinan tidak sesuai standar kantor.",
     "export.upload_failed": "Kredensial Cloudinary ada tapi unggahannya gagal, jadi file tetap di PC Revit. Biasanya karena kunci sudah diganti dan belum diperbarui di config.json, atau jaringan memblokirnya. Cek logs di %APPDATA%\\RevitCommandCenter\\logs.",
     "export.upload_undeliverable": "File berhasil diunggah, tapi Cloudinary menolak saat tautannya dibuka. Terunggah dan bisa diunduh adalah dua izin berbeda: akun Cloudinary baru secara bawaan tidak mengizinkan PDF diunduh. Buka Cloudinary → Settings → Security → Restricted media types, matikan pembatasan untuk PDF, lalu buka tautannya lagi — file lamanya pun langsung bisa diunduh tanpa perlu dicetak ulang."
+  },
+  "notify": {
+    "title": "Pemberitahuan Telegram",
+    "on": "aktif",
+    "off": "belum ditautkan",
+    "what": "Tautkan akun ini ke chat Telegram Anda, dan setiap perintah yang Anda kirim dari website dikabari hasilnya di sana — termasuk berkas ekspornya. Berguna untuk perintah panjang: kirim cetak 40 sheet, tutup tab, hasilnya menyusul ke ponsel.",
+    "placeholder": "Nomor Telegram Anda, mis. 123456789",
+    "link": "Tautkan",
+    "linking": "Menautkan…",
+    "linked": "Tertaut. Cek chat Anda — pesan konfirmasinya sudah dikirim.",
+    "unlink": "Lepas tautan",
+    "howToFind": "Nomornya, bukan @username: kirim /start ke bot ini, atau tanya @userinfobot. Yang dipakai hanya nomor Anda sendiri, dan bisa dilepas kapan saja.",
+    "badId": "Itu bukan nomor Telegram. Yang dibutuhkan angkanya, bukan @username — satu angka saja.",
+    "taken": "Nomor itu sudah dipakai akun lain. Kalau itu memang nomor Anda, lepas tautannya dari akun tersebut lebih dulu.",
+    "needStart": "Bot belum bisa mengirim pesan ke Anda. Buka chat botnya di Telegram, kirim /start, lalu coba tautkan lagi.",
+    "notFound": "Telegram tidak menemukan chat dengan nomor itu. Periksa lagi angkanya.",
+    "unreachable": "Telegram tidak bisa dihubungi dari server. Coba lagi sebentar lagi.",
+    "failed": "Gagal menyimpan pengaturan pemberitahuan."
   }
 }

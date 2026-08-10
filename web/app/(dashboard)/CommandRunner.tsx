@@ -31,6 +31,18 @@ interface RunEntry {
 
 const TERMINAL: QueueStatus[] = ["completed", "failed", "cancelled"];
 
+/** Satu perintah yang belum selesai di proyek ini, siapa pun pengirimnya. */
+interface ActiveCommand {
+  id: string;
+  commandType: string;
+  commandText: string;
+  status: QueueStatus;
+  queuedAt: string;
+  /** Nama pengirimnya. Kosong untuk perintah yang datang dari bot Telegram. */
+  who: string;
+  mine: boolean;
+}
+
 /** Satu sheet di model, sebagaimana dikembalikan /list_sheets. */
 interface SheetOption {
   number: string;
@@ -75,6 +87,17 @@ export default function CommandRunner({
   const [issues, setIssues] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
   const [runs, setRuns] = useState<RunEntry[]>([]);
+
+  /**
+   * Yang sedang berjalan di proyek ini — perintah siapa pun, bukan hanya milik
+   * sendiri.
+   *
+   * Satu Revit mengerjakan satu perintah pada satu waktu. Perintah cetak 40
+   * sheet milik orang lain berarti perintah Anda menunggu belasan menit di
+   * belakangnya, dan tanpa daftar ini yang terlihat cuma "Menunggu diambil
+   * add-in" — bunyi yang sama persis dengan add-in yang mati.
+   */
+  const [active, setActive] = useState<ActiveCommand[]>([]);
 
   const [chatEntries, setChatEntries] = useState<ChatEntry[]>([]);
   const [chatBusy, setChatBusy] = useState(false);
@@ -149,6 +172,22 @@ export default function CommandRunner({
     [project]
   );
 
+  /**
+   * Perintah yang sudah berjalan di proyek ini dan bunyinya sama persis.
+   *
+   * Dua orang menekan Print PDF untuk sheet yang sama menghasilkan dua perintah
+   * yang menulis ke nama berkas yang sama — nomor sheet plus nama sheet — dan
+   * yang selesai kedua menimpa yang pertama. Tidak ada galat di mana pun; yang
+   * pertama hanya kehilangan berkasnya tanpa pernah tahu.
+   *
+   * Dibandingkan lewat teks perintahnya, bukan lewat jenisnya: dua print_pdf
+   * untuk sheet yang berbeda tidak bentrok, dan memperingatkan keduanya akan
+   * melatih orang menutup peringatan tanpa membacanya.
+   */
+  function clashingWith(commandText: string) {
+    return active.find((a) => !a.mine && a.commandText === commandText);
+  }
+
   async function send() {
     if (!selected || !project) return;
     if (selected.confirm && !window.confirm(t("command.confirm"))) return;
@@ -158,6 +197,18 @@ export default function CommandRunner({
 
     try {
       const body = await enqueue(selected.name, values);
+
+      // Diperiksa setelah perintahnya tersusun, karena yang dibandingkan adalah
+      // teks akhirnya — dan teks itu baru ada setelah nilai formulir divalidasi
+      // dan dirapikan server. Sudah masuk antrean pada titik ini, jadi yang
+      // ditawarkan bukan membatalkan melainkan memberi tahu.
+      const clash = clashingWith(body.commandText);
+      if (clash) {
+        setIssues([
+          t("command.clash").replace("{who}", clash.who || t("command.clashSomeone")),
+        ]);
+      }
+
       setRuns((prev) => [{ id: body.id, commandText: body.commandText, status: "pending" }, ...prev]);
     } catch (err) {
       const withIssues = err as Error & { issues?: string[] };
@@ -165,6 +216,100 @@ export default function CommandRunner({
     } finally {
       setSending(false);
     }
+  }
+
+  /**
+   * Mengirim penghapusan yang menyasar mark, bukan ruangan.
+   *
+   * delete_devices di add-in sudah menerima `marks` sejak awal — itulah yang
+   * dipakai /undo di Telegram. Yang belum ada adalah jalan dari hasil sebuah
+   * perintah ke sana, jadi satu-satunya pembatalan yang tersedia dari website
+   * adalah Ctrl+Z di PC Revit: membatalkan apa pun yang terakhir terjadi di
+   * dokumen itu, pekerjaan orang lain termasuk.
+   *
+   * what=all karena mark sudah menentukan elemennya secara tunggal; menyempitkan
+   * kategori lagi hanya menambah cara baru untuk salah.
+   */
+  async function undoRun(room: string, marks: string[]) {
+    setSending(true);
+    setIssues([]);
+    try {
+      const body = await enqueue("delete_devices", {
+        room,
+        what: "all",
+        marks: marks.join(","),
+      });
+      setRuns((prev) => [
+        { id: body.id, commandText: body.commandText, status: "pending" },
+        ...prev,
+      ]);
+    } catch (err) {
+      const withIssues = err as Error & { issues?: string[] };
+      setIssues(withIssues.issues ?? [withIssues.message || t("command.sendFailed")]);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  /**
+   * Menumpuk perintah, lalu mengirim seluruhnya sekaligus.
+   *
+   * Antreannya sudah ada dan add-in sudah mengerjakannya berurutan; yang belum
+   * ada adalah cara menyusun daftarnya. "Print 40 sheet, lalu export DWG-nya,
+   * lalu kirim semuanya" sekarang berarti menunggu tiap perintah selesai
+   * sebelum mengisi formulir berikutnya — dan itu pekerjaan malam yang menuntut
+   * seseorang tetap duduk di depannya.
+   *
+   * Yang ditumpuk adalah SALINAN nilai formulirnya, bukan acuannya: formulir
+   * yang sama dipakai untuk menyusun perintah berikutnya, dan tanpa salinan
+   * seluruh tumpukan berubah setiap kali satu angka diketik.
+   */
+  const [staged, setStaged] = useState<{ name: string; values: Record<string, unknown> }[]>([]);
+
+  function stage() {
+    if (!selected) return;
+    setStaged((prev) => [...prev, { name: selected.name, values: { ...values } }]);
+    setIssues([]);
+  }
+
+  async function sendStaged() {
+    if (!project || staged.length === 0) return;
+
+    // Konfirmasi sekali untuk seluruh tumpukan, bukan sekali per perintah:
+    // sepuluh dialog berturut-turut adalah sepuluh kali menekan OK tanpa
+    // membaca, yang lebih buruk daripada satu dialog yang menyebut jumlahnya.
+    const destructive = staged.some((s) => COMMANDS_BY_NAME[s.name]?.confirm);
+    if (destructive && !window.confirm(t("command.confirm"))) return;
+
+    setSending(true);
+    setIssues([]);
+
+    const failures: string[] = [];
+
+    // Berurutan, bukan serentak. Urutan di daftar itulah maksudnya — export DWG
+    // setelah print PDF, bukan bersamaan dengannya — dan Promise.all tidak
+    // menjanjikan urutan apa pun soal kapan tiap baris masuk antrean.
+    for (const item of staged) {
+      try {
+        const body = await enqueue(item.name, item.values);
+        setRuns((prev) => [
+          { id: body.id, commandText: body.commandText, status: "pending" },
+          ...prev,
+        ]);
+      } catch (err) {
+        const withIssues = err as Error & { issues?: string[] };
+        // Yang gagal disebut namanya lalu dilewati. Menghentikan seluruh
+        // tumpukan karena satu perintah yang salah berarti sembilan perintah
+        // yang benar harus disusun ulang dari nol.
+        failures.push(
+          `${item.name}: ${withIssues.issues?.join(" ") ?? withIssues.message}`
+        );
+      }
+    }
+
+    setStaged(failures.length ? staged.filter((s) => failures.some((f) => f.startsWith(`${s.name}:`))) : []);
+    setIssues(failures);
+    setSending(false);
   }
 
   /**
@@ -416,6 +561,36 @@ export default function CommandRunner({
     }
   }
 
+  /**
+   * Antrean proyek dibaca terus-menerus, bukan hanya saat ada perintah sendiri
+   * yang berjalan.
+   *
+   * Justru ketika tidak punya perintah berjalan-lah daftar ini paling berguna:
+   * itu saat orang memutuskan apakah aman mengirim sesuatu sekarang. Polling
+   * yang hanya jalan saat sibuk akan diam tepat di saat pertanyaannya muncul.
+   */
+  const refreshActive = useCallback(async () => {
+    if (!project) return;
+    try {
+      const res = await fetch(
+        `/api/commands/active?projectId=${encodeURIComponent(project.projectId)}`
+      );
+      if (!res.ok) return;
+      const body = (await res.json()) as { commands: ActiveCommand[] };
+      setActive(body.commands ?? []);
+    } catch {
+      // Jaringan yang sedang buruk bukan alasan menampilkan galat di panel ini:
+      // isinya sudah kedaluwarsa beberapa detik dan itu memang wajar. Daftar
+      // yang lama tetap lebih berguna daripada pesan kesalahan.
+    }
+  }, [project]);
+
+  useEffect(() => {
+    void refreshActive();
+  }, [refreshActive]);
+
+  usePolling(Boolean(project), refreshActive);
+
   const pending = runs.some((r) => !TERMINAL.includes(r.status));
   usePolling(pending, async () => {
     const open = runs.filter((r) => !TERMINAL.includes(r.status));
@@ -622,9 +797,86 @@ export default function CommandRunner({
             </ul>
           )}
 
-          <button onClick={send} disabled={sending} className="btn-accent">
-            {sending ? t("command.sending") : t("command.send")}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={send} disabled={sending} className="btn-accent">
+              {sending ? t("command.sending") : t("command.send")}
+            </button>
+            {/* Menumpuk, bukan mengirim. Ada di samping tombol kirim karena
+                keputusannya diambil pada saat yang sama — setelah formulirnya
+                diisi, sebelum apa pun berangkat. */}
+            <button
+              type="button"
+              onClick={stage}
+              disabled={sending}
+              className="glass-input px-3 py-1.5 text-sm disabled:opacity-40"
+            >
+              {t("command.stageAdd")}
+            </button>
+          </div>
+
+          {staged.length > 0 && (
+            <div className="space-y-2 rounded-xl border border-black/5 p-3 dark:border-white/10">
+              <p className="text-xs opacity-70">
+                {t("command.stageTitle").replace("{n}", String(staged.length))}
+              </p>
+              <ol className="list-decimal space-y-0.5 pl-5 text-xs">
+                {staged.map((item, index) => (
+                  <li key={index} className="flex items-center justify-between gap-2">
+                    <code className="break-all">/{item.name}</code>
+                    <button
+                      type="button"
+                      onClick={() => setStaged((prev) => prev.filter((_, i) => i !== index))}
+                      className="shrink-0 text-red-500 underline"
+                    >
+                      {t("command.stageRemove")}
+                    </button>
+                  </li>
+                ))}
+              </ol>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={sendStaged} disabled={sending} className="btn-accent">
+                  {sending
+                    ? t("command.sending")
+                    : t("command.stageSend").replace("{n}", String(staged.length))}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStaged([])}
+                  disabled={sending}
+                  className="glass-input px-3 py-1.5 text-sm disabled:opacity-40"
+                >
+                  {t("command.stageClear")}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Antrean proyek: siapa sedang menjalankan apa.
+          Di bawah formulir, di atas hasil — tempat orang melihatnya saat
+          memutuskan apakah aman mengirim sesuatu sekarang. */}
+      {active.length > 0 && (
+        <div className="glass-panel space-y-2 p-6">
+          <h2 className="font-medium">{t("command.activeTitle")}</h2>
+          <p className="text-xs opacity-60">{t("command.activeNote")}</p>
+          <ul className="space-y-1 text-xs">
+            {active.map((a) => (
+              <li key={a.id} className="flex flex-wrap items-center gap-2">
+                <span
+                  className={
+                    a.status === "processing" ? "text-accent" : "opacity-60"
+                  }
+                >
+                  {t(`command.status.${a.status}`)}
+                </span>
+                <span className="font-medium">
+                  {a.mine ? t("command.activeMine") : a.who || t("command.clashSomeone")}
+                </span>
+                <code className="break-all opacity-80">{a.commandText}</code>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -636,7 +888,7 @@ export default function CommandRunner({
               ke bawah sampai form perintahnya sendiri hilang dari layar. */}
           <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
             {runs.map((r) => (
-              <RunRow key={r.id} run={r} />
+              <RunRow key={r.id} run={r} onUndo={undoRun} />
             ))}
           </div>
         </div>
@@ -645,7 +897,14 @@ export default function CommandRunner({
   );
 }
 
-function RunRow({ run }: { run: RunEntry }) {
+function RunRow({
+  run,
+  onUndo,
+}: {
+  run: RunEntry;
+  /** Absen kalau perintah ini tidak bisa dibatalkan. */
+  onUndo?: (room: string, marks: string[]) => void;
+}) {
   const { t } = useI18n();
   const done = TERMINAL.includes(run.status);
   const failed = run.status === "failed" || run.status === "cancelled";
@@ -677,7 +936,61 @@ function RunRow({ run }: { run: RunEntry }) {
           <ResultView value={run.result} />
         </div>
       )}
+
+      {onUndo && <UndoButton result={run.result} onUndo={onUndo} />}
     </div>
+  );
+}
+
+/**
+ * Membatalkan tepat apa yang perintah INI tambahkan.
+ *
+ * Bukan Ctrl+Z. Ctrl+Z di Revit membatalkan apa pun yang terakhir terjadi di
+ * dokumen itu — termasuk pekerjaan orang lain yang menyimpan sesudahnya, dan
+ * termasuk di PC yang mungkin bukan PC pengirim perintahnya.
+ *
+ * Yang dipakai adalah mark yang dilaporkan penempatannya sendiri, jadi yang
+ * terhapus persis enam armatur yang barusan dipasang — bukan seluruh kategori
+ * di ruangan itu, dan bukan armatur yang ditambahkan rekan setelahnya.
+ *
+ * Hanya muncul untuk hasil yang punya mark DAN ruangan. Penghapusan tidak bisa
+ * dibatalkan dengan cara ini: mark yang sudah tidak ada di model tidak bisa
+ * dipasang kembali oleh perintah hapus.
+ */
+function UndoButton({
+  result,
+  onUndo,
+}: {
+  result: unknown;
+  onUndo: (room: string, marks: string[]) => void;
+}) {
+  const { t } = useI18n();
+
+  if (typeof result !== "object" || result === null) return null;
+  const data = result as { room?: unknown; device_ids?: unknown; dry_run?: unknown };
+
+  // Uji coba tidak menambah apa pun, jadi tidak ada yang bisa dibatalkan.
+  if (data.dry_run === true) return null;
+
+  const room = typeof data.room === "string" ? data.room : "";
+  const marks = Array.isArray(data.device_ids)
+    ? data.device_ids.filter((m): m is string => typeof m === "string" && m.length > 0)
+    : [];
+
+  if (!room || marks.length === 0) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (window.confirm(t("command.undoConfirm").replace("{n}", String(marks.length)))) {
+          onUndo(room, marks);
+        }
+      }}
+      className="text-xs text-red-500 underline"
+    >
+      {t("command.undo").replace("{n}", String(marks.length))}
+    </button>
   );
 }
 
