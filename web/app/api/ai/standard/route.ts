@@ -71,22 +71,38 @@ jangan menyisipkan diagram atas inisiatif sendiri.`;
 const MAX_TURNS = 8;
 
 /**
- * Diagram tidak ikut disimpan sebagai konteks.
+ * Diagram dibuang dari apa yang DIKIRIM ke model — bukan dari apa yang disimpan.
  *
- * Ini yang menentukan apakah fitur gambar mahal atau tidak. Riwayat dikirim
- * ulang sebagai input pada SETIAP pertanyaan berikutnya, jadi satu SVG dua ribu
- * token yang lahir di pertanyaan pertama akan ditagih lagi di pertanyaan kedua,
- * ketiga, keempat — sampai ia terdorong keluar dari delapan giliran terakhir.
- * Dibiarkan begitu, beberapa diagram melipatgandakan biaya input setiap
- * permintaan selama percakapan berjalan.
+ * Riwayat dikirim ulang sebagai input pada setiap pertanyaan berikutnya, jadi
+ * satu SVG dua ribu token yang lahir di pertanyaan pertama akan ditagih lagi di
+ * pertanyaan kedua, ketiga, keempat, sampai ia terdorong keluar dari delapan
+ * giliran terakhir. Dibiarkan begitu, beberapa diagram melipatgandakan biaya
+ * input setiap permintaan selama percakapan berjalan.
  *
- * Yang ditinggalkan penanda pendek. Asisten tetap tahu ia sudah menggambar
- * sesuatu dan tentang apa; yang hilang hanya ribuan token markup yang tidak
- * pernah dibacanya lagi. Diagramnya sendiri tetap terlihat di layar — yang
- * dipangkas adalah salinan yang dikirim balik ke model.
+ * Penting: ini dipakai saat MENYUSUN pesan untuk model, bukan saat menyimpan.
+ * Sebelumnya penandanya ditulis ke `standards_threads`, dan karena tabel itulah
+ * yang dibaca ulang saat halaman dibuka, setiap diagram berubah jadi tulisan
+ * "[diagram]" begitu aplikasi dimuat lagi. Gambarnya hilang, dan yang paling
+ * sering melihat akibatnya justru yang memakai aplikasi di HP — di situ halaman
+ * memang dimuat dari awal.
+ *
+ * Yang disimpan tetap utuh; yang dihemat tetap dihemat.
  */
 function withoutDiagrams(text: string) {
   return text.replace(/```svg\b[\s\S]*?(?:```|$)/gi, "[diagram]");
+}
+
+/**
+ * Riwayat sebagai konteks model: teks asisten tanpa diagramnya.
+ *
+ * Pertanyaan user tidak disentuh — ia tidak pernah memuat SVG, dan memangkasnya
+ * hanya akan menghilangkan apa yang sebenarnya ditanyakan.
+ */
+function asContext(turns: Turn[]) {
+  return turns.map((t) => ({
+    role: t.role,
+    content: t.role === "assistant" ? withoutDiagrams(t.text) : t.text,
+  }));
 }
 
 interface Turn {
@@ -177,7 +193,7 @@ export async function POST(req: Request) {
           max_tokens: 8192,
           system: SYSTEM_PROMPT,
           messages: [
-            ...previous.map((t) => ({ role: t.role, content: t.text })),
+            ...asContext(previous),
             { role: "user" as const, content: question },
           ],
         });
@@ -208,7 +224,11 @@ export async function POST(req: Request) {
       const all: Turn[] = [
         ...previous,
         { role: "user", text: question },
-        { role: "assistant", text: withoutDiagrams(reply) },
+        // Disimpan UTUH, termasuk diagramnya. Tabel inilah yang dibaca ulang
+        // saat halaman dibuka; menyimpan penandanya di sini berarti gambarnya
+        // hilang begitu aplikasi dimuat lagi. Penghematan tokennya terjadi di
+        // asContext(), saat pesan untuk model disusun.
+        { role: "assistant", text: reply },
       ];
 
       // chat_id dibiarkan apa adanya untuk baris yang sudah ada; utas dari
