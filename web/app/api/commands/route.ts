@@ -1,28 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { CommandValidationError, enqueueCommand } from "@/lib/queue";
-import type { Role } from "@/lib/commands";
+import { roleForProject } from "@/lib/access";
 
 export const runtime = "nodejs";
 
-/** Peran user pada satu proyek, dibaca dari user_project_access. */
-async function roleForProject(
-  supabase: ReturnType<typeof createClient>,
-  userId: string,
-  projectId: string
-): Promise<Role | null> {
-  const { data } = await supabase
-    .from("user_project_access")
-    .select("role")
-    .eq("user_id", userId)
-    .eq("project_id", projectId)
-    .maybeSingle();
-  return (data?.role as Role) ?? null;
-}
-
 // POST — kirim satu command ke antrian yang dipolling add-in Revit.
 export async function POST(req: Request) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -70,7 +55,7 @@ export async function POST(req: Request) {
 
 // GET ?id=<uuid> — status satu command; dipakai UI untuk menunggu hasil.
 export async function GET(req: Request) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });

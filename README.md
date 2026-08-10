@@ -6,10 +6,15 @@ dipakai bot Telegram di repo
 [`electrical_ai`](https://github.com/baguscandrautamamr/electrical_ai).
 
 ```
-web/            Next.js 14 (App Router) — deploy ke Vercel
+web/            Next.js 16 (App Router, React 19) — deploy ke Vercel
 supabase/       migrasi tambahan untuk login web (0008, 0009)
-revit-addin/    ⚠️ scaffold lama, JANGAN dipakai — lihat catatan di bawah
 ```
+
+Add-in Revit-nya **tidak ada di repo ini**. Yang dipakai produksi ada di
+`revit-addin/RevitCommandCenter.Electrical` pada repo `electrical_ai`. (Repo ini
+sempat memuat scaffold C# lama yang mem-polling tabel `commands` dengan konsep
+`device_id`/`pairing_code` — tabel yang tidak pernah ada di database sebenarnya.
+Sudah dihapus.)
 
 ## Cara kerjanya
 
@@ -32,6 +37,24 @@ form di UI dibangun otomatis dari sana.
 | `/standard` | Tanya jawab standar (SNI/PUIL/IEC). Tidak pernah menyentuh `commands_queue`. Riwayatnya di `standards_threads`, sama dengan bot Telegram. |
 | `/history` | 50 perintah terakhir milik sendiri dari `commands_queue`, beserta status dan hasilnya. |
 | `/admin/users` | Memberi/mencabut akses proyek (`user_project_access`). Hanya untuk admin proyek. |
+
+## Batas dan penjagaan
+
+Setiap route yang bisa menyentuh sebuah proyek memeriksa peran pemanggil di
+proyek itu lewat `roleForProject()` (`web/lib/access.ts`) — termasuk
+`/api/files/upload`, yang dulu hanya memeriksa "sudah login" dan karenanya
+menerima unggahan dari akun yang belum diberi proyek apa pun.
+
+Batas laju per user ada di `web/lib/rateLimit.ts`: 30 giliran chat/menit, 20
+pertanyaan standar/menit, 10 unggahan/jam. Hitungannya di memori proses, jadi
+**per instance serverless, bukan global** — cukup untuk memotong penyalahgunaan
+berulang dari satu akun, tidak cukup sebagai kuota yang tegas. Kalau nanti butuh
+yang benar-benar global, tempatnya di Postgres atau Upstash.
+
+Halaman `/admin/users` mencari orang dengan mengetik namanya. Sebelumnya
+`/api/admin/access` mengirimkan seluruh tabel `users` ke setiap admin proyek;
+sekarang yang keluar hanya anggota proyek si admin, plus hasil pencarian yang
+dibatasi 20 baris dan minimal 2 huruf.
 
 ## Environment variables (`web/.env.local`)
 
@@ -65,6 +88,32 @@ npm install
 npm run dev
 ```
 
+Pemeriksaan yang sama dengan CI (`.github/workflows/ci.yml`, jalan di semua
+branch):
+
+```bash
+npm run lint       # eslint — flat config di eslint.config.mjs
+npm test           # vitest — validasi command & penyusunan riwayat chat
+npm run typecheck  # tsc --noEmit
+npm run build
+```
+
+## PWA
+
+`public/manifest.json` + `public/sw.js`, keduanya ditulis tangan dan
+didaftarkan oleh `app/ServiceWorker.tsx` — hanya di produksi, karena service
+worker di `next dev` menyimpan aset yang berubah setiap detik.
+
+Dulu ini dihasilkan `next-pwa`. Paket itu sudah dilepas: ia berhenti dipelihara
+sebelum App Router ada, mengikat repo ke webpack (Next 16 mem-build dengan
+Turbopack), dan merupakan tersangka utama crash middleware di bawah. Yang
+dibutuhkan aplikasi ini — bisa dipasang di layar utama HP, aset statis tidak
+diunduh ulang terus — muat dalam satu file tanpa dependensi build.
+
+`sw.js` **tidak pernah** menyimpan `/api/`: di situlah status perintah dipolling,
+dan jawaban "pending" yang ter-cache berarti halaman menunggu selamanya sesuatu
+yang sebenarnya sudah selesai.
+
 ## Setelan project Vercel
 
 | Setelan | Nilai | Kenapa |
@@ -74,7 +123,7 @@ npm run dev
 
 Framework Preset **tidak boleh** `Other`. Dengan `Other`, Vercel tidak memakai
 builder Next.js: Output Directory-nya jatuh ke `public` (folder itu ada — berisi
-`manifest.json`, `icons/`, dan `sw.js` yang ditulis next-pwa), sehingga yang
+`manifest.json`, `icons/`, dan `sw.js`), sehingga yang
 diterbitkan hanyalah isi `web/public` sebagai situs statis. `next build` tetap
 jalan dan "sukses", tapi seluruh `.next` dibuang, tidak ada route yang disajikan,
 dan setiap URL membalas `404: NOT_FOUND`.
@@ -90,8 +139,8 @@ di sana, karena isinya static + serverless `api/`, bukan Next.js.)
 
 Sengaja dihapus, dan jangan ditambahkan lagi tanpa membaca ini.
 
-Middleware Next 14 selalu berjalan di **Edge runtime**. `next/server` menarik
-`@opentelemetry/api` versi bundel Next, yang memuat baris:
+Riwayatnya begini. Pada Next 14, middleware selalu berjalan di **Edge runtime**.
+`next/server` menarik `@opentelemetry/api` versi bundel Next, yang memuat baris:
 
 ```js
 if (typeof __nccwpck_require__ !== "undefined") __nccwpck_require__.ab = __dirname + "/";
@@ -107,7 +156,7 @@ try/catch di dalam middleware yang bisa menolong.
 Tersangka utamanya `next-pwa@5.6.0` (sudah tidak dipelihara, terbit sebelum
 App Router): ia mengubah `config.entry` dan menyuntikkan plugin dari **salinan
 webpack-nya sendiri** ke setiap compiler, termasuk compiler edge — persis jenis
-gangguan yang membuat mock `__dirname` milik Next hilang. Belum dibuktikan
+gangguan yang membuat mock `__dirname` milik Next hilang. Belum pernah dibuktikan
 langsung, karena kegagalannya tidak muncul di build lokal.
 
 Tugas middleware itu cuma satu: menyegarkan cookie sesi Supabase. Penggantinya
@@ -116,10 +165,12 @@ sekarang: klien browser menyegarkan sesinya sendiri selama tab terbuka, dan
 dashboard. Yang menegakkan akses tetap RLS dan `auth.getUser()` di layout serta
 route handler — tidak ada yang berkurang.
 
-Kalau nanti mau menghidupkannya lagi, urutan yang masuk akal: lepas `next-pwa`
-(atau ganti ke `@ducanh2912/next-pwa` yang dipelihara), atau naik ke Next 15.2+
-yang mengizinkan `export const runtime = "nodejs"` di middleware — lalu uji di
-preview deployment, bukan di lokal, karena bug ini memang tidak muncul di lokal.
+**Kedua penghalangnya sekarang sudah hilang**, jadi menghidupkannya kembali
+bukan lagi hal yang mustahil: `next-pwa` sudah dilepas (diganti `public/sw.js`
+tulis tangan, yang tidak menyentuh proses build), dan repo ini sudah di Next 16,
+yang mengizinkan `export const runtime = "nodejs"` di middleware. Kalau mau
+dicoba: tambahkan middleware-nya di satu PR tersendiri dan **uji di preview
+deployment, bukan di lokal** — bug lamanya memang tidak pernah muncul di lokal.
 
 ## Kalau situsnya 500 / `MIDDLEWARE_INVOCATION_FAILED`
 
@@ -152,15 +203,6 @@ Lihat `supabase/README.md`. Ringkasnya: skema inti (0001–0007) ada di repo
 Akun yang baru mendaftar **sengaja tidak punya akses proyek apa pun** sampai
 seorang admin memberikannya lewat `/admin/users`.
 
-## ⚠️ Folder `revit-addin/` di repo ini sudah usang
-
-Isinya scaffold C# lama yang mem-polling tabel `commands` dengan konsep
-`device_id` / `pairing_code`. Tabel dan konsep itu **tidak ada** di database yang
-sebenarnya, dan logika electrical-nya masih stub. Add-in yang asli dan dipakai
-produksi ada di `revit-addin/RevitCommandCenter.Electrical` pada repo
-`electrical_ai`. Jangan build atau pasang yang di sini — folder ini tinggal
-dihapus.
-
 ## Import & file hasil export
 
 Keduanya butuh add-in versi terbaru (branch `claude/website-files-and-import`
@@ -190,9 +232,9 @@ akan berubah sebelum benar-benar menulis ke model.
 
 ## Yang belum ada
 
-- **Import.** Add-in tidak punya perintah import apa pun, jadi tidak ada tombol
-  import di UI. `/api/files/upload` (Cloudinary) sudah siap dan tervalidasi,
-  tapi belum ada yang memanggilnya sampai perintah import ada di sisi add-in.
+- **Import selain Excel.** Yang ada baru `import_excel`. `/api/files/upload`
+  sudah menerima PDF juga, tapi belum ada perintah di sisi add-in yang
+  memakainya.
 - **Tautan file hasil export.** Add-in menaruh path lokal di `result_json`
   kecuali dijalankan dengan `export_base_url`. Halaman Riwayat hanya membuat
   tautan untuk yang benar-benar berupa URL.

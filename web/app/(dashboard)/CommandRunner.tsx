@@ -539,7 +539,13 @@ function Field({
  */
 function usePolling(active: boolean, fn: () => void | Promise<void>) {
   const saved = useRef(fn);
-  saved.current = fn;
+
+  // Ditulis di dalam efek, bukan saat render: menulis ref saat render tidak
+  // aman di render konkuren — React boleh menjalankan badan komponen lalu
+  // membuangnya, dan tulisan itu ikut terjadi untuk render yang dibatalkan.
+  useEffect(() => {
+    saved.current = fn;
+  });
 
   useEffect(() => {
     if (!active) return;

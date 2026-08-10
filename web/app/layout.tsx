@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ThemeProvider } from "next-themes";
 import { I18nProvider } from "@/lib/i18n";
+import ServiceWorker from "./ServiceWorker";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
           <I18nProvider>{children}</I18nProvider>
         </ThemeProvider>
+        <ServiceWorker />
       </body>
     </html>
   );

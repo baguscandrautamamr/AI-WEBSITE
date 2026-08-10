@@ -1,19 +1,20 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { roleForProject } from "@/lib/access";
+import { rateLimit, tooManyRequests } from "@/lib/rateLimit";
+import { buildMessages } from "@/lib/chatHistory";
 import { anthropic, MODEL } from "@/lib/anthropic";
 import { ELECTRICAL_SYSTEM_PROMPT, toolsForRole } from "@/lib/aiTools";
-import { COMMANDS_BY_NAME, canRun, type Role } from "@/lib/commands";
+import { COMMANDS_BY_NAME, canRun } from "@/lib/commands";
 import { CommandValidationError, buildPayload } from "@/lib/queue";
 
 export const runtime = "nodejs";
 
-/** Berapa giliran percakapan yang ikut dikirim sebagai konteks. */
-const MAX_HISTORY = 12;
+/** Satu kalimat perintah; yang lebih panjang dari ini hampir pasti bukan itu. */
+const MAX_MESSAGE_CHARS = 2_000;
 
-interface Turn {
-  role: "user" | "assistant";
-  content: string;
-}
+/** 30 giliran per menit per user — jauh di atas kecepatan mengetik orang. */
+const TURNS_PER_MINUTE = 30;
 
 /**
  * Menerjemahkan kalimat biasa jadi satu perintah terstruktur — TANPA
@@ -25,14 +26,16 @@ interface Turn {
  * commands_queue tetap /api/commands setelah pengguna menekan kirim.
  */
 export async function POST(req: Request) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  let body: { message?: string; projectId?: string; history?: Turn[] };
+  // `history` sengaja `unknown`: bentuknya ditentukan client, jadi buildMessages
+  // yang memeriksanya, bukan anotasi tipe yang cuma berlaku saat compile.
+  let body: { message?: string; projectId?: string; history?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -43,19 +46,18 @@ export async function POST(req: Request) {
   const projectId = body.projectId;
 
   if (!message) return NextResponse.json({ error: "`message` wajib diisi" }, { status: 400 });
+  if (message.length > MAX_MESSAGE_CHARS) {
+    return NextResponse.json(
+      { error: `pesan terlalu panjang (maksimal ${MAX_MESSAGE_CHARS} karakter)` },
+      { status: 400 }
+    );
+  }
   if (!projectId) return NextResponse.json({ error: "`projectId` wajib diisi" }, { status: 400 });
 
   // Peran menentukan tool apa yang boleh ditawarkan. Seorang viewer tidak
   // seharusnya melihat asisten menawarkan /place_lighting, lalu ditolak server
   // sesudahnya — lebih jujur kalau pilihannya memang tidak pernah ada.
-  const { data: access } = await supabase
-    .from("user_project_access")
-    .select("role")
-    .eq("user_id", user.id)
-    .eq("project_id", projectId)
-    .maybeSingle();
-
-  const role = (access?.role as Role) ?? null;
+  const role = await roleForProject(supabase, user.id, projectId);
   if (!role) {
     return NextResponse.json(
       { error: "kamu belum diberi akses ke proyek ini — minta admin menambahkan" },
@@ -63,7 +65,10 @@ export async function POST(req: Request) {
     );
   }
 
-  const history = Array.isArray(body.history) ? body.history.slice(-MAX_HISTORY) : [];
+  // Dibatasi setelah peran diperiksa, supaya request yang memang tidak berhak
+  // tidak ikut menghabiskan jatah orang yang berhak.
+  const limit = rateLimit(`ai:electrical:${user.id}`, TURNS_PER_MINUTE, 60_000);
+  if (!limit.ok) return tooManyRequests(limit);
 
   let response;
   try {
@@ -72,10 +77,7 @@ export async function POST(req: Request) {
       max_tokens: 2048,
       system: ELECTRICAL_SYSTEM_PROMPT,
       tools: toolsForRole(role) as never,
-      messages: [
-        ...history.map((t) => ({ role: t.role, content: t.content })),
-        { role: "user" as const, content: message },
-      ],
+      messages: buildMessages(body.history, message),
     });
   } catch (err) {
     console.error("[api/ai/electrical] gateway call failed", err);

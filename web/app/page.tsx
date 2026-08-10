@@ -17,9 +17,10 @@ export default async function RootPage() {
   // alamat utama hanya melihat 500 tanpa keterangan. Diperlakukan sebagai
   // "belum login" saja: /login yang menjelaskan apa yang salah.
   try {
+    const supabase = await createClient();
     const {
       data: { user },
-    } = await createClient().auth.getUser();
+    } = await supabase.auth.getUser();
     signedIn = Boolean(user);
   } catch (err) {
     console.error("[/] gagal memeriksa sesi", err);

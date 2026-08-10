@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { rateLimit, tooManyRequests } from "@/lib/rateLimit";
 import { anthropic, MODEL } from "@/lib/anthropic";
 
 export const runtime = "nodejs";
+
+/** Pertanyaan soal standar; yang lebih panjang dari ini bukan pertanyaan lagi. */
+const MAX_QUESTION_CHARS = 4_000;
+
+/** 20 pertanyaan per menit per user. */
+const QUESTIONS_PER_MINUTE = 20;
 
 const SYSTEM_PROMPT = `Kamu adalah asisten yang menjawab pertanyaan seputar standar
 dan regulasi kelistrikan (SNI, PUIL, IEC, NEC, dsb.) untuk kebutuhan desain MEP.
@@ -25,7 +32,7 @@ interface Turn {
 // Jadi satu orang yang bertanya di Telegram lalu melanjutkan di website
 // menemukan percakapan yang sama, bukan dua utas terpisah.
 export async function POST(req: Request) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },
@@ -43,6 +50,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "`message` wajib diisi" }, { status: 400 });
   }
 
+  if (message.length > MAX_QUESTION_CHARS) {
+    return NextResponse.json(
+      { error: `pertanyaan terlalu panjang (maksimal ${MAX_QUESTION_CHARS} karakter)` },
+      { status: 400 }
+    );
+  }
+
+  const limit = rateLimit(`ai:standard:${user.id}`, QUESTIONS_PER_MINUTE, 60_000);
+  if (!limit.ok) return tooManyRequests(limit);
+
   const question = message.trim();
 
   const { data: thread } = await supabase
@@ -51,7 +68,17 @@ export async function POST(req: Request) {
     .eq("user_id", user.id)
     .maybeSingle();
 
-  const previous: Turn[] = Array.isArray(thread?.turns) ? (thread!.turns as Turn[]) : [];
+  // Utas ini dipakai bersama bot Telegram, jadi bentuk barisnya ditentukan dua
+  // penulis, bukan satu. Yang tidak berbentuk giliran dibuang: satu baris rusak
+  // seharusnya tidak membuat pertanyaan berikutnya ditolak gateway dengan 400.
+  const previous: Turn[] = (Array.isArray(thread?.turns) ? thread!.turns : []).filter(
+    (t: unknown): t is Turn =>
+      Boolean(t) &&
+      typeof t === "object" &&
+      ((t as Turn).role === "user" || (t as Turn).role === "assistant") &&
+      typeof (t as Turn).text === "string" &&
+      (t as Turn).text.trim().length > 0
+  );
 
   let reply: string;
   try {
@@ -102,7 +129,7 @@ export async function POST(req: Request) {
 // GET — utas yang tersimpan, supaya halaman Standard tidak mulai kosong setiap
 // kali dibuka ulang padahal server masih mengingat percakapannya.
 export async function GET() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },

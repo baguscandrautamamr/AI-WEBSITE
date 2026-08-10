@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -13,7 +14,7 @@ type Role = (typeof ROLES)[number];
  * mengembalikan baris milik user sendiri, jadi daftar ini tidak mungkin
  * dibesar-besarkan oleh request yang berbohong.
  */
-async function adminProjectIds(supabase: ReturnType<typeof createClient>): Promise<string[]> {
+async function adminProjectIds(supabase: SupabaseClient): Promise<string[]> {
   const { data } = await supabase
     .from("user_project_access")
     .select("project_id, role")
@@ -24,7 +25,7 @@ async function adminProjectIds(supabase: ReturnType<typeof createClient>): Promi
 
 /** Sesi + daftar proyek yang boleh dikelola, atau respons error yang sudah jadi. */
 async function requireAdmin() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -46,34 +47,74 @@ async function requireAdmin() {
   return { userId: user.id, projectIds };
 }
 
-// GET — proyek yang bisa dikelola, semua user, dan akses yang sudah diberikan.
+/** Kolom user yang boleh keluar dari route ini. Tidak lebih dari ini. */
+const USER_COLUMNS = "id, full_name, auth_provider, is_active";
+
+/** Jumlah hasil pencarian yang dikembalikan sekali jalan. */
+const SEARCH_LIMIT = 20;
+
+/** Panjang minimal kata kunci — mencegah "a" dipakai sebagai dump terselubung. */
+const SEARCH_MIN_CHARS = 2;
+
+/**
+ * `%` dan `_` adalah wildcard di LIKE. Tanpa di-escape, kata kunci "%" cocok
+ * dengan semua orang — persis dump yang sedang dihindari di sini.
+ */
+function escapeLike(value: string) {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+// GET — proyek yang bisa dikelola, akses yang sudah diberikan, dan nama-nama
+// yang dibutuhkan untuk menampilkannya. Dengan `?q=`, ikut mengembalikan hasil
+// pencarian user untuk ditambahkan.
 //
-// Daftar user butuh service role: RLS `users_self_read` sengaja menutup baris
+// Data user butuh service role: RLS `users_self_read` sengaja menutup baris
 // orang lain, dan melonggarkannya akan membuka data itu untuk semua orang.
-// Melayaninya lewat route ini menjaga kunci tetap di server dan pemeriksaan
-// admin tetap di satu tempat.
-export async function GET() {
+//
+// Yang dikembalikan sengaja dibatasi dua lapis. Tanpa `q`, hanya orang yang
+// SUDAH ada di proyek si admin — itu yang perlu diberi nama di layar.
+// Menambahkan orang baru harus lewat pencarian bernama. Sebelumnya route ini
+// mengirimkan seluruh tabel `users`, sehingga admin satu proyek kecil ikut
+// menerima daftar setiap pengguna sistem, termasuk pengguna Telegram yang tidak
+// ada hubungannya dengan proyek mana pun miliknya.
+export async function GET(req: Request) {
   const guard = await requireAdmin();
   if ("error" in guard) return guard.error;
 
   const service = createServiceClient();
+  const q = (new URL(req.url).searchParams.get("q") ?? "").trim();
 
-  const [{ data: projects }, { data: users }, { data: access }] = await Promise.all([
+  const [{ data: projects }, { data: access }] = await Promise.all([
     service.from("projects").select("id, code, name").in("id", guard.projectIds).order("code"),
-    service
-      .from("users")
-      .select("id, full_name, auth_provider, is_active")
-      .order("full_name"),
     service
       .from("user_project_access")
       .select("user_id, project_id, role")
       .in("project_id", guard.projectIds),
   ]);
 
+  const memberIds = [...new Set((access ?? []).map((a) => a.user_id as string))];
+
+  const { data: members } = memberIds.length
+    ? await service.from("users").select(USER_COLUMNS).in("id", memberIds).order("full_name")
+    : { data: [] };
+
+  const { data: matches } =
+    q.length >= SEARCH_MIN_CHARS
+      ? await service
+          .from("users")
+          .select(USER_COLUMNS)
+          .ilike("full_name", `%${escapeLike(q)}%`)
+          .eq("is_active", true)
+          .order("full_name")
+          .limit(SEARCH_LIMIT)
+      : { data: [] };
+
   return NextResponse.json({
     projects: projects ?? [],
-    users: users ?? [],
     access: access ?? [],
+    members: members ?? [],
+    matches: matches ?? [],
+    searchMinChars: SEARCH_MIN_CHARS,
   });
 }
 
