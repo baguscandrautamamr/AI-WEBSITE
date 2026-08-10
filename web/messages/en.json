@@ -156,7 +156,17 @@
     "typePick": "— pick a type from the model —",
     "typeManual": "Type another name…",
     "typeBackToList": "← pick from the model's list",
-    "typeCount": "{n} types from this model's families."
+    "typeCount": "{n} types from this model's families.",
+    "clash": "{who} is running exactly this command on this project. The exports share a filename, so whichever finishes last overwrites the other — agree who runs it first.",
+    "clashSomeone": "Someone else",
+    "activeTitle": "Running on this project",
+    "activeNote": "One Revit runs one command at a time. The ones below go first, so yours waits behind them.",
+    "activeMine": "You",
+    "stageAdd": "+ Add to queue",
+    "stageTitle": "{n} commands waiting to be sent, run in order from the top.",
+    "stageRemove": "remove",
+    "stageSend": "Send {n} commands",
+    "stageClear": "Clear"
   },
   "chat": {
     "placeholder": "e.g. place 6 lights in Meeting 1 at 3 m",
