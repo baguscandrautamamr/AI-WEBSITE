@@ -23,7 +23,9 @@
     "drawing": "Menggambar diagram…",
     "thinking": "Menyusun jawaban…",
     "savePng": "Simpan sebagai gambar (PNG)",
-    "saving": "Menyimpan…"
+    "saving": "Menyimpan…",
+    "jumpLatest": "↓ Ke jawaban terbaru",
+    "jumpWriting": "↓ Sedang menulis di bawah"
   },
   "exportImport": {
     "title": "Export & Import",
