@@ -187,3 +187,33 @@ export async function GET() {
   const turns: Turn[] = Array.isArray(data?.turns) ? (data!.turns as Turn[]) : [];
   return NextResponse.json({ turns });
 }
+
+// DELETE — mengosongkan utas.
+//
+// Barisnya dikosongkan, bukan dihapus: `standards_threads` juga dipakai bot
+// Telegram, dan barisnya membawa `chat_id` serta `started_at` yang bukan milik
+// website. Yang diminta orang saat menekan "hapus chat" adalah percakapannya
+// hilang, bukan catatan bahwa ia pernah punya utas.
+//
+// Klien sesi, jadi RLS `standards_threads_self` yang menentukan baris mana yang
+// tersentuh — tidak mungkin mengosongkan utas orang lain dari sini.
+export async function DELETE() {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const { error } = await supabase
+    .from("standards_threads")
+    .update({ turns: [], updated_at: new Date().toISOString() })
+    .eq("user_id", user.id);
+
+  if (error) {
+    console.error("[api/ai/standard] gagal mengosongkan utas", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
+}

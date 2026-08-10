@@ -13,9 +13,8 @@
  * upgrade Next berikutnya tidak bisa merusaknya.
  */
 
-const VERSION = "v1";
+const VERSION = "v2";
 const STATIC_CACHE = `electrical-ai-static-${VERSION}`;
-const PAGE_CACHE = `electrical-ai-pages-${VERSION}`;
 
 /** Aset ber-hash dari Next dan ikon PWA: isinya tidak pernah berubah per URL. */
 function isStaticAsset(url) {
@@ -65,12 +64,17 @@ self.addEventListener("fetch", (event) => {
 
   if (isStaticAsset(url)) {
     event.respondWith(cacheFirst(request));
-    return;
   }
 
-  if (request.mode === "navigate") {
-    event.respondWith(networkFirst(request));
-  }
+  // Halaman TIDAK di-cache sama sekali.
+  //
+  // Setiap halaman dashboard dirender di server dengan sesi orang yang membuka
+  // — nama proyeknya, perannya, isi riwayatnya. Menyimpannya berarti satu
+  // salinan halaman milik seseorang tersimpan di perangkat itu, dan orang
+  // berikutnya yang memakai browser yang sama bisa menerimanya kembali saat
+  // jaringannya putus. Untung dari halaman yang tetap terbuka saat offline
+  // tidak sebanding dengan itu; aset statis yang ber-hash tetap di-cache dan
+  // itulah yang membuat aplikasi ini terasa cepat.
 });
 
 /** URL-nya sudah menentukan isinya, jadi yang tersimpan selalu benar. */
@@ -84,25 +88,4 @@ async function cacheFirst(request) {
     cache.put(request, response.clone());
   }
   return response;
-}
-
-/**
- * Halaman selalu diambil dari jaringan dulu. Isinya bergantung pada sesi dan
- * pada isi antrean, jadi salinan lama hanya dipakai kalau jaringannya memang
- * tidak ada — lebih baik daripada layar galat browser, tapi tidak pernah
- * menggantikan yang terbaru.
- */
-async function networkFirst(request) {
-  try {
-    const response = await fetch(request);
-    if (response.ok) {
-      const cache = await caches.open(PAGE_CACHE);
-      cache.put(request, response.clone());
-    }
-    return response;
-  } catch (err) {
-    const cached = await caches.match(request);
-    if (cached) return cached;
-    throw err;
-  }
 }

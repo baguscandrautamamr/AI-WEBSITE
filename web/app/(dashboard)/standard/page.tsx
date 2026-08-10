@@ -14,6 +14,7 @@ export default function StandardPage() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
 
@@ -28,6 +29,12 @@ export default function StandardPage() {
           turns: { role: "user" | "assistant"; text: string }[];
         };
         setMessages(turns.map((x) => ({ role: x.role, content: x.text })));
+        // Utas lama dibuka di bagian paling bawah, bukan di paling atas: yang
+        // dicari orang saat membuka lagi adalah lanjutan percakapannya, dan
+        // menggulir sendiri melewati jawaban kemarin adalah pekerjaan yang
+        // tidak perlu ada. Tanpa jeda, gulirnya terjadi sebelum gelembungnya
+        // punya tinggi.
+        requestAnimationFrame(() => bottom.current?.scrollIntoView({ block: "end" }));
       } catch {
         // Riwayat kosong bukan kegagalan yang perlu ditampilkan; halaman tetap
         // bisa dipakai untuk bertanya.
@@ -40,6 +47,34 @@ export default function StandardPage() {
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
   }, [messages]);
+
+  /**
+   * Mengosongkan utas, di layar dan di server sekaligus.
+   *
+   * Utas ini dipakai bersama bot Telegram dan menjadi konteks pertanyaan
+   * berikutnya, jadi mengosongkannya hanya di layar akan membuat jawaban
+   * berikutnya tetap merujuk percakapan yang sudah tidak terlihat.
+   */
+  async function clearChat() {
+    if (clearing || loading) return;
+    if (!window.confirm(t("standard.clearConfirm"))) return;
+
+    setClearing(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/ai/standard", { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        setError(body?.error ?? t("standard.clearFailed"));
+        return;
+      }
+      setMessages([]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("standard.clearFailed"));
+    } finally {
+      setClearing(false);
+    }
+  }
 
   async function send() {
     const question = input.trim();
@@ -127,9 +162,21 @@ export default function StandardPage() {
     // tabel dan daftar bertingkat, dan kolom sempit membuat tiap barisnya
     // terlipat sampai tabelnya tidak terbaca lagi.
     <div className="glass-panel flex h-[calc(100vh-3rem)] w-full flex-col space-y-4 p-6">
-      <div>
-        <h1 className="text-lg font-medium">{t("standard.title")}</h1>
-        <p className="text-sm text-text-secondary">{t("standard.subtitle")}</p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h1 className="text-lg font-medium">{t("standard.title")}</h1>
+          <p className="text-sm text-text-secondary">{t("standard.subtitle")}</p>
+        </div>
+        {messages.length > 0 && (
+          <button
+            type="button"
+            onClick={clearChat}
+            disabled={clearing || loading}
+            className="text-xs text-red-500 underline disabled:opacity-40"
+          >
+            {clearing ? t("standard.clearing") : t("standard.clear")}
+          </button>
+        )}
       </div>
 
       <div className="flex-1 space-y-2 overflow-auto">
