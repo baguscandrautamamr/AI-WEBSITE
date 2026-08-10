@@ -219,6 +219,39 @@ export default function CommandRunner({
   }
 
   /**
+   * Mengirim penghapusan yang menyasar mark, bukan ruangan.
+   *
+   * delete_devices di add-in sudah menerima `marks` sejak awal — itulah yang
+   * dipakai /undo di Telegram. Yang belum ada adalah jalan dari hasil sebuah
+   * perintah ke sana, jadi satu-satunya pembatalan yang tersedia dari website
+   * adalah Ctrl+Z di PC Revit: membatalkan apa pun yang terakhir terjadi di
+   * dokumen itu, pekerjaan orang lain termasuk.
+   *
+   * what=all karena mark sudah menentukan elemennya secara tunggal; menyempitkan
+   * kategori lagi hanya menambah cara baru untuk salah.
+   */
+  async function undoRun(room: string, marks: string[]) {
+    setSending(true);
+    setIssues([]);
+    try {
+      const body = await enqueue("delete_devices", {
+        room,
+        what: "all",
+        marks: marks.join(","),
+      });
+      setRuns((prev) => [
+        { id: body.id, commandText: body.commandText, status: "pending" },
+        ...prev,
+      ]);
+    } catch (err) {
+      const withIssues = err as Error & { issues?: string[] };
+      setIssues(withIssues.issues ?? [withIssues.message || t("command.sendFailed")]);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  /**
    * Menumpuk perintah, lalu mengirim seluruhnya sekaligus.
    *
    * Antreannya sudah ada dan add-in sudah mengerjakannya berurutan; yang belum
@@ -855,7 +888,7 @@ export default function CommandRunner({
               ke bawah sampai form perintahnya sendiri hilang dari layar. */}
           <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
             {runs.map((r) => (
-              <RunRow key={r.id} run={r} />
+              <RunRow key={r.id} run={r} onUndo={undoRun} />
             ))}
           </div>
         </div>
@@ -864,7 +897,14 @@ export default function CommandRunner({
   );
 }
 
-function RunRow({ run }: { run: RunEntry }) {
+function RunRow({
+  run,
+  onUndo,
+}: {
+  run: RunEntry;
+  /** Absen kalau perintah ini tidak bisa dibatalkan. */
+  onUndo?: (room: string, marks: string[]) => void;
+}) {
   const { t } = useI18n();
   const done = TERMINAL.includes(run.status);
   const failed = run.status === "failed" || run.status === "cancelled";
@@ -896,7 +936,61 @@ function RunRow({ run }: { run: RunEntry }) {
           <ResultView value={run.result} />
         </div>
       )}
+
+      {onUndo && <UndoButton result={run.result} onUndo={onUndo} />}
     </div>
+  );
+}
+
+/**
+ * Membatalkan tepat apa yang perintah INI tambahkan.
+ *
+ * Bukan Ctrl+Z. Ctrl+Z di Revit membatalkan apa pun yang terakhir terjadi di
+ * dokumen itu — termasuk pekerjaan orang lain yang menyimpan sesudahnya, dan
+ * termasuk di PC yang mungkin bukan PC pengirim perintahnya.
+ *
+ * Yang dipakai adalah mark yang dilaporkan penempatannya sendiri, jadi yang
+ * terhapus persis enam armatur yang barusan dipasang — bukan seluruh kategori
+ * di ruangan itu, dan bukan armatur yang ditambahkan rekan setelahnya.
+ *
+ * Hanya muncul untuk hasil yang punya mark DAN ruangan. Penghapusan tidak bisa
+ * dibatalkan dengan cara ini: mark yang sudah tidak ada di model tidak bisa
+ * dipasang kembali oleh perintah hapus.
+ */
+function UndoButton({
+  result,
+  onUndo,
+}: {
+  result: unknown;
+  onUndo: (room: string, marks: string[]) => void;
+}) {
+  const { t } = useI18n();
+
+  if (typeof result !== "object" || result === null) return null;
+  const data = result as { room?: unknown; device_ids?: unknown; dry_run?: unknown };
+
+  // Uji coba tidak menambah apa pun, jadi tidak ada yang bisa dibatalkan.
+  if (data.dry_run === true) return null;
+
+  const room = typeof data.room === "string" ? data.room : "";
+  const marks = Array.isArray(data.device_ids)
+    ? data.device_ids.filter((m): m is string => typeof m === "string" && m.length > 0)
+    : [];
+
+  if (!room || marks.length === 0) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (window.confirm(t("command.undoConfirm").replace("{n}", String(marks.length)))) {
+          onUndo(room, marks);
+        }
+      }}
+      className="text-xs text-red-500 underline"
+    >
+      {t("command.undo").replace("{n}", String(marks.length))}
+    </button>
   );
 }
 

@@ -166,7 +166,9 @@
     "stageTitle": "{n} commands waiting to be sent, run in order from the top.",
     "stageRemove": "remove",
     "stageSend": "Send {n} commands",
-    "stageClear": "Clear"
+    "stageClear": "Clear",
+    "undo": "Undo this command ({n} devices)",
+    "undoConfirm": "Delete the {n} devices this command placed? Only these — anything a colleague added is untouched."
   },
   "chat": {
     "placeholder": "e.g. place 6 lights in Meeting 1 at 3 m",

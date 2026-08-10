@@ -166,7 +166,9 @@
     "stageTitle": "{n} perintah menunggu dikirim, dijalankan berurutan dari atas.",
     "stageRemove": "hapus",
     "stageSend": "Kirim {n} perintah",
-    "stageClear": "Kosongkan"
+    "stageClear": "Kosongkan",
+    "undo": "Batalkan perintah ini ({n} perangkat)",
+    "undoConfirm": "Hapus {n} perangkat yang dipasang perintah ini? Hanya yang ini — perangkat yang ditambahkan orang lain tidak tersentuh."
   },
   "chat": {
     "placeholder": "mis. pasang 6 lampu di Meeting 1 tinggi 3 meter",

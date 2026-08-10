@@ -616,6 +616,15 @@ export const COMMANDS: CommandSpec[] = [
         ],
         label: { id: "Kategori", en: "Category" },
       },
+      {
+        name: "marks",
+        type: "text",
+        label: { id: "Mark tertentu saja", en: "Only these marks" },
+        hint: {
+          id: "Dipisah koma, mis. LF-001,LF-002. Kosongkan untuk seluruh kategori di ruangan itu. Ini yang dipakai tombol \"Batalkan perintah ini\".",
+          en: "Comma separated, e.g. LF-001,LF-002. Leave empty for the whole category in that room. This is what the \"Undo this command\" button uses.",
+        },
+      },
     ],
     example: "/delete_devices Pantry what=lighting",
   },
