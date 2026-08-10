@@ -64,7 +64,9 @@ export default function CommandRunner({
 
   const available = useMemo(() => {
     if (!project) return [];
-    return COMMANDS.filter((c) => groups.includes(c.group) && canRun(c, project.role));
+    return COMMANDS.filter(
+      (c) => groups.includes(c.group) && !c.hidden && canRun(c, project.role)
+    );
   }, [project, groups]);
 
   // Command yang terpilih ikut disaring ulang saat proyek berganti: peran di

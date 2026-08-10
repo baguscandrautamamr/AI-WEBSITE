@@ -17,8 +17,8 @@
     "failed": "Could not reach the standards assistant"
   },
   "exportImport": {
-    "title": "Export",
-    "note": "The Revit add-in has no import command, so this page is export only. /list_sheets shows the sheet numbers /print_pdf takes; /export writes schedules and the compliance report."
+    "title": "Export & Import",
+    "note": "/list_sheets shows the sheet numbers /print_pdf takes; /export writes schedules and the compliance report. Exports appear on the History page as download links once the add-in has Cloudinary credentials."
   },
   "history": {
     "title": "Command History",
@@ -90,5 +90,17 @@
     "failed": "Could not reach the assistant",
     "done": "finished in Revit.",
     "failedRun": "failed in Revit"
+  },
+  "importExcel": {
+    "title": "Import Excel",
+    "subtitle": "Send a spreadsheet back into the model. An Element Id or Mark column identifies each row's element; every other column is a parameter name.",
+    "dryRun": "Dry run first — apply then roll back, to see what would change",
+    "uploading": "Uploading the file…",
+    "waiting": "Waiting for Revit to process it…",
+    "done": "Written into the model.",
+    "doneDry": "Dry run finished — nothing in the model was changed.",
+    "uploadFailed": "Could not upload the file",
+    "queueFailed": "Could not run the import",
+    "note": "Same shape Export writes: export it, edit in Excel, send it back here. A column matching no parameter is reported rather than guessed at."
   }
 }

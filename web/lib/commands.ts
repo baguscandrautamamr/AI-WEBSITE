@@ -43,6 +43,15 @@ export interface CommandSpec {
   fields: CommandField[];
   /** Perlu konfirmasi sebelum dikirim (lihat COMMANDS.md: delete & undo). */
   confirm?: boolean;
+  /**
+   * Tidak muncul sebagai tombol berformulir.
+   *
+   * Untuk command yang argumennya tidak bisa diketik manusia — import_excel
+   * butuh URL file yang baru ada setelah diunggah — sehingga halamannya
+   * menyediakan alurnya sendiri. Tetap ada di katalog ini karena /api/commands
+   * hanya menerima nama yang terdaftar, dan validasinya tetap berlaku.
+   */
+  hidden?: boolean;
   example: string;
 }
 
@@ -747,6 +756,46 @@ export const COMMANDS: CommandSpec[] = [
     ],
     example: "/export type=hanger_schedule format=excel",
   },
+  {
+    name: "import_excel",
+    label: { id: "Import Excel", en: "Import Excel" },
+    description: {
+      id: "Menulis isi spreadsheet kembali ke model. Kolom `Element Id` atau `Mark` menentukan elemennya; kolom lain dianggap nama parameter. Bentuknya sama dengan yang ditulis Export, jadi hasil export bisa disunting lalu dikirim balik.",
+      en: "Writes a spreadsheet back into the model. An `Element Id` or `Mark` column identifies each row's element; every other column is a parameter name. Same shape Export writes, so an export can be edited and sent back.",
+    },
+    role: "editor",
+    group: "export",
+    hidden: true,
+    fields: [
+      {
+        name: "file_url",
+        type: "text",
+        required: true,
+        label: { id: "URL file", en: "File URL" },
+        hint: {
+          id: "Diisi otomatis setelah file diunggah.",
+          en: "Filled in automatically once the file is uploaded.",
+        },
+      },
+      {
+        name: "sheet",
+        type: "text",
+        label: { id: "Nama sheet", en: "Sheet name" },
+        hint: { id: "Kosongkan untuk memakai sheet pertama.", en: "Leave empty to use the first sheet." },
+      },
+      {
+        name: "dry_run",
+        type: "boolean",
+        default: false,
+        label: { id: "Uji coba saja", en: "Dry run" },
+        hint: {
+          id: "Menjalankan perubahannya lalu membatalkannya — untuk melihat apa yang akan terjadi.",
+          en: "Runs the changes then rolls them back — to see what would happen.",
+        },
+      },
+    ],
+    example: "/import_excel file_url=… dry_run=true",
+  },
 ];
 
 export const COMMANDS_BY_NAME: Record<string, CommandSpec> = Object.fromEntries(
@@ -761,5 +810,5 @@ export function canRun(spec: CommandSpec, role: Role): boolean {
 }
 
 export function commandsForGroup(group: CommandSpec["group"], role: Role): CommandSpec[] {
-  return COMMANDS.filter((c) => c.group === group && canRun(c, role));
+  return COMMANDS.filter((c) => c.group === group && !c.hidden && canRun(c, role));
 }
