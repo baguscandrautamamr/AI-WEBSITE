@@ -19,7 +19,8 @@
     "clear": "Hapus chat",
     "clearing": "Menghapus…",
     "clearConfirm": "Hapus seluruh percakapan ini? Tidak bisa dikembalikan.",
-    "clearFailed": "Gagal menghapus percakapan"
+    "clearFailed": "Gagal menghapus percakapan",
+    "drawing": "Menggambar diagram…"
   },
   "exportImport": {
     "title": "Export & Import",

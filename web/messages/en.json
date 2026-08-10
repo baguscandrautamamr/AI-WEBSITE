@@ -19,7 +19,8 @@
     "clear": "Clear chat",
     "clearing": "Clearing…",
     "clearConfirm": "Clear this whole conversation? It cannot be undone.",
-    "clearFailed": "Could not clear the conversation"
+    "clearFailed": "Could not clear the conversation",
+    "drawing": "Drawing the diagram…"
   },
   "exportImport": {
     "title": "Export & Import",

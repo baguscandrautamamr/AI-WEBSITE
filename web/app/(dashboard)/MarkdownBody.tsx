@@ -2,6 +2,7 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import SvgBlock from "./SvgBlock";
 
 /**
  * Jawaban model ditulis dalam markdown — judul, tabel, tebal, daftar.
@@ -30,6 +31,22 @@ export default function Markdown({ children }: { children: string }) {
           a: ({ node, ...props }) => (
             <a {...props} target="_blank" rel="noreferrer noopener" />
           ),
+          // Blok ```svg digambar, bukan ditampilkan sebagai kode.
+          //
+          // Lewat sini, bukan lewat rehype-raw: rehype-raw akan membuka jalan
+          // bagi SELURUH HTML yang ditulis model ke dalam halaman, sedangkan
+          // yang dibutuhkan hanya satu jenis blok yang isinya disaring lebih
+          // dulu. Blok kode dengan bahasa lain tetap tampil sebagai kode.
+          code: ({ node, className, children, ...props }) => {
+            if (/\blanguage-svg\b/.test(className ?? "")) {
+              return <SvgBlock source={String(children)} />;
+            }
+            return (
+              <code className={className} {...props}>
+                {children}
+              </code>
+            );
+          },
         }}
       >
         {children}

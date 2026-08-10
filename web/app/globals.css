@@ -113,3 +113,14 @@ body {
 }
 .prose-chat th { font-weight: 600; background: rgba(127, 127, 127, 0.1); }
 .prose-chat hr { border: 0; border-top: 1px solid var(--glass-border); margin: 1em 0; }
+
+/* Diagram SVG dari asisten standar.
+   Lebarnya mengikuti kotaknya, tingginya menyesuaikan — SVG dari model membawa
+   viewBox tapi tidak membawa ukuran, dan tanpa aturan ini sebagian browser
+   menggambarnya setinggi 150px apa pun isinya. */
+.svg-diagram svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 100%;
+}

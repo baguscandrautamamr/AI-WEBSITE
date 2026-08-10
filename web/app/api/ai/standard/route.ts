@@ -14,10 +14,50 @@ const QUESTIONS_PER_MINUTE = 20;
 const SYSTEM_PROMPT = `Kamu adalah asisten yang menjawab pertanyaan seputar standar
 dan regulasi kelistrikan (SNI, PUIL, IEC, NEC, dsb.) untuk kebutuhan desain MEP.
 Jawab singkat, akurat, dan sebutkan nomor standar jika relevan. Kamu TIDAK pernah
-mengeksekusi apa pun di Revit — kamu murni memberi informasi.`;
+mengeksekusi apa pun di Revit — kamu murni memberi informasi.
+
+DIAGRAM. Kalau — dan hanya kalau — pengguna meminta gambar, diagram, sketsa, atau
+denah, balas dengan satu blok kode berbahasa \`svg\` berisi SVG yang utuh
+(diawali <svg ...> dan diakhiri </svg>).
+
+Aturan SVG:
+- Sertakan atribut viewBox, dan jangan setel width/height dalam piksel — biar ia
+  menyesuaikan lebar layar. Pembacanya sering memakai HP.
+- Pakai stroke dan fill dengan warna eksplisit yang terbaca di atas putih. Jangan
+  mengandalkan CSS luar.
+- DILARANG: <script>, <image>, <foreignObject>, atribut href, dan event handler
+  seperti onclick. Semua itu dibuang sebelum digambar, dan diagram yang
+  bergantung padanya akan tampil rusak.
+- Setiap angka pada gambar harus angka yang sama dengan yang kamu sebut di teks
+  jawaban. Gambar yang tidak cocok dengan perhitungannya lebih buruk daripada
+  tidak ada gambar.
+- Beri label dimensi (mis. "40 m", "Rp = 107 m") sebagai <text>, bukan hanya
+  garis tanpa keterangan.
+
+Kalau pengguna tidak meminta gambar, jawab dengan teks dan tabel seperti biasa —
+jangan menyisipkan diagram atas inisiatif sendiri.`;
 
 /** Sama dengan MAX_TURNS di src/services/standards.ts repo electrical_ai. */
 const MAX_TURNS = 8;
+
+/**
+ * Diagram tidak ikut disimpan sebagai konteks.
+ *
+ * Ini yang menentukan apakah fitur gambar mahal atau tidak. Riwayat dikirim
+ * ulang sebagai input pada SETIAP pertanyaan berikutnya, jadi satu SVG dua ribu
+ * token yang lahir di pertanyaan pertama akan ditagih lagi di pertanyaan kedua,
+ * ketiga, keempat — sampai ia terdorong keluar dari delapan giliran terakhir.
+ * Dibiarkan begitu, beberapa diagram melipatgandakan biaya input setiap
+ * permintaan selama percakapan berjalan.
+ *
+ * Yang ditinggalkan penanda pendek. Asisten tetap tahu ia sudah menggambar
+ * sesuatu dan tentang apa; yang hilang hanya ribuan token markup yang tidak
+ * pernah dibacanya lagi. Diagramnya sendiri tetap terlihat di layar — yang
+ * dipangkas adalah salinan yang dikirim balik ke model.
+ */
+function withoutDiagrams(text: string) {
+  return text.replace(/```svg\b[\s\S]*?(?:```|$)/gi, "[diagram]");
+}
 
 interface Turn {
   role: "user" | "assistant";
@@ -101,7 +141,10 @@ export async function POST(req: Request) {
       try {
         const response = anthropic.messages.stream({
           model: MODEL,
-          max_tokens: 4096,
+          // Naik dari 4096 sejak diagram diizinkan: satu SVG berdimensi bisa
+          // menghabiskan ribuan token sendiri, dan jawaban yang terpotong di
+          // tengah tag menghasilkan gambar rusak, bukan gambar pendek.
+          max_tokens: 8192,
           system: SYSTEM_PROMPT,
           messages: [
             ...previous.map((t) => ({ role: t.role, content: t.text })),
@@ -135,7 +178,7 @@ export async function POST(req: Request) {
       const all: Turn[] = [
         ...previous,
         { role: "user", text: question },
-        { role: "assistant", text: reply },
+        { role: "assistant", text: withoutDiagrams(reply) },
       ];
 
       // chat_id dibiarkan apa adanya untuk baris yang sudah ada; utas dari
