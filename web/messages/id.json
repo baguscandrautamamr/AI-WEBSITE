@@ -70,7 +70,8 @@
     "hanger_schedule": "Schedule hanger",
     "dwg": "DWG",
     "ifc": "IFC",
-    "upload_error": "Sebab"
+    "upload_error": "Sebab",
+    "dry_run_note": "Uji coba — tidak ada yang berubah di model. Angka di bawah adalah yang AKAN terjadi. Hilangkan centang \"Uji coba saja\" lalu kirim lagi untuk menjalankannya sungguhan."
   },
   "admin": {
     "title": "Akses Proyek",

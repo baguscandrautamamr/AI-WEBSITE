@@ -70,7 +70,8 @@
     "hanger_schedule": "Hanger schedule",
     "dwg": "DWG",
     "ifc": "IFC",
-    "upload_error": "Reason"
+    "upload_error": "Reason",
+    "dry_run_note": "Dry run — nothing in the model changed. The numbers below are what WOULD happen. Untick \"Dry run\" and send again to do it for real."
   },
   "admin": {
     "title": "Project Access",
