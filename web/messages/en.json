@@ -200,6 +200,7 @@
     "export.local_only": "The file is on the PC running Revit and cannot be downloaded from here yet. Fill in the Cloudinary credentials in %APPDATA%\\RevitCommandCenter\\config.json so exports arrive as download links.",
     "print.no_bot_token": "Telegram delivery is on but the bot token is empty, so the file was not sent to any chat.",
     "export_cad.no_setup": "Exported with no CAD export setup, so Revit defaults were used — layers and line weights are unlikely to match the office standard.",
-    "export.upload_failed": "Cloudinary credentials are present but every upload failed, so the file stayed on the Revit PC. Usually the keys were rotated and config.json still holds the old ones, or the network blocked it. Check the logs in %APPDATA%\\RevitCommandCenter\\logs."
+    "export.upload_failed": "Cloudinary credentials are present but every upload failed, so the file stayed on the Revit PC. Usually the keys were rotated and config.json still holds the old ones, or the network blocked it. Check the logs in %APPDATA%\\RevitCommandCenter\\logs.",
+    "export.upload_undeliverable": "The file uploaded, but Cloudinary refused it when the link was opened. Uploaded and downloadable are two different permissions: a new Cloudinary account does not allow PDF delivery by default. Open Cloudinary → Settings → Security → Restricted media types, lift the restriction on PDF, then open the link again — files uploaded earlier become downloadable too, with nothing to reprint."
   }
 }
