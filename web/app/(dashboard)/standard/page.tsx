@@ -35,8 +35,10 @@ export default function StandardPage() {
     })();
   }, []);
 
+  // Tanpa "smooth": efek ini kini berjalan tiap potongan teks datang, dan
+  // animasi gulir yang dimulai ulang puluhan kali per jawaban terlihat gemetar.
   useEffect(() => {
-    bottom.current?.scrollIntoView({ behavior: "smooth" });
+    bottom.current?.scrollIntoView({ block: "end" });
   }, [messages]);
 
   async function send() {
@@ -56,14 +58,63 @@ export default function StandardPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: question }),
       });
-      const body = await res.json();
 
-      if (!res.ok) {
-        setError(body.error ?? t("standard.failed"));
+      // Kegagalan sebelum aliran dimulai masih berupa JSON biasa.
+      if (!res.ok || !res.body) {
+        const body = await res.json().catch(() => null);
+        setError(body?.error ?? t("standard.failed"));
         return;
       }
 
-      setMessages((prev) => [...prev, { role: "assistant", content: body.reply }]);
+      // Gelembung jawaban dibuat kosong lebih dulu lalu diisi sambil jalan,
+      // supaya kalimat pertama sudah bisa dibaca saat sisanya masih ditulis.
+      let index = -1;
+      setMessages((prev) => {
+        index = prev.length;
+        return [...prev, { role: "assistant", content: "" }];
+      });
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      const consume = (line: string) => {
+        if (!line.trim()) return;
+        let chunk: { t?: string; e?: string };
+        try {
+          chunk = JSON.parse(line);
+        } catch {
+          return; // Baris terpotong yang tidak pernah selesai; abaikan.
+        }
+
+        if (chunk.e) {
+          setError(chunk.e);
+          return;
+        }
+        if (!chunk.t) return;
+
+        setMessages((prev) =>
+          prev.map((m, i) => (i === index ? { ...m, content: m.content + chunk.t } : m))
+        );
+      };
+
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Satu objek JSON per baris; yang terakhir bisa belum utuh, jadi
+        // disimpan sampai potongan berikutnya datang.
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        lines.forEach(consume);
+      }
+      consume(buffer);
+
+      // Jawaban yang berakhir kosong berarti tidak ada yang datang sama sekali;
+      // gelembung kosong lebih membingungkan daripada tidak ada gelembung.
+      setMessages((prev) => prev.filter((m, i) => i !== index || m.content.length > 0));
     } catch (err) {
       setError(err instanceof Error ? err.message : t("standard.failed"));
     } finally {
@@ -72,13 +123,16 @@ export default function StandardPage() {
   }
 
   return (
-    <div className="glass-panel max-w-2xl p-6 space-y-4 flex flex-col h-[70vh]">
+    // Selebar dan setinggi area yang tersedia. Jawaban standar sering memuat
+    // tabel dan daftar bertingkat, dan kolom sempit membuat tiap barisnya
+    // terlipat sampai tabelnya tidak terbaca lagi.
+    <div className="glass-panel flex h-[calc(100vh-3rem)] w-full flex-col space-y-4 p-6">
       <div>
         <h1 className="text-lg font-medium">{t("standard.title")}</h1>
         <p className="text-sm text-text-secondary">{t("standard.subtitle")}</p>
       </div>
 
-      <div className="flex-1 overflow-auto space-y-2">
+      <div className="flex-1 space-y-2 overflow-auto">
         {messages.map((m, i) => (
           <div
             key={i}
@@ -91,7 +145,11 @@ export default function StandardPage() {
             {m.role === "user" ? m.content : <Markdown>{m.content}</Markdown>}
           </div>
         ))}
-        {loading && <p className="text-xs opacity-60">{t("common.loading")}</p>}
+        {/* Hanya sampai huruf pertama datang: sesudah itu teks yang tumbuh
+            sendiri sudah menunjukkan bahwa jawabannya sedang ditulis. */}
+        {loading && messages[messages.length - 1]?.content === "" && (
+          <p className="text-xs opacity-60">{t("common.loading")}</p>
+        )}
         <div ref={bottom} />
       </div>
 

@@ -80,50 +80,90 @@ export async function POST(req: Request) {
       (t as Turn).text.trim().length > 0
   );
 
-  let reply: string;
-  try {
-    const response = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      messages: [
-        ...previous.map((t) => ({ role: t.role, content: t.text })),
-        { role: "user" as const, content: question },
-      ],
-    });
-    reply = response.content.find((b) => b.type === "text")?.text ?? "";
-  } catch (err) {
-    // Gateway AI di luar kendali app ini; balas error yang bisa dibaca UI,
-    // jangan biarkan exception jadi halaman HTML yang gagal di-JSON.parse.
-    console.error("[api/ai/standard] gateway call failed", err);
-    return NextResponse.json({ error: "asisten standar sedang tidak bisa dihubungi" }, { status: 502 });
-  }
+  // Jawaban dikirim bertahap, bukan sebagai satu blok di akhir.
+  //
+  // Pertanyaan standar dijawab beberapa paragraf, dan menunggu seluruhnya
+  // selesai berarti belasan detik layar diam. Isinya sama; yang berubah adalah
+  // orangnya bisa mulai membaca kalimat pertama sementara sisanya masih ditulis.
+  //
+  // Bentuknya NDJSON — satu objek JSON per baris — bukan teks polos: dengan
+  // teks polos, kegagalan di tengah aliran tidak bisa dibedakan dari jawaban,
+  // dan status HTTP sudah terlanjur terkirim sebelum kegagalannya diketahui.
+  const encoder = new TextEncoder();
 
-  if (!reply) {
-    return NextResponse.json({ error: "asisten tidak mengembalikan jawaban" }, { status: 502 });
-  }
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (chunk: object) =>
+        controller.enqueue(encoder.encode(`${JSON.stringify(chunk)}\n`));
 
-  const all: Turn[] = [
-    ...previous,
-    { role: "user", text: question },
-    { role: "assistant", text: reply },
-  ];
-  const turns = all.slice(-MAX_TURNS);
+      let reply = "";
 
-  // chat_id dibiarkan apa adanya untuk baris yang sudah ada; utas dari website
-  // tidak punya chat Telegram, dan kolomnya memang nullable.
-  const { error: saveError } = await supabase
-    .from("standards_threads")
-    .upsert(
-      { user_id: user.id, turns, updated_at: new Date().toISOString() },
-      { onConflict: "user_id" }
-    );
+      try {
+        const response = anthropic.messages.stream({
+          model: MODEL,
+          max_tokens: 4096,
+          system: SYSTEM_PROMPT,
+          messages: [
+            ...previous.map((t) => ({ role: t.role, content: t.text })),
+            { role: "user" as const, content: question },
+          ],
+        });
 
-  // Gagal menyimpan tidak boleh menelan jawaban yang sudah didapat — user tetap
-  // dapat jawabannya, hanya kehilangan konteks di pertanyaan berikutnya.
-  if (saveError) console.error("[api/ai/standard] gagal menyimpan utas", saveError);
+        for await (const event of response) {
+          if (
+            event.type === "content_block_delta" &&
+            event.delta.type === "text_delta" &&
+            event.delta.text
+          ) {
+            reply += event.delta.text;
+            send({ t: event.delta.text });
+          }
+        }
+      } catch (err) {
+        console.error("[api/ai/standard] gateway call failed", err);
+        send({ e: "asisten standar sedang tidak bisa dihubungi" });
+        controller.close();
+        return;
+      }
 
-  return NextResponse.json({ reply });
+      if (!reply) {
+        send({ e: "asisten tidak mengembalikan jawaban" });
+        controller.close();
+        return;
+      }
+
+      const all: Turn[] = [
+        ...previous,
+        { role: "user", text: question },
+        { role: "assistant", text: reply },
+      ];
+
+      // chat_id dibiarkan apa adanya untuk baris yang sudah ada; utas dari
+      // website tidak punya chat Telegram, dan kolomnya memang nullable.
+      const { error: saveError } = await supabase
+        .from("standards_threads")
+        .upsert(
+          { user_id: user.id, turns: all.slice(-MAX_TURNS), updated_at: new Date().toISOString() },
+          { onConflict: "user_id" }
+        );
+
+      // Gagal menyimpan tidak boleh menelan jawaban yang sudah terbaca — user
+      // tetap dapat jawabannya, hanya kehilangan konteks di pertanyaan berikutnya.
+      if (saveError) console.error("[api/ai/standard] gagal menyimpan utas", saveError);
+
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      // Tanpa ini sebagian proxy menahan aliran sampai penuh, yang membuang
+      // seluruh gunanya.
+      "Cache-Control": "no-store, no-transform",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }
 
 // GET — utas yang tersimpan, supaya halaman Standard tidak mulai kosong setiap

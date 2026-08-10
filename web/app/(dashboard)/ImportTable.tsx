@@ -169,7 +169,13 @@ export default function ImportTable() {
           const file = e.target.files?.[0];
           // Dikosongkan supaya memilih file yang sama dua kali tetap memicu onChange.
           e.target.value = "";
-          if (file) run(file);
+          if (!file) return;
+          // Lihat catatan yang sama di ImportExcel: pesan merah dari percobaan
+          // sebelumnya tidak boleh menempel di sebelah kotak file yang kosong.
+          setPhase("idle");
+          setMessage(null);
+          setResult(null);
+          run(file);
         }}
       />
 

@@ -1,8 +1,6 @@
 "use client";
 
 import CommandRunner from "../CommandRunner";
-import ImportExcel from "../ImportExcel";
-import ImportTable from "../ImportTable";
 import { useI18n } from "@/lib/i18n";
 
 // Export lewat command yang benar-benar dimengerti add-in: /list_sheets untuk
@@ -17,8 +15,6 @@ export default function ExportImportPage() {
   return (
     <div className="space-y-4">
       <CommandRunner groups={["export"]} title={t("exportImport.title")} />
-      <ImportExcel />
-      <ImportTable />
       <p className="max-w-4xl text-xs text-text-secondary">{t("exportImport.note")}</p>
     </div>
   );

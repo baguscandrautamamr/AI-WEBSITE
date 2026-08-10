@@ -4,7 +4,8 @@
     "standard": "Electrical Standards",
     "exportImport": "Export",
     "history": "History",
-    "admin": "Admin"
+    "admin": "Admin",
+    "import": "Import"
   },
   "electrical": {
     "title": "Electrical AI Mode"
@@ -75,11 +76,18 @@
     "clearPick": "Change",
     "grant": "Grant",
     "revoke": "Revoke",
-    "notAdmin": "You are not an admin on any project.",
+    "notAdmin": "You do not administer any project yet. Create one below, or ask an admin to add you to an existing one.",
     "roleNote": "viewer reads only (query, export, print_pdf, list_sheets); editor may run device commands; admin may manage access.",
     "loadFailed": "Could not load access data",
     "grantFailed": "Could not grant access",
-    "revokeFailed": "Could not revoke access"
+    "revokeFailed": "Could not revoke access",
+    "createTitle": "Create a project",
+    "createPlaceholder": "Project name, e.g. Tower B Jakarta",
+    "create": "Create",
+    "creating": "Creating…",
+    "created": "Project created with code",
+    "createFailed": "Could not create the project",
+    "createNote": "You become admin of the project you create. System admins are given full access too, so it is visible without being asked for."
   },
   "auth": {
     "login": "Sign in",
@@ -125,11 +133,12 @@
     "sheetsNone": "Clear",
     "modelFile": "Revit file:",
     "modelUnknown": "not checked yet",
-    "modelLoad": "Check",
     "modelLoading": "Checking…",
     "setupDefault": "(Revit defaults)",
     "setupNone": "This model has no saved setups — Revit defaults will be used.",
-    "setupAsk": "Press Check to read the setup list from the model."
+    "setupAsk": "The setup list is read as soon as Revit connects.",
+    "modelOffline": "Revit not connected",
+    "modelRetry": "Try again"
   },
   "chat": {
     "title": "Ask in plain language",
@@ -171,5 +180,9 @@
     "uploadFailed": "Could not upload the file",
     "queueFailed": "Could not run the import",
     "note": "The result is a picture of the table, not a schedule that reads the model — Revit cannot show free-form Excel columns as a schedule. To change it, edit the spreadsheet and import again."
+  },
+  "import": {
+    "title": "Import into Revit",
+    "subtitle": "Two ways to bring a spreadsheet into the model. Pick the one that matches what is in the file."
   }
 }

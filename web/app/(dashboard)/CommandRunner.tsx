@@ -77,6 +77,7 @@ export default function CommandRunner({
 
   const [model, setModel] = useState<ModelInfo | null>(null);
   const [modelLoading, setModelLoading] = useState(false);
+  const [modelReachable, setModelReachable] = useState(true);
 
   // Proyek pertama dipilih otomatis supaya halaman langsung bisa dipakai.
   useEffect(() => {
@@ -199,9 +200,10 @@ export default function CommandRunner({
    * mahal adalah saat keduanya tidak sama — perintah berangkat ke model yang
    * salah dan tidak ada apa pun di layar yang menunjukkannya.
    */
-  async function loadModel() {
-    if (!project || modelLoading) return;
+  const loadModel = useCallback(async () => {
+    if (!project) return;
     setModelLoading(true);
+    setModelReachable(true);
     try {
       const info = (await runAndWait("model_info", {})) as {
         title?: string;
@@ -216,12 +218,37 @@ export default function CommandRunner({
         printSetups: info?.print_setups ?? [],
         cadSetups: info?.cad_setups ?? [],
       });
-    } catch (err) {
-      setIssues([err instanceof Error ? err.message : String(err)]);
+    } catch {
+      // Dijalankan sendiri saat halaman dibuka, jadi kegagalannya tidak boleh
+      // muncul sebagai galat merah di atas form yang belum disentuh siapa pun.
+      // Revit yang tertutup adalah keadaan yang wajar, bukan kesalahan — yang
+      // ditampilkan cukup bahwa modelnya belum terbaca.
+      setModel(null);
+      setModelReachable(false);
     } finally {
       setModelLoading(false);
     }
-  }
+  }, [project, runAndWait]);
+
+  /**
+   * Nama file Revit muncul sendiri, tanpa ada yang perlu menekan apa pun.
+   *
+   * Ini pertanyaan yang jawabannya selalu ingin diketahui dan tidak pernah
+   * ingin ditanyakan: seluruh gunanya adalah melihat model mana yang akan
+   * disentuh SEBELUM mengirim perintah, dan tombol yang harus ditekan lebih
+   * dulu justru dilewati persis pada saat itu penting.
+   *
+   * Sekali per proyek terpilih. Setiap panggilan adalah satu baris di antrean
+   * yang harus diambil add-in, jadi ini bukan sesuatu yang boleh diulang
+   * berkala.
+   */
+  useEffect(() => {
+    if (!project) return;
+    loadModel();
+    // loadModel sengaja tidak jadi dependensi: identitasnya berubah tiap render
+    // dan efek ini hanya boleh berjalan saat proyeknya yang berganti.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.projectId]);
 
   /** Nama ruangan di model yang sedang terbuka. */
   async function loadRooms() {
@@ -403,16 +430,25 @@ export default function CommandRunner({
               {model.title}
             </span>
           ) : (
-            <span className="opacity-55">{t("command.modelUnknown")}</span>
+            <span className="opacity-55">
+              {modelLoading
+                ? t("command.modelLoading")
+                : modelReachable
+                  ? t("command.modelUnknown")
+                  : t("command.modelOffline")}
+            </span>
           )}
-          <button
-            type="button"
-            onClick={loadModel}
-            disabled={modelLoading}
-            className="text-accent underline disabled:opacity-40"
-          >
-            {modelLoading ? t("command.modelLoading") : t("command.modelLoad")}
-          </button>
+          {/* Tombolnya hanya muncul kalau pembacaan otomatisnya gagal — untuk
+              mencoba lagi setelah Revit dibuka, bukan sebagai langkah biasa. */}
+          {!model && !modelLoading && (
+            <button
+              type="button"
+              onClick={loadModel}
+              className="text-accent underline"
+            >
+              {t("command.modelRetry")}
+            </button>
+          )}
         </div>
 
         {/* Tombol per command — inilah yang menembak ke add-in Revit. */}
@@ -602,7 +638,7 @@ function Field({
             disabled={modelLoading}
             className="text-xs text-accent underline disabled:opacity-40"
           >
-            {modelLoading ? t("command.modelLoading") : t("command.modelLoad")}
+            {modelLoading ? t("command.modelLoading") : t("command.modelRetry")}
           </button>
         </span>
 

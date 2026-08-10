@@ -47,6 +47,27 @@ async function requireAdmin() {
   return { userId: user.id, projectIds };
 }
 
+/**
+ * Sesi saja, plus proyek yang boleh dikelola — yang boleh kosong.
+ *
+ * Dipakai GET, bukan requireAdmin. Halaman ini juga tempat proyek dibuat, dan
+ * seseorang yang belum mengelola apa pun justru yang paling butuh membukanya:
+ * menolaknya dengan 403 berarti orang yang baru mendaftar tidak punya satu pun
+ * jalan untuk mulai.
+ */
+async function requireUser() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
+  }
+
+  return { userId: user.id, projectIds: await adminProjectIds(supabase) };
+}
+
 /** Kolom user yang boleh keluar dari route ini. Tidak lebih dari ini. */
 const USER_COLUMNS = "id, full_name, auth_provider, is_active";
 
@@ -98,7 +119,7 @@ function escapeLike(value: string) {
 //   matches — hasil pencarian nama, untuk menambahkan orang yang sudah aktif di
 //             proyek lain.
 export async function GET(req: Request) {
-  const guard = await requireAdmin();
+  const guard = await requireUser();
   if ("error" in guard) return guard.error;
 
   const service = createServiceClient();

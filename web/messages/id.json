@@ -4,7 +4,8 @@
     "standard": "Standar Electrical",
     "exportImport": "Export",
     "history": "Riwayat",
-    "admin": "Admin"
+    "admin": "Admin",
+    "import": "Import"
   },
   "electrical": {
     "title": "Mode Electrical AI"
@@ -75,11 +76,18 @@
     "clearPick": "Ganti",
     "grant": "Beri",
     "revoke": "Cabut",
-    "notAdmin": "Kamu bukan admin di proyek mana pun.",
+    "notAdmin": "Kamu belum mengelola proyek mana pun. Buat satu di bawah, atau minta admin menambahkanmu ke proyek yang sudah ada.",
     "roleNote": "viewer hanya membaca (query, export, print_pdf, list_sheets); editor boleh menjalankan perintah perangkat; admin boleh mengelola akses.",
     "loadFailed": "Gagal memuat data akses",
     "grantFailed": "Gagal memberi akses",
-    "revokeFailed": "Gagal mencabut akses"
+    "revokeFailed": "Gagal mencabut akses",
+    "createTitle": "Buat proyek baru",
+    "createPlaceholder": "Nama proyek, mis. Tower B Jakarta",
+    "create": "Buat",
+    "creating": "Membuat…",
+    "created": "Proyek dibuat dengan kode",
+    "createFailed": "Gagal membuat proyek",
+    "createNote": "Kamu jadi admin proyek yang kamu buat. Admin sistem ikut diberi akses penuh, jadi proyeknya terlihat tanpa perlu diminta."
   },
   "auth": {
     "login": "Masuk",
@@ -125,11 +133,12 @@
     "sheetsNone": "Kosongkan",
     "modelFile": "File Revit:",
     "modelUnknown": "belum ditanya",
-    "modelLoad": "Cek",
     "modelLoading": "Mengecek…",
     "setupDefault": "(bawaan Revit)",
     "setupNone": "Model ini tidak punya setup tersimpan — bawaan Revit yang dipakai.",
-    "setupAsk": "Tekan Cek untuk mengambil daftar setup dari model."
+    "setupAsk": "Daftar setup ikut terbaca begitu Revit terhubung.",
+    "modelOffline": "Revit belum terhubung",
+    "modelRetry": "Coba lagi"
   },
   "chat": {
     "title": "Minta pakai bahasa biasa",
@@ -171,5 +180,9 @@
     "uploadFailed": "Gagal mengunggah file",
     "queueFailed": "Gagal menjalankan import",
     "note": "Hasilnya gambar dari tabelnya, bukan schedule yang membaca model — Revit tidak bisa menampilkan kolom bebas dari Excel sebagai schedule. Untuk mengubah isinya, sunting Excel-nya lalu import lagi."
+  },
+  "import": {
+    "title": "Import ke Revit",
+    "subtitle": "Dua cara membawa spreadsheet masuk ke model. Pilih yang sesuai dengan isi filenya."
   }
 }
