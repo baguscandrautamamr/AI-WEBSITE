@@ -2,11 +2,38 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
+import { splitDiagrams } from "@/lib/diagrams";
 import Markdown from "../Markdown";
+import SvgBlock from "../SvgBlock";
 
 interface Msg {
   role: "user" | "assistant";
   content: string;
+}
+
+/**
+ * Satu jawaban model: teksnya sebagai markdown, gambarnya sebagai gambar.
+ *
+ * Pemisahannya di sini, bukan di dalam Markdown, karena sebuah gambar tidak
+ * selalu datang sebagai blok kode — kadang ia datang sebagai markup mentah, atau
+ * di dalam pembungkus tool-call yang tidak pernah kami minta. Markdown tidak
+ * bisa mengenali bentuk-bentuk itu; ia hanya melihat teks, dan teks itulah yang
+ * ia tampilkan.
+ */
+function Answer({ text }: { text: string }) {
+  const segments = splitDiagrams(text);
+
+  return (
+    <>
+      {segments.map((segment, index) =>
+        segment.kind === "svg" ? (
+          <SvgBlock key={index} source={segment.value} />
+        ) : (
+          <Markdown key={index}>{segment.value}</Markdown>
+        ),
+      )}
+    </>
+  );
 }
 
 export default function StandardPage() {
@@ -194,7 +221,7 @@ export default function StandardPage() {
                 : "glass-input max-w-[92%]"
             }`}
           >
-            {m.role === "user" ? m.content : <Markdown>{m.content}</Markdown>}
+            {m.role === "user" ? m.content : <Answer text={m.content} />}
           </div>
         ))}
         {/* Gelembung menunggu, sampai huruf pertama datang. Sesudah itu teks
