@@ -323,7 +323,25 @@ export default function CommandRunner({
       const res = await fetch("/api/ai/electrical", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, projectId: project.projectId, history }),
+        body: JSON.stringify({
+          message,
+          projectId: project.projectId,
+          history,
+          // Nama yang benar-benar ada di model ikut dikirim.
+          //
+          // Tanpa ini asisten mengarang nama tipe yang masuk akal — "downlight"
+          // alih-alih "ACT_E_Downlight: 18W" — dan perintahnya berangkat,
+          // antre, lalu gagal di Revit karena family itu tidak ada. Yang
+          // terlihat pengguna: perintah yang katanya terkirim, lampu yang tidak
+          // pernah muncul di gambar, dan sebabnya di baris hasil yang harus
+          // digulir untuk dibaca.
+          //
+          // Daftarnya sudah ada di halaman ini dari model_info; yang belum ada
+          // adalah jalan dari sana ke prompt.
+          context: model
+            ? { familyTypes: model.familyTypes, rooms: model.rooms }
+            : undefined,
+        }),
       });
       const body = await res.json();
 

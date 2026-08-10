@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { splitDiagrams } from "@/lib/diagrams";
+import { useTypewriter } from "@/lib/useTypewriter";
 import Markdown from "../Markdown";
 import SvgBlock from "../SvgBlock";
 
@@ -20,17 +21,29 @@ interface Msg {
  * bisa mengenali bentuk-bentuk itu; ia hanya melihat teks, dan teks itulah yang
  * ia tampilkan.
  */
-function Answer({ text }: { text: string }) {
-  const segments = splitDiagrams(text);
+function Answer({ text, typing }: { text: string; typing: boolean }) {
+  // Ditampilkan rata, bukan bergelombang. Potongan dari API besarnya tidak
+  // beraturan; apa adanya, yang terlihat bukan orang mengetik melainkan teks
+  // yang menyentak — dan itu terasa seperti aplikasi yang tersendat.
+  const shown = useTypewriter(text, typing);
+  const segments = splitDiagrams(shown);
 
   return (
     <>
       {segments.map((segment, index) =>
         segment.kind === "svg" ? (
+          // Gambar tidak "diketik": SVG yang separuh bukan gambar separuh, ia
+          // gambar yang salah. SvgBlock menampilkan "sedang menggambar" sampai
+          // tag penutupnya datang, dan itu sudah cukup sebagai tanda.
           <SvgBlock key={index} source={segment.value} />
         ) : (
           <Markdown key={index}>{segment.value}</Markdown>
         ),
+      )}
+      {/* Kursor, selama masih ada yang belum tampil. Tanpa ini jeda antar
+          potongan terlihat seperti jawaban yang sudah selesai. */}
+      {typing && shown.length < text.length && (
+        <span className="caret" aria-hidden />
       )}
     </>
   );
@@ -275,7 +288,14 @@ export default function StandardPage() {
                   : "glass-input max-w-[92%]"
               }`}
             >
-              {m.role === "user" ? m.content : <Answer text={m.content} />}
+              {m.role === "user" ? (
+              m.content
+            ) : (
+              /* Hanya gelembung TERAKHIR yang diketik, dan hanya selagi mengalir.
+                 Jawaban lama sudah selesai; mengetiknya ulang setiap render
+                 akan membuat percakapan kemarin bergerak sendiri. */
+              <Answer text={m.content} typing={loading && i === messages.length - 1} />
+            )}
             </div>
           ))}
           {/* Gelembung menunggu, sampai huruf pertama datang. Sesudah itu teks

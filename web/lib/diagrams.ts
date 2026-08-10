@@ -94,7 +94,14 @@ function scan(source: string, into: Segment[]) {
   // detik, lalu tiba-tiba berganti menjadi gambar — dan yang terbaca selama
   // detik-detik itu adalah kesan bahwa jawabannya rusak. SvgBlock sudah tahu
   // cara menampilkan "sedang menggambar" untuk sumber yang belum utuh.
-  const opening = rest.search(/<svg[\s>]/i);
+  // Tag pembukanya harus sudah selesai, bukan cuma dimulai.
+  //
+  // `<svg` saja bisa muncul di tengah kalimat — jawaban yang MENYEBUT elemen
+  // svg, atau potongan pertama sebuah aliran yang belum tentu berlanjut jadi
+  // gambar. Menganggapnya diagram terlalu dini membuat seluruh gelembung
+  // berganti jadi "Menggambar diagram…" untuk jawaban yang tidak menggambar
+  // apa-apa.
+  const opening = rest.search(/<svg[^>]*>/i);
   if (opening >= 0) {
     const before = rest.slice(0, opening);
     if (!isScaffolding(before)) into.push({ kind: "text", value: before });
