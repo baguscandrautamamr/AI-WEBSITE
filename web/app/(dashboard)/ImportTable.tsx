@@ -7,35 +7,36 @@ import { canRun, COMMANDS_BY_NAME } from "@/lib/commands";
 import ResultView from "./ResultView";
 
 type Phase = "idle" | "uploading" | "queued" | "done" | "failed";
+type Target = "schedule" | "legend";
 
 /**
- * Mengirim satu spreadsheet kembali ke model.
+ * Membawa spreadsheet apa adanya ke dalam model sebagai tabel.
  *
- * Alurnya dua langkah karena memang dua hal: file diunggah ke Cloudinary lebih
- * dulu, baru URL-nya dikirim sebagai perintah. Add-in tidak bisa membaca file
- * dari browser — ia hanya melihat antrean, jadi yang bisa diantre adalah
- * tautannya, bukan isinya.
+ * Berbeda dari Import Excel di sebelahnya, yang menulis nilai ke elemen yang
+ * sudah ada lewat kolom Element Id atau Mark. Yang ini tidak menuntut apa pun
+ * dari isi filenya: tabel dari supplier, daftar kabel, legenda simbol — apa pun
+ * yang bentuknya tabel — digambar ulang di sebuah view, lengkap dengan lebar
+ * kolom, tinggi baris, dan sel yang di-merge.
  *
- * Tidak memakai form command generik seperti perintah lain: satu-satunya
- * argumen wajibnya adalah URL yang belum ada sampai unggahannya selesai, dan
- * meminta orang menempelkannya sendiri adalah pekerjaan yang tidak perlu ada.
+ * Alurnya dua langkah karena memang dua hal: file diunggah lebih dulu, baru
+ * URL-nya diantre sebagai perintah. Add-in tidak bisa membaca file dari
+ * browser — ia hanya melihat antrean.
  */
-export default function ImportExcel() {
+export default function ImportTable() {
   const { t } = useI18n();
   const { projects } = useProjects();
 
   const [projectId, setProjectId] = useState("");
-  const [dryRun, setDryRun] = useState(true);
+  const [target, setTarget] = useState<Target>("schedule");
+  const [viewName, setViewName] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [result, setResult] = useState<unknown>(null);
 
-  const spec = COMMANDS_BY_NAME["import_excel"];
+  const spec = COMMANDS_BY_NAME["import_table"];
   const allowed = projects.filter((p) => spec && canRun(spec, p.role));
   const active = projectId || allowed[0]?.projectId || "";
 
-  // Peran viewer tidak boleh mengubah model, jadi bagian ini tidak ditampilkan
-  // sama sekali — bukan ditampilkan lalu ditolak setelah file terlanjur naik.
   if (allowed.length === 0) return null;
 
   async function run(file: File) {
@@ -46,14 +47,11 @@ export default function ImportExcel() {
     try {
       const form = new FormData();
       form.append("file", file);
-      // Proyeknya ikut dikirim: route unggah memeriksa peran di proyek ini
-      // sebelum menerima apa pun, jadi file yang tidak boleh diimpor ditolak
-      // sebelum naik, bukan setelah.
       form.append("projectId", active);
 
       const uploaded = await fetch("/api/files/upload", { method: "POST", body: form });
       const uploadBody = await uploaded.json();
-      if (!uploaded.ok) throw new Error(uploadBody.error ?? t("importExcel.uploadFailed"));
+      if (!uploaded.ok) throw new Error(uploadBody.error ?? t("importTable.uploadFailed"));
 
       setPhase("queued");
 
@@ -61,19 +59,25 @@ export default function ImportExcel() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          command: "import_excel",
+          command: "import_table",
           projectId: active,
-          values: { file_url: uploadBody.url, dry_run: dryRun },
+          values: {
+            file_url: uploadBody.url,
+            target,
+            name: viewName.trim() || undefined,
+          },
         }),
       });
       const queuedBody = await queued.json();
       if (!queued.ok) {
-        throw new Error(queuedBody.issues?.join("; ") ?? queuedBody.error ?? t("importExcel.queueFailed"));
+        throw new Error(
+          queuedBody.issues?.join("; ") ?? queuedBody.error ?? t("importTable.queueFailed")
+        );
       }
 
-      // Menunggu add-in: import menulis ke model, jadi "terkirim" bukan kabar
-      // yang berguna — yang ditunggu orang adalah berapa yang berubah.
-      for (let i = 0; i < 60; i++) {
+      // Menunggu add-in: yang berguna bagi orangnya bukan "terkirim", tapi nama
+      // view yang jadi dan berapa baris yang masuk.
+      for (let i = 0; i < 90; i++) {
         await new Promise((r) => setTimeout(r, 2000));
         const res = await fetch(`/api/commands?id=${encodeURIComponent(queuedBody.id)}`);
         if (!res.ok) continue;
@@ -86,7 +90,7 @@ export default function ImportExcel() {
         }
         if (cmd.status === "failed" || cmd.status === "cancelled") {
           setPhase("failed");
-          setMessage(cmd.error_message ?? t("importExcel.queueFailed"));
+          setMessage(cmd.error_message ?? t("importTable.queueFailed"));
           return;
         }
       }
@@ -104,8 +108,8 @@ export default function ImportExcel() {
   return (
     <div className="glass-panel max-w-4xl space-y-4 p-6">
       <div>
-        <h2 className="font-medium">{t("importExcel.title")}</h2>
-        <p className="text-sm opacity-70">{t("importExcel.subtitle")}</p>
+        <h2 className="font-medium">{t("importTable.title")}</h2>
+        <p className="text-sm opacity-70">{t("importTable.subtitle")}</p>
       </div>
 
       {allowed.length > 1 && (
@@ -125,10 +129,37 @@ export default function ImportExcel() {
         </label>
       )}
 
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
-        <span>{t("importExcel.dryRun")}</span>
-      </label>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="space-y-1">
+          <span className="text-sm">{t("importTable.target")}</span>
+          <select
+            className="glass-input w-full"
+            value={target}
+            disabled={busy}
+            onChange={(e) => setTarget(e.target.value as Target)}
+          >
+            <option value="schedule">{t("importTable.targetSchedule")}</option>
+            <option value="legend">{t("importTable.targetLegend")}</option>
+          </select>
+          <span className="block text-xs opacity-55">
+            {target === "schedule"
+              ? t("importTable.targetScheduleHint")
+              : t("importTable.targetLegendHint")}
+          </span>
+        </label>
+
+        <label className="space-y-1">
+          <span className="text-sm">{t("importTable.viewName")}</span>
+          <input
+            className="glass-input w-full"
+            type="text"
+            value={viewName}
+            disabled={busy}
+            placeholder={t("importTable.viewNamePlaceholder")}
+            onChange={(e) => setViewName(e.target.value)}
+          />
+        </label>
+      </div>
 
       <input
         type="file"
@@ -136,8 +167,7 @@ export default function ImportExcel() {
         disabled={busy}
         onChange={(e) => {
           const file = e.target.files?.[0];
-          // Nilainya dikosongkan supaya memilih file yang sama dua kali tetap
-          // memicu onChange.
+          // Dikosongkan supaya memilih file yang sama dua kali tetap memicu onChange.
           e.target.value = "";
           if (file) run(file);
         }}
@@ -145,7 +175,7 @@ export default function ImportExcel() {
 
       {busy && (
         <p className="text-sm opacity-70">
-          {phase === "uploading" ? t("importExcel.uploading") : t("importExcel.waiting")}
+          {phase === "uploading" ? t("importTable.uploading") : t("importTable.waiting")}
         </p>
       )}
 
@@ -153,16 +183,14 @@ export default function ImportExcel() {
 
       {phase === "done" && (
         <div className="space-y-2">
-          <p className="text-sm text-emerald-600">
-            {dryRun ? t("importExcel.doneDry") : t("importExcel.done")}
-          </p>
+          <p className="text-sm text-emerald-600">{t("importTable.done")}</p>
           <div className="glass-input max-h-64 overflow-auto text-xs">
             <ResultView value={result} />
           </div>
         </div>
       )}
 
-      <p className="text-xs text-text-secondary">{t("importExcel.note")}</p>
+      <p className="text-xs text-text-secondary">{t("importTable.note")}</p>
     </div>
   );
 }

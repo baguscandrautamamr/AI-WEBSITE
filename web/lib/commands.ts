@@ -22,6 +22,16 @@ export interface CommandField {
   /** Nilai default add-in; ditampilkan sebagai placeholder, tidak ikut dikirim jika kosong. */
   default?: string | number | boolean;
   options?: string[];
+  /**
+   * Pilihan yang hanya bisa dijawab model yang sedang terbuka — nama Print
+   * Setup dan DWG Export Setup yang tersimpan di file .rvt itu. Diisi UI dari
+   * hasil /model_info, dan dibiarkan kosong kalau modelnya belum ditanya.
+   *
+   * Tetap boleh diketik bebas: daftarnya hanya sebaik model yang terakhir
+   * dibaca, dan add-in yang menolak nama yang salah sudah menyebutkan nama apa
+   * saja yang ada.
+   */
+  optionsFrom?: "print_setups" | "cad_setups";
   min?: number;
   max?: number;
   /** Keterangan singkat di bawah field. */
@@ -712,8 +722,64 @@ export const COMMANDS: CommandSpec[] = [
         default: true,
         label: { id: "Gabung jadi satu PDF", en: "Combine into one PDF" },
       },
+      {
+        name: "setup",
+        type: "select",
+        optionsFrom: "print_setups",
+        label: { id: "Print setup", en: "Print setup" },
+        hint: {
+          id: "Setup yang tersimpan di model. Kosongkan untuk memakai bawaan Revit. Ukuran kertas tidak diambil dari setup — tiap kop gambar sudah menentukannya.",
+          en: "A setup saved in the model. Leave empty for Revit's defaults. Paper size is not taken from the setup — each title block already states it.",
+        },
+      },
     ],
     example: "/print_pdf E-101,E-102 combine=true",
+  },
+  {
+    name: "export_cad",
+    label: { id: "Export DWG", en: "Export DWG" },
+    description: {
+      id: "Mengekspor sheet terpilih jadi DWG memakai DWG Export Setup yang tersimpan di model. Berbeda dengan Export format=dwg, yang mengekspor view yang sedang aktif.",
+      en: "Exports the chosen sheets to DWG using a DWG Export Setup saved in the model. Not the same as Export format=dwg, which exports whichever view is active.",
+    },
+    role: "viewer",
+    group: "export",
+    positional: {
+      name: "sheets",
+      type: "text",
+      required: true,
+      label: { id: "Sheet", en: "Sheets" },
+      hint: {
+        id: "Satu nomor, daftar dipisah koma, pola seperti E-1*, atau all.",
+        en: "A number, a comma-separated list, a pattern like E-1*, or all.",
+      },
+    },
+    fields: [
+      {
+        name: "setup",
+        type: "select",
+        optionsFrom: "cad_setups",
+        label: { id: "CAD export setup", en: "CAD export setup" },
+        hint: {
+          id: "Setup yang tersimpan di model — inilah yang menentukan layer, ketebalan garis, dan teks. Kosongkan hanya kalau memang mau bawaan Revit.",
+          en: "A setup saved in the model — this is what decides layers, line weights, and text. Leave empty only if Revit's defaults are really what you want.",
+        },
+      },
+    ],
+    example: "/export_cad E-101,E-102 setup=\"DWG 2018\"",
+  },
+  {
+    name: "model_info",
+    label: { id: "Info Model", en: "Model info" },
+    description: {
+      id: "Melaporkan file .rvt yang sedang terbuka beserta nama print setup dan CAD export setup yang tersimpan di dalamnya.",
+      en: "Reports the .rvt open right now, along with the print and CAD export setups saved inside it.",
+    },
+    role: "viewer",
+    group: "read",
+    hidden: true,
+    fields: [],
+    example: "/model_info",
   },
   {
     name: "export",
@@ -795,6 +861,59 @@ export const COMMANDS: CommandSpec[] = [
       },
     ],
     example: "/import_excel file_url=… dry_run=true",
+  },
+  {
+    name: "import_table",
+    label: { id: "Import Tabel", en: "Import Table" },
+    description: {
+      id: "Menggambar isi spreadsheet apa adanya ke sebuah view Revit — lebar kolom, tinggi baris, dan sel yang di-merge ikut. Hasilnya gambar dari tabelnya, bukan schedule yang membaca model.",
+      en: "Draws a spreadsheet into a Revit view as it stands — column widths, row heights, and merged cells included. The result is a picture of the table, not a schedule that reads the model.",
+    },
+    role: "editor",
+    group: "export",
+    hidden: true,
+    fields: [
+      {
+        name: "file_url",
+        type: "text",
+        required: true,
+        label: { id: "URL file", en: "File URL" },
+        hint: {
+          id: "Diisi otomatis setelah file diunggah.",
+          en: "Filled in automatically once the file is uploaded.",
+        },
+      },
+      {
+        name: "target",
+        type: "select",
+        default: "schedule",
+        options: ["schedule", "legend"],
+        label: { id: "Masuk ke", en: "Place in" },
+        hint: {
+          id: "schedule = drafting view baru, hanya bisa ditaruh di satu sheet. legend = legend view, bisa dipakai ulang di banyak sheet.",
+          en: "schedule = a new drafting view, placeable on one sheet only. legend = a legend view, reusable across many sheets.",
+        },
+      },
+      {
+        name: "sheet",
+        type: "text",
+        label: { id: "Sheet Excel", en: "Excel sheet" },
+        hint: {
+          id: "Kosongkan untuk memakai sheet pertama yang ada isinya.",
+          en: "Leave empty to use the first sheet with anything on it.",
+        },
+      },
+      {
+        name: "name",
+        type: "text",
+        label: { id: "Nama view", en: "View name" },
+        hint: {
+          id: "Kosongkan untuk memakai nama sheet Excel-nya.",
+          en: "Leave empty to use the Excel sheet's own name.",
+        },
+      },
+    ],
+    example: "/import_table file_url=… target=legend",
   },
 ];
 

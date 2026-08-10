@@ -5,6 +5,7 @@ import { useI18n } from "@/lib/i18n";
 import { useProjects, type ProjectAccess } from "@/lib/useProjects";
 import { COMMANDS, COMMANDS_BY_NAME, canRun, type CommandField, type CommandSpec } from "@/lib/commands";
 import CommandChat, { type ChatBody, type ChatEntry } from "./CommandChat";
+import ResultView from "./ResultView";
 
 type QueueStatus = "pending" | "processing" | "completed" | "failed" | "cancelled";
 
@@ -29,6 +30,20 @@ interface RunEntry {
 }
 
 const TERMINAL: QueueStatus[] = ["completed", "failed", "cancelled"];
+
+/** Satu sheet di model, sebagaimana dikembalikan /list_sheets. */
+interface SheetOption {
+  number: string;
+  name: string;
+}
+
+/** Jawaban /model_info: file yang sedang dibuka Revit dan setup di dalamnya. */
+interface ModelInfo {
+  title: string;
+  path?: string | null;
+  printSetups: string[];
+  cadSetups: string[];
+}
 
 export default function CommandRunner({
   groups,
@@ -57,6 +72,12 @@ export default function CommandRunner({
   const [rooms, setRooms] = useState<string[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(false);
 
+  const [sheets, setSheets] = useState<SheetOption[]>([]);
+  const [sheetsLoading, setSheetsLoading] = useState(false);
+
+  const [model, setModel] = useState<ModelInfo | null>(null);
+  const [modelLoading, setModelLoading] = useState(false);
+
   // Proyek pertama dipilih otomatis supaya halaman langsung bisa dipakai.
   useEffect(() => {
     if (!project && projects.length) setProject(projects[0]);
@@ -79,9 +100,11 @@ export default function CommandRunner({
     }
   }, [available, selected]);
 
-  // Daftar ruangan milik satu model; berganti proyek berarti daftarnya basi.
+  // Semuanya milik satu model; berganti proyek berarti semuanya basi.
   useEffect(() => {
     setRooms([]);
+    setSheets([]);
+    setModel(null);
   }, [project?.projectId]);
 
   function addChat(entry: ChatBody) {
@@ -133,45 +156,110 @@ export default function CommandRunner({
   }
 
   /**
-   * Menanyakan daftar ruangan ke model yang sedang terbuka.
+   * Menjalankan satu perintah baca lalu menunggu jawabannya.
    *
    * Jawabannya datang lewat antrean yang sama seperti perintah lain, jadi ini
    * hanya berhasil kalau Revit terbuka dan add-in berjalan — dan itu memang
-   * satu-satunya sumber yang tahu ruangan apa saja yang ada di model.
+   * satu-satunya sumber yang tahu isi model. Dibatasi 30 kali supaya Revit yang
+   * tertutup tidak membuat tombolnya berputar selamanya.
    */
-  async function loadRooms() {
-    if (!project || roomsLoading) return;
-    setRoomsLoading(true);
-    try {
-      const { id } = await enqueue("query", { what: "room", detail: "list", limit: 500 });
+  const runAndWait = useCallback(
+    async (commandName: string, vals: Record<string, unknown>) => {
+      const { id } = await enqueue(commandName, vals);
 
-      // Menunggu add-in menjawab; dibatasi supaya Revit yang tertutup tidak
-      // membuat tombolnya berputar selamanya.
       for (let i = 0; i < 30; i++) {
         await new Promise((r) => setTimeout(r, 2000));
         const res = await fetch(`/api/commands?id=${encodeURIComponent(id)}`);
         if (!res.ok) continue;
+
         const cmd = (await res.json()) as QueuedCommand;
         if (!TERMINAL.includes(cmd.status)) continue;
-
         if (cmd.status !== "completed") {
-          setIssues([cmd.error_message ?? t("command.roomsFailed")]);
-          return;
+          throw new Error(cmd.error_message ?? t("command.roomsFailed"));
         }
-
-        const items = (cmd.result_json as { items?: { id?: string; label?: string }[] })?.items ?? [];
-        const names = items
-          .map((it) => it.label ?? it.id ?? "")
-          .filter((n): n is string => Boolean(n));
-        setRooms(names);
-        if (names.length === 0) setIssues([t("command.roomsEmpty")]);
-        return;
+        return cmd.result_json;
       }
-      setIssues([t("command.roomsTimeout")]);
+
+      throw new Error(t("command.roomsTimeout"));
+    },
+    [enqueue, t]
+  );
+
+  /** Daftar `{ id, label }` yang dikembalikan query dan list_sheets. */
+  function itemsOf(result: unknown) {
+    return (result as { items?: { id?: string; label?: string }[] })?.items ?? [];
+  }
+
+  /**
+   * File .rvt yang sedang dibuka Revit, beserta setup yang tersimpan di
+   * dalamnya.
+   *
+   * Proyek di website adalah baris di database; yang dikerjakan add-in adalah
+   * file yang kebetulan terbuka di Revit. Keduanya biasanya sama, dan yang
+   * mahal adalah saat keduanya tidak sama — perintah berangkat ke model yang
+   * salah dan tidak ada apa pun di layar yang menunjukkannya.
+   */
+  async function loadModel() {
+    if (!project || modelLoading) return;
+    setModelLoading(true);
+    try {
+      const info = (await runAndWait("model_info", {})) as {
+        title?: string;
+        path?: string | null;
+        print_setups?: string[];
+        cad_setups?: string[];
+      } | null;
+
+      setModel({
+        title: info?.title ?? "—",
+        path: info?.path ?? null,
+        printSetups: info?.print_setups ?? [],
+        cadSetups: info?.cad_setups ?? [],
+      });
+    } catch (err) {
+      setIssues([err instanceof Error ? err.message : String(err)]);
+    } finally {
+      setModelLoading(false);
+    }
+  }
+
+  /** Nama ruangan di model yang sedang terbuka. */
+  async function loadRooms() {
+    if (!project || roomsLoading) return;
+    setRoomsLoading(true);
+    try {
+      const items = itemsOf(await runAndWait("query", { what: "room", detail: "list", limit: 500 }));
+      const names = items.map((it) => it.label ?? it.id ?? "").filter(Boolean);
+      setRooms(names);
+      if (names.length === 0) setIssues([t("command.roomsEmpty")]);
     } catch (err) {
       setIssues([err instanceof Error ? err.message : String(err)]);
     } finally {
       setRoomsLoading(false);
+    }
+  }
+
+  /**
+   * Sheet di model, untuk dicentang satu per satu.
+   *
+   * Nomor sheet adalah satu-satunya hal yang dibaca print_pdf, dan mengetiknya
+   * ulang dari ingatan untuk selusin gambar adalah cara paling mudah mencetak
+   * sheet yang salah — atau melewatkan satu tanpa sadar.
+   */
+  async function loadSheets() {
+    if (!project || sheetsLoading) return;
+    setSheetsLoading(true);
+    try {
+      const items = itemsOf(await runAndWait("list_sheets", {}));
+      const list = items
+        .filter((it) => it.id)
+        .map((it) => ({ number: it.id as string, name: it.label ?? "" }));
+      setSheets(list);
+      if (list.length === 0) setIssues([t("command.sheetsEmpty")]);
+    } catch (err) {
+      setIssues([err instanceof Error ? err.message : String(err)]);
+    } finally {
+      setSheetsLoading(false);
     }
   }
 
@@ -306,6 +394,27 @@ export default function CommandRunner({
           </label>
         </div>
 
+        {/* File yang sedang dibuka Revit. Proyek di atas adalah baris di
+            database; ini yang benar-benar akan disentuh perintahnya. */}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="opacity-60">{t("command.modelFile")}</span>
+          {model ? (
+            <span className="font-medium" title={model.path ?? undefined}>
+              {model.title}
+            </span>
+          ) : (
+            <span className="opacity-55">{t("command.modelUnknown")}</span>
+          )}
+          <button
+            type="button"
+            onClick={loadModel}
+            disabled={modelLoading}
+            className="text-accent underline disabled:opacity-40"
+          >
+            {modelLoading ? t("command.modelLoading") : t("command.modelLoad")}
+          </button>
+        </div>
+
         {/* Tombol per command — inilah yang menembak ke add-in Revit. */}
         <div className="flex flex-wrap gap-2">
           {available.map((c) => (
@@ -352,6 +461,12 @@ export default function CommandRunner({
                 rooms={rooms}
                 roomsLoading={roomsLoading}
                 onLoadRooms={loadRooms}
+                sheets={sheets}
+                sheetsLoading={sheetsLoading}
+                onLoadSheets={loadSheets}
+                model={model}
+                modelLoading={modelLoading}
+                onLoadModel={loadModel}
                 onChange={(v) =>
                   setValues((s) => ({ ...s, [selected.positional!.name]: v }))
                 }
@@ -366,6 +481,12 @@ export default function CommandRunner({
                 rooms={rooms}
                 roomsLoading={roomsLoading}
                 onLoadRooms={loadRooms}
+                sheets={sheets}
+                sheetsLoading={sheetsLoading}
+                onLoadSheets={loadSheets}
+                model={model}
+                modelLoading={modelLoading}
+                onLoadModel={loadModel}
                 onChange={(v) => setValues((s) => ({ ...s, [f.name]: v }))}
               />
             ))}
@@ -425,9 +546,9 @@ function RunRow({ run }: { run: RunEntry }) {
       {run.error && <p className="text-xs text-red-500">{run.error}</p>}
 
       {done && !failed && run.result != null && (
-        <pre className="text-xs overflow-auto max-h-56 opacity-80">
-          {JSON.stringify(run.result, null, 2)}
-        </pre>
+        <div className="max-h-72 overflow-auto text-xs">
+          <ResultView value={run.result} />
+        </div>
       )}
     </div>
   );
@@ -440,6 +561,12 @@ function Field({
   rooms,
   roomsLoading,
   onLoadRooms,
+  sheets,
+  sheetsLoading,
+  onLoadSheets,
+  model,
+  modelLoading,
+  onLoadModel,
   onChange,
 }: {
   field: CommandField;
@@ -448,10 +575,83 @@ function Field({
   rooms: string[];
   roomsLoading: boolean;
   onLoadRooms: () => void;
+  sheets: SheetOption[];
+  sheetsLoading: boolean;
+  onLoadSheets: () => void;
+  model: ModelInfo | null;
+  modelLoading: boolean;
+  onLoadModel: () => void;
   onChange: (v: unknown) => void;
 }) {
   const { t } = useI18n();
   const isRoom = field.name === "room";
+  const isSheets = field.name === "sheets";
+
+  // Pilihan yang hanya diketahui model yang sedang terbuka.
+  if (field.optionsFrom) {
+    const fromModel =
+      field.optionsFrom === "print_setups" ? model?.printSetups : model?.cadSetups;
+
+    return (
+      <label className="space-y-1">
+        <span className="flex items-center justify-between gap-2">
+          <span className="text-sm">{field.label[locale]}</span>
+          <button
+            type="button"
+            onClick={onLoadModel}
+            disabled={modelLoading}
+            className="text-xs text-accent underline disabled:opacity-40"
+          >
+            {modelLoading ? t("command.modelLoading") : t("command.modelLoad")}
+          </button>
+        </span>
+
+        {fromModel && fromModel.length > 0 ? (
+          <select
+            className="glass-input w-full"
+            value={String(value ?? "")}
+            onChange={(e) => onChange(e.target.value)}
+          >
+            {/* Kosong adalah pilihan yang sah dan berarti "pakai bawaan Revit". */}
+            <option value="">{t("command.setupDefault")}</option>
+            {fromModel.map((name: string) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <>
+            <input
+              className="glass-input w-full"
+              type="text"
+              value={String(value ?? "")}
+              onChange={(e) => onChange(e.target.value)}
+            />
+            <span className="block text-xs opacity-55">
+              {fromModel ? t("command.setupNone") : t("command.setupAsk")}
+            </span>
+          </>
+        )}
+
+        {field.hint && <span className="block text-xs opacity-55">{field.hint[locale]}</span>}
+      </label>
+    );
+  }
+
+  if (isSheets) {
+    return (
+      <SheetPicker
+        field={field}
+        value={value}
+        locale={locale}
+        sheets={sheets}
+        loading={sheetsLoading}
+        onLoad={onLoadSheets}
+        onChange={onChange}
+      />
+    );
+  }
 
   const label = (
     <span className="text-sm">
@@ -527,6 +727,125 @@ function Field({
           )}
         </>
       )}
+      {field.hint && <span className="block text-xs opacity-55">{field.hint[locale]}</span>}
+    </label>
+  );
+}
+
+/**
+ * Memilih sheet dengan mencentangnya.
+ *
+ * print_pdf menerima daftar nomor sheet dipisah koma, dan itu tetap bentuk yang
+ * dikirim — kotak centang di sini hanya cara menyusunnya. Kolom teksnya tetap
+ * ada dan tetap bisa diketik: pola seperti `E-1*` dan kata `all` masih dimengerti
+ * add-in, dan keduanya lebih cepat daripada mencentang tiga puluh kotak.
+ */
+function SheetPicker({
+  field,
+  value,
+  locale,
+  sheets,
+  loading,
+  onLoad,
+  onChange,
+}: {
+  field: CommandField;
+  value: unknown;
+  locale: "id" | "en";
+  sheets: SheetOption[];
+  loading: boolean;
+  onLoad: () => void;
+  onChange: (v: unknown) => void;
+}) {
+  const { t } = useI18n();
+
+  const typed = String(value ?? "");
+  const chosen = new Set(
+    typed
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean)
+  );
+
+  const toggle = (number: string) => {
+    const next = new Set(chosen);
+    if (next.has(number)) next.delete(number);
+    else next.add(number);
+
+    // Urutan mengikuti daftar sheet, bukan urutan mencentang: yang dikirim ke
+    // Revit lalu terbaca sebagai set gambar, bukan sebagai jejak klik.
+    onChange(
+      sheets
+        .map((s) => s.number)
+        .filter((number) => next.has(number))
+        .concat([...next].filter((n) => !sheets.some((s) => s.number === n)))
+        .join(",")
+    );
+  };
+
+  const allChosen = sheets.length > 0 && sheets.every((s) => chosen.has(s.number));
+
+  return (
+    <label className="space-y-1 sm:col-span-2">
+      <span className="flex items-center justify-between gap-2">
+        <span className="text-sm">
+          {field.label[locale]}
+          {field.required && <span className="text-red-500"> *</span>}
+        </span>
+        <button
+          type="button"
+          onClick={onLoad}
+          disabled={loading}
+          className="text-xs text-accent underline disabled:opacity-40"
+        >
+          {loading ? t("command.sheetsLoading") : t("command.sheetsLoad")}
+        </button>
+      </span>
+
+      <input
+        className="glass-input w-full"
+        type="text"
+        value={typed}
+        placeholder={field.default !== undefined ? String(field.default) : ""}
+        onChange={(e) => onChange(e.target.value)}
+      />
+
+      {sheets.length > 0 && (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-xs">
+            <button
+              type="button"
+              className="text-accent underline"
+              onClick={() =>
+                onChange(allChosen ? "" : sheets.map((s) => s.number).join(","))
+              }
+            >
+              {allChosen ? t("command.sheetsNone") : t("command.sheetsAll")}
+            </button>
+            <span className="opacity-55">
+              {chosen.size}/{sheets.length}
+            </span>
+          </div>
+
+          <div className="max-h-56 space-y-0.5 overflow-auto rounded-lg border border-black/5 p-2 dark:border-white/10">
+            {sheets.map((sheet) => (
+              <label key={sheet.number} className="flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={chosen.has(sheet.number)}
+                  onChange={() => toggle(sheet.number)}
+                />
+                <span>
+                  <code>{sheet.number}</code>
+                  {sheet.name && <span className="opacity-60"> · {sheet.name}</span>}
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
       {field.hint && <span className="block text-xs opacity-55">{field.hint[locale]}</span>}
     </label>
   );

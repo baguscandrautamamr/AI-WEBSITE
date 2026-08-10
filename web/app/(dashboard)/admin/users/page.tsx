@@ -45,6 +45,7 @@ export default function AdminUsersPage() {
   const { t } = useI18n();
   const [projects, setProjects] = useState<Project[]>([]);
   const [members, setMembers] = useState<User[]>([]);
+  const [pending, setPending] = useState<User[]>([]);
   const [access, setAccess] = useState<Access[]>([]);
   const [projectId, setProjectId] = useState("");
   const [role, setRole] = useState<Role>("editor");
@@ -58,6 +59,8 @@ export default function AdminUsersPage() {
   const [searched, setSearched] = useState(false);
   const [minChars, setMinChars] = useState(2);
   const [picked, setPicked] = useState<User | null>(null);
+  /** Peran yang dipilih untuk tiap akun menunggu, sebelum tombol Beri ditekan. */
+  const [pendingRole, setPendingRole] = useState<Record<string, Role>>({});
 
   const load = useCallback(async () => {
     const res = await fetch("/api/admin/access");
@@ -69,6 +72,7 @@ export default function AdminUsersPage() {
     }
     setProjects(body.projects);
     setMembers(body.members);
+    setPending(body.pending ?? []);
     setAccess(body.access);
     setMinChars(body.searchMinChars ?? 2);
     setProjectId((prev) => prev || body.projects[0]?.id || "");
@@ -116,14 +120,14 @@ export default function AdminUsersPage() {
     };
   }, [query, minChars, t]);
 
-  async function grant() {
-    if (!picked || !projectId) return;
+  async function grant(user: User, chosenRole: Role) {
+    if (!projectId) return;
     setBusy(true);
     setError(null);
     const res = await fetch("/api/admin/access", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: picked.id, projectId, role }),
+      body: JSON.stringify({ userId: user.id, projectId, role: chosenRole }),
     });
     if (!res.ok) setError((await res.json()).error ?? t("admin.grantFailed"));
     else {
@@ -161,6 +165,7 @@ export default function AdminUsersPage() {
   const onProject = access.filter((a) => a.project_id === projectId);
   // Orang yang sudah ada di proyek ini tidak perlu muncul lagi sebagai hasil.
   const grantable = matches.filter((u) => !onProject.some((a) => a.user_id === u.id));
+  const waiting = pending.filter((u) => !onProject.some((a) => a.user_id === u.id));
 
   return (
     <div className="glass-panel max-w-2xl p-6 space-y-5">
@@ -205,6 +210,41 @@ export default function AdminUsersPage() {
         ))}
       </div>
 
+      {/* Akun yang baru mendaftar muncul sendiri di sini. Sampai seorang admin
+          memberinya peran, orangnya bisa login tapi tidak bisa berbuat apa pun —
+          jadi daftar ini adalah pekerjaan yang menunggu, bukan sekadar info. */}
+      {waiting.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="text-sm font-medium">{t("admin.pendingTitle")}</h2>
+          <p className="text-xs text-text-secondary">{t("admin.pendingNote")}</p>
+          {waiting.map((u) => (
+            <div key={u.id} className="glass-input flex flex-wrap items-center gap-2 text-sm">
+              <span className="flex-1 min-w-[10rem]">
+                {u.full_name} <span className="opacity-55">({u.auth_provider})</span>
+              </span>
+              <select
+                className="glass-input"
+                value={pendingRole[u.id] ?? "viewer"}
+                onChange={(e) =>
+                  setPendingRole((prev) => ({ ...prev, [u.id]: e.target.value as Role }))
+                }
+              >
+                <option value="viewer">viewer</option>
+                <option value="editor">editor</option>
+                <option value="admin">admin</option>
+              </select>
+              <button
+                onClick={() => grant(u, pendingRole[u.id] ?? "viewer")}
+                disabled={busy}
+                className="btn-accent"
+              >
+                {t("admin.grant")}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="space-y-2">
         <h2 className="text-sm font-medium">{t("admin.grantTitle")}</h2>
 
@@ -222,7 +262,7 @@ export default function AdminUsersPage() {
               <option value="editor">editor</option>
               <option value="admin">admin</option>
             </select>
-            <button onClick={grant} disabled={busy} className="btn-accent">
+            <button onClick={() => grant(picked, role)} disabled={busy} className="btn-accent">
               {t("admin.grant")}
             </button>
             <button

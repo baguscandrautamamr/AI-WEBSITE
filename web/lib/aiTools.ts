@@ -41,7 +41,12 @@ function propertyFor(field: CommandField): JsonSchemaProperty {
     case "boolean":
       return { type: "boolean", ...base };
     case "select":
-      return { type: "string", enum: field.options ?? [], ...base };
+      // Pilihan yang datang dari model tidak punya daftar di sini, dan `enum: []`
+      // adalah skema yang tidak bisa dipenuhi apa pun — jadi field itu ditawarkan
+      // sebagai teks biasa.
+      return field.options?.length
+        ? { type: "string", enum: field.options, ...base }
+        : { type: "string", ...base };
     case "grid":
       // Bentuk kolomXbaris, mis. "3x2".
       return { type: "string", pattern: "^[0-9]+[xX][0-9]+$", ...base };

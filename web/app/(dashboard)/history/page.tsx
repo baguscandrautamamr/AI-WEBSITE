@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useI18n } from "@/lib/i18n";
+import ResultView from "../ResultView";
 
 type QueueStatus = "pending" | "processing" | "completed" | "failed" | "cancelled";
 
@@ -139,6 +140,20 @@ export default function HistoryPage() {
                     </a>
                   ))}
                 </div>
+              )}
+
+              {/* Rinciannya dilipat: yang dicari orang di halaman ini biasanya
+                  tautan unduhannya, dan 50 hasil yang terbuka semua membuat
+                  daftar ini tidak bisa dibaca. */}
+              {r.status === "completed" && r.result_json != null && (
+                <details className="text-xs">
+                  <summary className="cursor-pointer opacity-60 hover:opacity-100">
+                    {t("history.details")}
+                  </summary>
+                  <div className="mt-2 max-h-72 overflow-auto">
+                    <ResultView value={r.result_json} />
+                  </div>
+                </details>
               )}
             </div>
           );
