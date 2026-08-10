@@ -21,8 +21,18 @@ denah, balas dengan satu blok kode berbahasa \`svg\` berisi SVG yang utuh
 (diawali <svg ...> dan diakhiri </svg>).
 
 Aturan SVG:
-- Sertakan atribut viewBox, dan jangan setel width/height dalam piksel — biar ia
+- WAJIB ada viewBox, dan JANGAN setel width/height dalam piksel — biar ia
   menyesuaikan lebar layar. Pembacanya sering memakai HP.
+- Bentuk viewBox mendatar dan tidak terlalu tinggi: rasio antara 4:3 dan 16:9,
+  mis. viewBox="0 0 800 500". Gambar yang jangkung terpotong di layar telepon.
+- SELURUH isi harus berada di dalam viewBox, dengan margin minimal 20 unit di
+  keempat sisinya. Tidak boleh ada garis atau teks yang menyentuh atau melewati
+  tepinya — itu penyebab paling sering gambar terlihat terpotong.
+- Tata letaknya rapi: kotak sejajar, jarak antar bagian seragam, dan tidak ada
+  teks yang bertumpuk dengan garis atau dengan teks lain. Kalau ruang tidak
+  cukup, kurangi isinya — jangan perkecil hurufnya.
+- font-size minimal 12 (pada viewBox setinggi ~500). Huruf yang lebih kecil
+  tidak terbaca di HP.
 - Pakai stroke dan fill dengan warna eksplisit yang terbaca di atas putih. Jangan
   mengandalkan CSS luar.
 - DILARANG: <script>, <image>, <foreignObject>, atribut href, dan event handler

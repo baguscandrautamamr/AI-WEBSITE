@@ -65,7 +65,8 @@
     "pdf_report": "Laporan (PDF)",
     "hanger_schedule": "Schedule hanger",
     "dwg": "DWG",
-    "ifc": "IFC"
+    "ifc": "IFC",
+    "upload_error": "Sebab"
   },
   "admin": {
     "title": "Akses Proyek",

@@ -43,6 +43,9 @@ interface ModelInfo {
   path?: string | null;
   printSetups: string[];
   cadSetups: string[];
+  /** Nama tipe family per kategori, mis. `lighting` → ["Downlight: LED 15W"]. */
+  familyTypes: Record<string, string[]>;
+  rooms: string[];
 }
 
 export default function CommandRunner({
@@ -210,6 +213,8 @@ export default function CommandRunner({
         path?: string | null;
         print_setups?: string[];
         cad_setups?: string[];
+        family_types?: Record<string, string[]>;
+        rooms?: string[];
       } | null;
 
       setModel({
@@ -217,7 +222,14 @@ export default function CommandRunner({
         path: info?.path ?? null,
         printSetups: info?.print_setups ?? [],
         cadSetups: info?.cad_setups ?? [],
+        familyTypes: info?.family_types ?? {},
+        rooms: info?.rooms ?? [],
       });
+
+      // Nama ruangan datang bersama info model, jadi tombol "Ambil dari Revit"
+      // di field ruangan tidak perlu ditekan lagi — daftarnya sudah ada
+      // sebelum ada yang membuka formnya.
+      if (info?.rooms?.length) setRooms(info.rooms);
     } catch {
       // Dijalankan sendiri saat halaman dibuka, jadi kegagalannya tidak boleh
       // muncul sebagai galat merah di atas form yang belum disentuh siapa pun.
@@ -543,11 +555,16 @@ export default function CommandRunner({
       )}
 
       {runs.length > 0 && (
-        <div className="glass-panel p-6 space-y-3">
+        <div className="glass-panel space-y-3 p-6">
           <h2 className="font-medium">{t("command.results")}</h2>
-          {runs.map((r) => (
-            <RunRow key={r.id} run={r} />
-          ))}
+          {/* Digulir di dalam kotaknya. Satu sesi kerja menumpuk puluhan
+              perintah, dan daftar yang tumbuh tanpa batas mendorong segalanya
+              ke bawah sampai form perintahnya sendiri hilang dari layar. */}
+          <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+            {runs.map((r) => (
+              <RunRow key={r.id} run={r} />
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -622,6 +639,13 @@ function Field({
   const { t } = useI18n();
   const isRoom = field.name === "room";
   const isSheets = field.name === "sheets";
+
+  // Field tipe perangkat diisi dari family yang benar-benar ada di model.
+  // Nama family diketik dari ingatan adalah cara paling mudah sebuah perintah
+  // gagal — dan gagalnya baru ketahuan setelah menunggu Revit menjawab.
+  const typeOptions = field.name.endsWith("_type")
+    ? (model?.familyTypes?.[field.name.replace(/_type$/, "")] ?? [])
+    : [];
 
   // Pilihan yang hanya diketahui model yang sedang terbuka.
   if (field.optionsFrom) {
@@ -749,7 +773,13 @@ function Field({
             placeholder={field.default !== undefined ? String(field.default) : ""}
             min={field.min}
             max={field.max}
-            list={isRoom && rooms.length ? "revit-rooms" : undefined}
+            list={
+              isRoom && rooms.length
+                ? "revit-rooms"
+                : typeOptions.length
+                  ? `revit-types-${field.name}`
+                  : undefined
+            }
             onChange={(e) => onChange(e.target.value)}
           />
           {/* datalist, bukan select: nama yang tidak ada di daftar tetap boleh
@@ -758,6 +788,13 @@ function Field({
             <datalist id="revit-rooms">
               {rooms.map((r) => (
                 <option key={r} value={r} />
+              ))}
+            </datalist>
+          )}
+          {typeOptions.length > 0 && (
+            <datalist id={`revit-types-${field.name}`}>
+              {typeOptions.map((name) => (
+                <option key={name} value={name} />
               ))}
             </datalist>
           )}

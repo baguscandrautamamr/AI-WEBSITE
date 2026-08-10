@@ -65,7 +65,8 @@
     "pdf_report": "Report (PDF)",
     "hanger_schedule": "Hanger schedule",
     "dwg": "DWG",
-    "ifc": "IFC"
+    "ifc": "IFC",
+    "upload_error": "Reason"
   },
   "admin": {
     "title": "Project Access",
