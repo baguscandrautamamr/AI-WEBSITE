@@ -247,7 +247,9 @@
     "done": "Drawn into the model.",
     "uploadFailed": "Could not upload the file",
     "queueFailed": "Could not run the import",
-    "note": "The result is a picture of the table, not a schedule that reads the model — Revit cannot show free-form Excel columns as a schedule. To change it, edit the spreadsheet and import again."
+    "note": "The result is a picture of the table, not a schedule that reads the model — Revit cannot show free-form Excel columns as a schedule. To change it, edit the spreadsheet and import again.",
+    "targetScheduleView": "Schedules/Quantities (a real schedule)",
+    "targetScheduleViewHint": "A real schedule in the project browser — filterable, sortable, and it follows the model as it changes. The two above only DRAW the table. Needs an add-in that supports it; if it doesn't, the command comes back as an error rather than quietly becoming a drafting view."
   },
   "import": {
     "title": "Import into Revit",

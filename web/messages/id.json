@@ -247,7 +247,9 @@
     "done": "Sudah digambar di model.",
     "uploadFailed": "Gagal mengunggah file",
     "queueFailed": "Gagal menjalankan import",
-    "note": "Hasilnya gambar dari tabelnya, bukan schedule yang membaca model — Revit tidak bisa menampilkan kolom bebas dari Excel sebagai schedule. Untuk mengubah isinya, sunting Excel-nya lalu import lagi."
+    "note": "Hasilnya gambar dari tabelnya, bukan schedule yang membaca model — Revit tidak bisa menampilkan kolom bebas dari Excel sebagai schedule. Untuk mengubah isinya, sunting Excel-nya lalu import lagi.",
+    "targetScheduleView": "Schedules/Quantities (schedule asli)",
+    "targetScheduleViewHint": "Schedule sungguhan di browser proyek — bisa difilter, diurutkan, dan ikut berubah saat modelnya berubah. Dua pilihan di atas hanya MENGGAMBAR tabelnya. Butuh add-in yang sudah mendukungnya; kalau belum, perintahnya dijawab galat — bukan diam-diam jadi drafting view."
   },
   "import": {
     "title": "Import ke Revit",

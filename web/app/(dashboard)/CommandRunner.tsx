@@ -8,6 +8,7 @@ import {
   COMMANDS_BY_NAME,
   canRun,
   familyCategoryOf,
+  fieldApplies,
   modifyCategoryFor,
   modifyValuesFrom,
   type CommandField,
@@ -217,6 +218,13 @@ export default function CommandRunner({
     setChatEntries((prev) =>
       prev.map((e) => (e.id === id ? ({ ...e, ...patch } as ChatEntry) : e))
     );
+  }
+
+  /** Menutup formulir tanpa menyentuh apa pun yang sudah dikirim. */
+  function closeForm() {
+    setSelected(null);
+    setValues({});
+    setIssues([]);
   }
 
   function pick(spec: CommandSpec, initial?: Record<string, unknown>) {
@@ -1053,7 +1061,12 @@ export default function CommandRunner({
           {available.map((c) => (
             <button
               key={c.name}
-              onClick={() => pick(c)}
+              // Tombol yang sama menutup kembali formulirnya. Sebuah formulir
+              // yang hanya bisa dibuka adalah formulir yang menetap di layar
+              // sampai perintah lain dipilih — dan di telepon itu berarti
+              // menggulir melewatinya untuk sampai ke apa pun di bawahnya.
+              aria-pressed={selected?.name === c.name}
+              onClick={() => (selected?.name === c.name ? closeForm() : pick(c))}
               className={`glass-input shrink-0 whitespace-nowrap py-1.5 text-sm transition ${
                 selected?.name === c.name ? "ring-2 ring-[var(--accent)]" : "hover:opacity-80"
               }`}
@@ -1133,7 +1146,7 @@ export default function CommandRunner({
                 }
               />
             )}
-            {selected.fields.map((f) => (
+            {selected.fields.filter((f) => fieldApplies(f, values)).map((f) => (
               <Field
                 key={f.name}
                 field={f}

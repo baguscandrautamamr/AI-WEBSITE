@@ -52,6 +52,14 @@ export interface CommandField {
    * berubah saat kategorinya diganti.
    */
   familyCategoryFrom?: string;
+  /**
+   * Kolom ini hanya berlaku kalau kolom lain bernilai salah satu dari ini.
+   *
+   * "Jarak dari pintu" tidak berarti apa-apa untuk /modify_devices yang sedang
+   * menata ulang armatur; kolom yang tetap terlihat di situ hanya mengundang
+   * angka yang lalu ikut terkirim untuk kategori yang tidak memakainya.
+   */
+  showWhen?: { field: string; is: string[] };
   min?: number;
   max?: number;
   /** Keterangan singkat di bawah field. */
@@ -115,6 +123,32 @@ const mounting = (def: string): CommandField => ({
   default: def,
   options: ["ceiling", "wall", "floor"],
   label: { id: "Pemasangan", en: "Mounting" },
+});
+
+/**
+ * Jarak saklar dari tepi daun pintu.
+ *
+ * 300 mm adalah standarnya, dan itu yang dipakai add-in kalau kolom ini
+ * dibiarkan kosong — jadi kolom ini bukan kewajiban baru, ia cara menyebut angka
+ * LAIN untuk ruangan yang memang menuntutnya (daun pintu ganda, dinding yang
+ * terlalu pendek, kusen yang lebih lebar dari biasanya).
+ *
+ * Sengaja tanpa `default`: nilai default ikut terisi di formulir dan karenanya
+ * ikut terkirim setiap kali, dan argumen yang selalu terkirim adalah argumen
+ * yang harus dimengerti add-in versi apa pun. Kosong = perilaku hari ini,
+ * persis.
+ */
+const doorOffset = (showWhen?: CommandField["showWhen"]): CommandField => ({
+  name: "door_offset",
+  type: "number",
+  min: 0,
+  max: 3000,
+  showWhen,
+  label: { id: "Jarak dari pintu (mm)", en: "Distance from door (mm)" },
+  hint: {
+    id: "Standar 300 mm dari tepi daun pintu. Kosongkan untuk memakai standar itu.",
+    en: "The standard is 300 mm from the door leaf. Leave empty to use it.",
+  },
 });
 
 /**
@@ -252,6 +286,7 @@ export const COMMANDS: CommandSpec[] = [
         options: ["door", "walls", "manual"],
         label: { id: "Penempatan", en: "Placement" },
       },
+      doorOffset(),
       {
         name: "controls",
         type: "text",
@@ -673,6 +708,7 @@ export const COMMANDS: CommandSpec[] = [
         familyCategoryFrom: "what",
         label: { id: "Tipe / family", en: "Type / family" },
       },
+      doorOffset({ field: "what", is: ["lighting_device"] }),
     ],
     example: "/modify_devices Meeting_1 what=lighting grid=2x3",
   },
@@ -985,11 +1021,11 @@ export const COMMANDS: CommandSpec[] = [
         name: "target",
         type: "select",
         default: "schedule",
-        options: ["schedule", "legend"],
+        options: ["schedule", "legend", "schedule_view"],
         label: { id: "Masuk ke", en: "Place in" },
         hint: {
-          id: "schedule = drafting view baru, hanya bisa ditaruh di satu sheet. legend = legend view, bisa dipakai ulang di banyak sheet.",
-          en: "schedule = a new drafting view, placeable on one sheet only. legend = a legend view, reusable across many sheets.",
+          id: "schedule = drafting view baru, hanya bisa ditaruh di satu sheet. legend = legend view, bisa dipakai ulang di banyak sheet. schedule_view = Schedules/Quantities yang sebenarnya.",
+          en: "schedule = a new drafting view, placeable on one sheet only. legend = a legend view, reusable across many sheets. schedule_view = a real Schedules/Quantities view.",
         },
       },
       {
@@ -1113,6 +1149,20 @@ export function modifyValuesFrom(
  * Kosong berarti kolom ini bukan kolom nama family — atau kategorinya belum bisa
  * ditentukan, seperti /modify_devices yang kolom "Kategori"-nya belum dipilih.
  */
+/**
+ * Kolom ini berlaku untuk isian yang sedang terisi.
+ *
+ * Kolom yang tidak berlaku tidak digambar DAN tidak dikirim: nilai yang
+ * tertinggal dari kategori sebelumnya — jarak dari pintu yang diketik saat
+ * kategorinya masih saklar, lalu kategorinya diganti jadi armatur — ikut
+ * berangkat ke add-in sebagai argumen yang tidak berarti apa-apa untuk perintah
+ * itu.
+ */
+export function fieldApplies(field: CommandField, values: Record<string, unknown>): boolean {
+  if (!field.showWhen) return true;
+  return field.showWhen.is.includes(String(values[field.showWhen.field] ?? ""));
+}
+
 export function familyCategoryOf(
   field: CommandField,
   values: Record<string, unknown>
