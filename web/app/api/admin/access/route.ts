@@ -190,6 +190,9 @@ export async function GET(req: Request) {
     // jalan yang ia punya untuk mulai. Batas per-proyek tetap ditegakkan POST
     // dan DELETE, yang memang tahu proyek mana yang dimaksud.
     canGrant: guard.canGrant,
+    // Barisnya sendiri tidak bisa diubah, dan UI perlu tahu baris mana itu —
+    // supaya kendalinya mati sejak awal, bukan ditolak setelah ditekan.
+    me: guard.userId,
     // Satu wewenang, satu nama. Ia menentukan dua hal yang keduanya berlaku
     // global — mengubah kelas akun dan menghapus akun — jadi menamainya menurut
     // salah satunya akan menyesatkan pemakai berikutnya.
@@ -252,6 +255,18 @@ export async function POST(req: Request) {
   // Admin di proyek A tidak boleh memberi akses ke proyek B.
   if (!guard.projectIds.includes(projectId)) {
     return NextResponse.json({ error: "kamu bukan admin di proyek itu" }, { status: 403 });
+  }
+
+  // Sejak route ini juga dipakai untuk MENGUBAH peran — ia upsert, jadi memberi
+  // ulang dengan peran lain mengganti yang ada — ia bisa dipakai menurunkan peran
+  // sendiri. Seorang admin yang menjadikan dirinya viewer kehilangan halaman ini,
+  // dan tidak ada jalan kembali lewat UI. Alasan yang sama dengan larangan
+  // mencabut akses sendiri di DELETE.
+  if (userId === guard.userId) {
+    return NextResponse.json(
+      { error: "tidak bisa mengubah peranmu sendiri" },
+      { status: 400 }
+    );
   }
 
   const { error } = await createServiceClient()

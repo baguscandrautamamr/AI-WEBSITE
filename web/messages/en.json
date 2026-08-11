@@ -170,7 +170,9 @@
     "notAdminViewOnly": "Your account class covers the Standards & Regulations page only, so there is no project to manage here. If that looks wrong, ask an admin to change your account class.",
     "delete": "Delete",
     "deleteConfirm": "Delete the account \"{name}\" entirely? Its login and data are removed, and this cannot be undone.",
-    "deleteFailed": "Could not delete the account"
+    "deleteFailed": "Could not delete the account",
+    "roleFailed": "Could not change the role",
+    "roleSelf": "You cannot change your own role here — lowering it would lock you out of this page."
   },
   "auth": {
     "login": "Sign in",

@@ -39,6 +39,8 @@ interface AccessData {
   searchMinChars: number;
   /** Boleh memberi peran di proyek. Kelas standard_only hanya melihat. */
   canGrant: boolean;
+  /** Id pemanggil, supaya barisnya sendiri tidak bisa diturunkan sendiri. */
+  me: string;
   /**
    * Admin global. Menentukan dua hal yang keduanya berlaku di seluruh sistem:
    * mengubah kelas akun, dan menghapus akun.
@@ -101,6 +103,7 @@ export default function AdminUsersPage() {
    * lain menentukan permintaannya diterima.
    */
   const [canGrant, setCanGrant] = useState(true);
+  const [me, setMe] = useState("");
   const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
   const [picked, setPicked] = useState<User | null>(null);
   /** Peran yang dipilih untuk tiap akun menunggu, sebelum tombol Beri ditekan. */
@@ -113,6 +116,7 @@ export default function AdminUsersPage() {
     setAccess(data.access);
     setMinChars(data.searchMinChars);
     setCanGrant(data.canGrant);
+    setMe(data.me);
     setIsGlobalAdmin(data.isGlobalAdmin);
     setProjectId((prev) => prev || data.projects[0]?.id || "");
     setLoading(false);
@@ -134,6 +138,7 @@ export default function AdminUsersPage() {
       access: body.access ?? [],
       searchMinChars: body.searchMinChars ?? 2,
       canGrant: Boolean(body.canGrant),
+      me: String(body.me ?? ""),
       isGlobalAdmin: Boolean(body.isGlobalAdmin),
     };
     apply(cached);
@@ -247,6 +252,30 @@ export default function AdminUsersPage() {
     setBusy(false);
   }
 
+  /**
+   * Mengubah peran seseorang di proyek yang sedang dipilih.
+   *
+   * Endpoint yang sama dengan pemberian akses, karena memang hal yang sama: ia
+   * `upsert` pada (user_id, project_id), jadi memberi ulang dengan peran lain
+   * MENGGANTI yang ada. Tanpa kendali ini, satu-satunya cara mengubah peran
+   * adalah mencabut lalu memberi ulang — dan hasil pencarian menyaring keluar
+   * orang yang sudah ada di proyek itu, jadi orang yang perannya mau diubah
+   * justru tidak bisa ditemukan lagi setelah dicabut.
+   */
+  async function setProjectRole(targetUserId: string, next: Role) {
+    if (!projectId) return;
+    setBusy(true);
+    setError(null);
+    const res = await fetch("/api/admin/access", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: targetUserId, projectId, role: next }),
+    });
+    if (!res.ok) setError((await res.json()).error ?? t("admin.roleFailed"));
+    else await load();
+    setBusy(false);
+  }
+
   async function revoke(targetUserId: string) {
     setBusy(true);
     setError(null);
@@ -322,9 +351,29 @@ export default function AdminUsersPage() {
         )}
         {onProject.map((a) => (
           <div key={a.user_id} className="glass-input flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
-            <span className="flex-1 min-w-[9rem]">
-              {nameOf(a.user_id)} <span className="opacity-55">· {a.role}</span>
-            </span>
+            <span className="min-w-[6rem] flex-1 truncate">{nameOf(a.user_id)}</span>
+
+            {/* Peran, bisa diubah di tempat. Sebelumnya ia tulisan mati, dan
+                mengubahnya berarti mencabut lalu mencari orangnya lagi — padahal
+                hasil pencarian sengaja menyaring keluar anggota proyek ini, jadi
+                setelah dicabut ia hilang dari kedua daftar sampai dicari ulang.
+                Barisnya sendiri dimatikan: seorang admin yang menjadikan dirinya
+                viewer kehilangan halaman ini tanpa jalan kembali. */}
+            {canGrant ? (
+              <select
+                className="glass-input text-xs"
+                value={a.role}
+                disabled={busy || a.user_id === me}
+                title={a.user_id === me ? t("admin.roleSelf") : undefined}
+                onChange={(e) => setProjectRole(a.user_id, e.target.value as Role)}
+              >
+                <option value="viewer">viewer</option>
+                <option value="editor">editor</option>
+                <option value="admin">admin</option>
+              </select>
+            ) : (
+              <span className="text-xs opacity-55">{a.role}</span>
+            )}
 
             {/* Kelas akun selalu TERLIHAT, kontrolnya hanya untuk admin global.
                 Terlihat karena tanpa itu tidak ada cara mengetahui mengapa

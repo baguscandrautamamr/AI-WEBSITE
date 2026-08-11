@@ -170,7 +170,9 @@
     "notAdminViewOnly": "Kelas akunmu hanya mencakup halaman Standar & Regulasi, jadi tidak ada proyek yang bisa dikelola dari sini. Kalau ini keliru, minta admin mengubah kelas akunmu.",
     "delete": "Hapus",
     "deleteConfirm": "Hapus akun \"{name}\" seluruhnya? Identitas login dan datanya dihapus, dan ini tidak bisa dibatalkan.",
-    "deleteFailed": "Gagal menghapus akun"
+    "deleteFailed": "Gagal menghapus akun",
+    "roleFailed": "Gagal mengubah peran",
+    "roleSelf": "Peranmu sendiri tidak bisa diubah dari sini — menurunkannya akan menutup halaman ini untukmu."
   },
   "auth": {
     "login": "Masuk",
