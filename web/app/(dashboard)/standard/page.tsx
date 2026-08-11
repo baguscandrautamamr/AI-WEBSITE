@@ -32,18 +32,34 @@ function Answer({ text, typing }: { text: string; typing: boolean }) {
     <>
       {segments.map((segment, index) =>
         segment.kind === "svg" ? (
-          // Gambar tidak "diketik": SVG yang separuh bukan gambar separuh, ia
-          // gambar yang salah. SvgBlock menampilkan "sedang menggambar" sampai
-          // tag penutupnya datang, dan itu sudah cukup sebagai tanda.
+          // Gambar tidak "diketik" huruf demi huruf; ia digambar bertahap oleh
+          // SvgBlock, yang tahu bagian mana dari markup yang sudah aman tampil.
           <SvgBlock key={index} source={segment.value} />
         ) : (
           <Markdown key={index}>{segment.value}</Markdown>
         ),
       )}
-      {/* Kursor, selama masih ada yang belum tampil. Tanpa ini jeda antar
-          potongan terlihat seperti jawaban yang sudah selesai. */}
-      {typing && shown.length < text.length && (
-        <span className="caret" aria-hidden />
+
+      {/* Tanda bahwa jawabannya masih ditulis.
+       *
+       * Dulu ini sebuah kursor "|" di ujung teks, dan bentuk itu punya dua
+       * masalah yang keduanya terlihat di layar. Ia hanya tampil selama
+       * `shown.length < text.length` — dan syarat itu berganti benar-salah
+       * berkali-kali per detik, karena pengetiknya rutin menyusul aliran lalu
+       * menunggu potongan berikutnya. Jadi kursornya muncul-hilang puluhan kali,
+       * dan karena ia elemen sebaris di ujung kalimat, tiap kemunculannya
+       * mengubah lebar baris terakhir — sesekali cukup untuk melipat baris dan
+       * mengubah tinggi seluruh gelembung. Yang terlihat: chat yang bergetar.
+       *
+       * Sekarang ia tanda tunggu sungguhan, dan letaknya pada barisnya sendiri:
+       * muncul sekali saat jawabannya mulai, hilang sekali saat selesai, dan
+       * tidak pernah menyentuh susunan teks di atasnya. */}
+      {typing && (
+        <span className="mt-1 flex gap-1" aria-hidden>
+          <i className="dot" />
+          <i className="dot" style={{ animationDelay: "0.15s" }} />
+          <i className="dot" style={{ animationDelay: "0.3s" }} />
+        </span>
       )}
     </>
   );
