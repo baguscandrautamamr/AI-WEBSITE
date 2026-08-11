@@ -5,7 +5,8 @@
     "exportImport": "Export",
     "history": "History",
     "admin": "Admin",
-    "import": "Import"
+    "import": "Import",
+    "inspect": "Inspect"
   },
   "electrical": {
     "title": "Revit Command Center"
@@ -71,7 +72,31 @@
     "dwg": "DWG",
     "ifc": "IFC",
     "upload_error": "Reason",
-    "dry_run_note": "Dry run — nothing in the model changed. The numbers below are what WOULD happen. Untick \"Dry run\" and send again to do it for real."
+    "dry_run_note": "Dry run — nothing in the model changed. The numbers below are what WOULD happen. Untick \"Dry run\" and send again to do it for real.",
+    "family_used": "Family used",
+    "elements": "Elements created",
+    "replaced_rows": "Previous rows replaced",
+    "view": "View",
+    "target": "Placed in",
+    "source_sheet": "Excel sheet",
+    "categories": "Categories",
+    "parameters": "Parameters",
+    "totals": "Totals",
+    "groups": "Groups",
+    "shown": "Shown",
+    "built_in": "Revit name",
+    "scope": "Applies to",
+    "storage": "Data type",
+    "unit": "Unit",
+    "sample": "Sample",
+    "sum": "Sum",
+    "counted": "Counted",
+    "missing": "No value",
+    "parameter": "Parameter",
+    "value": "Value",
+    "total": "Total",
+    "level": "Level",
+    "type": "Type"
   },
   "admin": {
     "title": "Project Access",
@@ -199,7 +224,10 @@
     "cancel": "Cancel this command",
     "cancelFailed": "Could not cancel the command",
     "crossroadDryRun": "\"Dry run\" is checked, and the modify command has no dry run — so re-laying out from here would really change the model. Clear the checkbox first if that is what you want.",
-    "familyUnknown": "This name is not in the model's family list. The add-in will not complain — it falls back to its own default, and the mistake only shows up in the drawing."
+    "familyUnknown": "This name is not in the model's family list. The add-in will not complain — it falls back to its own default, and the mistake only shows up in the drawing.",
+    "crossroadSkip": "Skip this room",
+    "crossroadStop": "Stop the rest",
+    "crossroadApplyRest": "Use this answer for the remaining rooms too"
   },
   "chat": {
     "placeholder": "e.g. place 6 lights in Meeting 1 at 3 m",
@@ -218,7 +246,11 @@
     "chooseGuessed": "(the one I filled in, “{name}”, is not in the model)",
     "chooseDefault": "Let the add-in pick",
     "chosen": "Using: {name}",
-    "openForm": "Edit in the form"
+    "openForm": "Edit in the form",
+    "batchTitle": "— one command per room ({n} rooms):",
+    "batchProgress": "{sent}/{n} queued…",
+    "batchDone": "{sent}/{n} queued in Revit. Each command's result appears below.",
+    "batchSkipped": "{n} skipped"
   },
   "importExcel": {
     "title": "Import Excel",
@@ -249,12 +281,13 @@
     "queueFailed": "Could not run the import",
     "note": "The result is a picture of the table, not a schedule that reads the model — Revit cannot show free-form Excel columns as a schedule. To change it, edit the spreadsheet and import again.",
     "targetScheduleView": "Schedules/Quantities (a real schedule)",
-    "targetScheduleViewHint": "A real schedule in the project browser — filterable, sortable, and it follows the model as it changes. The two above only DRAW the table. Needs an add-in that supports it; if it doesn't, the command comes back as an error rather than quietly becoming a drafting view."
+    "targetScheduleViewHint": "A real schedule in the project browser — filterable, sortable, and it follows the model as it changes. The two above only DRAW the table. Needs an add-in that supports it; if it doesn't, the command comes back as an error rather than quietly becoming a drafting view.",
+    "noteSchedule": "The sheet's first row becomes the column headings. Every row under it becomes one Generic Model element in the model — the only way a spreadsheet row can appear in a Revit schedule — so the result says how many. Re-importing the same table replaces its rows rather than doubling them."
   },
   "import": {
     "title": "Import into Revit",
     "subtitle": "Two ways to bring a spreadsheet into the model. Pick the one that matches what is in the file.",
-    "whichTable": "Import Table — for any spreadsheet (cost estimate, cable list, a supplier table). The table is drawn into a Revit view as it stands.",
+    "whichTable": "Import Table — for any spreadsheet (a bill of quantities, a cable list, a supplier's table). Either drawn into a view as it stands, or turned into a real Schedules/Quantities view that can be filtered and sorted.",
     "whichExcel": "Import Excel — only for files that came from the Export button, because it needs an Element Id or Mark column to know which row belongs to which element. Used to update parameters on elements that already exist."
   },
   "note": {
@@ -262,7 +295,8 @@
     "print.no_bot_token": "Telegram delivery is on but the bot token is empty, so the file was not sent to any chat.",
     "export_cad.no_setup": "Exported with no CAD export setup, so Revit defaults were used — layers and line weights are unlikely to match the office standard.",
     "export.upload_failed": "Cloudinary credentials are present but every upload failed, so the file stayed on the Revit PC. Usually the keys were rotated and config.json still holds the old ones, or the network blocked it. Check the logs in %APPDATA%\\RevitCommandCenter\\logs.",
-    "export.upload_undeliverable": "The file uploaded, but Cloudinary refused it when the link was opened. Uploaded and downloadable are two different permissions: a new Cloudinary account does not allow PDF delivery by default. Open Cloudinary → Settings → Security → Restricted media types, lift the restriction on PDF, then open the link again — files uploaded earlier become downloadable too, with nothing to reprint."
+    "export.upload_undeliverable": "The file uploaded, but Cloudinary refused it when the link was opened. Uploaded and downloadable are two different permissions: a new Cloudinary account does not allow PDF delivery by default. Open Cloudinary → Settings → Security → Restricted media types, lift the restriction on PDF, then open the link again — files uploaded earlier become downloadable too, with nothing to reprint.",
+    "import_table.merges_lost": "A merged cell has no counterpart in a schedule — its value lands in the first column it spanned. If the table's shape is what matters, use \"Schedule (drafting view)\", which draws it as it stands."
   },
   "notify": {
     "title": "Telegram notifications",
@@ -281,5 +315,8 @@
     "notFound": "Telegram found no chat with that id. Check the digits again.",
     "unreachable": "Telegram could not be reached from the server. Try again shortly.",
     "failed": "Could not save the notification setting."
+  },
+  "inspect": {
+    "title": "Inspect Model"
   }
 }

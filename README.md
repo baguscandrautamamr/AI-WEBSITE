@@ -90,6 +90,26 @@ dinyatakan, bukan yang terjadi karena tidak ada yang menjawab. Di formulir,
 nama yang diketik sendiri dan tidak ada di daftar model diberi peringatan dengan
 alasan yang sama.
 
+**"Semua ruangan" dikerjakan, bukan ditanyakan balik.** Add-in mengerjakan satu
+ruangan per perintah — itu bentuk `place_*` sejak awal. Yang tidak perlu
+dikerjakan orang adalah menyalinnya lima kali: "kasih saklar di semua ruangan"
+dulu dijawab dengan daftar ruangan dan pertanyaan balik, lalu SATU perintah, dan
+empat ruangan sisanya harus diminta lagi dengan kalimat yang sama. Sekarang
+argumen `room` menerima `*` (semua ruangan yang dilaporkan model) dan daftar
+dipisah koma; `web/lib/roomList.ts` memekarkannya jadi satu perintah per
+ruangan, dikirim berurutan, berlaku untuk kedelapan perintah perangkat.
+
+Dimekarkan di server, bukan dengan meminta model memanggil tool lima kali: model
+yang diminta begitu akan memanggilnya empat kali pada percobaan yang lain, dan
+tidak ada yang menyadarinya kecuali dari gambar yang kurang satu ruangan. Yang
+gagal disebut namanya lalu dilewati — empat ruangan yang benar tidak batal karena
+satu nama yang salah eja. Ruangan yang sudah berisi tetap memunculkan
+persimpangannya, dengan dua tambahan yang hanya ada di pengiriman berkelompok:
+"lewati ruangan ini" dan "pakai jawaban ini untuk ruangan berikutnya juga" —
+lima ruangan yang tiga di antaranya sudah berisi berarti tiga pertanyaan identik
+berturut-turut, dan tiga pertanyaan identik adalah tiga kali menekan tombol tanpa
+membacanya.
+
 **Formulir hanya terbuka kalau diminta.** Usulan dari percakapan dulu langsung
 mengisi dan membuka formulir di bawahnya; percakapan itu sudah menyusun
 perintahnya, jadi yang tersisa cuma satu layar penuh yang harus dilewati untuk

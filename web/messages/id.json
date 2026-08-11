@@ -5,7 +5,8 @@
     "exportImport": "Export",
     "history": "Riwayat",
     "admin": "Admin",
-    "import": "Import"
+    "import": "Import",
+    "inspect": "Baca Model"
   },
   "electrical": {
     "title": "Revit Command Center"
@@ -71,7 +72,31 @@
     "dwg": "DWG",
     "ifc": "IFC",
     "upload_error": "Sebab",
-    "dry_run_note": "Uji coba — tidak ada yang berubah di model. Angka di bawah adalah yang AKAN terjadi. Hilangkan centang \"Uji coba saja\" lalu kirim lagi untuk menjalankannya sungguhan."
+    "dry_run_note": "Uji coba — tidak ada yang berubah di model. Angka di bawah adalah yang AKAN terjadi. Hilangkan centang \"Uji coba saja\" lalu kirim lagi untuk menjalankannya sungguhan.",
+    "family_used": "Family dipakai",
+    "elements": "Elemen dibuat",
+    "replaced_rows": "Baris lama diganti",
+    "view": "View",
+    "target": "Masuk ke",
+    "source_sheet": "Sheet Excel",
+    "categories": "Kategori",
+    "parameters": "Parameter",
+    "totals": "Jumlah",
+    "groups": "Kelompok",
+    "shown": "Ditampilkan",
+    "built_in": "Nama Revit",
+    "scope": "Berlaku pada",
+    "storage": "Jenis data",
+    "unit": "Satuan",
+    "sample": "Contoh",
+    "sum": "Jumlah",
+    "counted": "Terhitung",
+    "missing": "Tanpa nilai",
+    "parameter": "Parameter",
+    "value": "Nilai",
+    "total": "Total",
+    "level": "Lantai",
+    "type": "Tipe"
   },
   "admin": {
     "title": "Akses Proyek",
@@ -199,7 +224,10 @@
     "cancel": "Batalkan perintah ini",
     "cancelFailed": "Gagal membatalkan perintah",
     "crossroadDryRun": "\"Uji coba saja\" sedang dicentang, dan perintah modifikasi tidak punya uji coba — jadi menata ulang dari sini akan benar-benar mengubah model. Hilangkan centangnya dulu kalau memang mau menata ulang.",
-    "familyUnknown": "Nama ini tidak ada di daftar family model. Add-in tidak akan mengeluh — ia memakai family bawaannya, dan yang salah baru terlihat di gambar."
+    "familyUnknown": "Nama ini tidak ada di daftar family model. Add-in tidak akan mengeluh — ia memakai family bawaannya, dan yang salah baru terlihat di gambar.",
+    "crossroadSkip": "Lewati ruangan ini",
+    "crossroadStop": "Hentikan sisanya",
+    "crossroadApplyRest": "Pakai jawaban ini untuk ruangan berikutnya juga"
   },
   "chat": {
     "placeholder": "mis. pasang 6 lampu di Meeting 1 tinggi 3 meter",
@@ -218,7 +246,11 @@
     "chooseGuessed": "(yang saya isi tadi, “{name}”, tidak ada di model)",
     "chooseDefault": "Biarkan add-in yang pilih",
     "chosen": "Dipakai: {name}",
-    "openForm": "Ubah di formulir"
+    "openForm": "Ubah di formulir",
+    "batchTitle": "— satu perintah untuk tiap ruangan ({n} ruangan):",
+    "batchProgress": "{sent}/{n} masuk antrean…",
+    "batchDone": "{sent}/{n} masuk antrean Revit. Hasil tiap perintah muncul di bawah.",
+    "batchSkipped": "{n} dilewati"
   },
   "importExcel": {
     "title": "Import Excel",
@@ -249,12 +281,13 @@
     "queueFailed": "Gagal menjalankan import",
     "note": "Hasilnya gambar dari tabelnya, bukan schedule yang membaca model — Revit tidak bisa menampilkan kolom bebas dari Excel sebagai schedule. Untuk mengubah isinya, sunting Excel-nya lalu import lagi.",
     "targetScheduleView": "Schedules/Quantities (schedule asli)",
-    "targetScheduleViewHint": "Schedule sungguhan di browser proyek — bisa difilter, diurutkan, dan ikut berubah saat modelnya berubah. Dua pilihan di atas hanya MENGGAMBAR tabelnya. Butuh add-in yang sudah mendukungnya; kalau belum, perintahnya dijawab galat — bukan diam-diam jadi drafting view."
+    "targetScheduleViewHint": "Schedule sungguhan di browser proyek — bisa difilter, diurutkan, dan ikut berubah saat modelnya berubah. Dua pilihan di atas hanya MENGGAMBAR tabelnya. Butuh add-in yang sudah mendukungnya; kalau belum, perintahnya dijawab galat — bukan diam-diam jadi drafting view.",
+    "noteSchedule": "Baris pertama sheet dipakai sebagai judul kolom. Tiap baris berikutnya jadi satu elemen Generic Model di model — itu satu-satunya cara sebuah baris Excel bisa muncul di schedule Revit — jadi jumlahnya disebut di hasil. Import ulang tabel yang sama mengganti barisnya, bukan menggandakan."
   },
   "import": {
     "title": "Import ke Revit",
     "subtitle": "Dua cara membawa spreadsheet masuk ke model. Pilih yang sesuai dengan isi filenya.",
-    "whichTable": "Import Tabel — untuk spreadsheet apa pun (RAB, daftar kabel, tabel dari supplier). Tabelnya digambar ke sebuah view di Revit apa adanya.",
+    "whichTable": "Import Tabel — untuk spreadsheet apa pun (RAB, daftar kabel, tabel dari supplier). Bisa digambar ke sebuah view apa adanya, atau jadi Schedules/Quantities sungguhan yang bisa difilter dan diurutkan.",
     "whichExcel": "Import Excel — hanya untuk file yang berasal dari tombol Export, karena butuh kolom Element Id atau Mark untuk tahu baris mana milik elemen mana. Dipakai untuk memperbarui parameter elemen yang sudah ada."
   },
   "note": {
@@ -262,7 +295,8 @@
     "print.no_bot_token": "Pengiriman ke Telegram menyala tapi token bot-nya belum diisi, jadi file tidak terkirim ke chat mana pun.",
     "export_cad.no_setup": "Diekspor tanpa CAD export setup, jadi memakai bawaan Revit — layer dan ketebalan garisnya kemungkinan tidak sesuai standar kantor.",
     "export.upload_failed": "Kredensial Cloudinary ada tapi unggahannya gagal, jadi file tetap di PC Revit. Biasanya karena kunci sudah diganti dan belum diperbarui di config.json, atau jaringan memblokirnya. Cek logs di %APPDATA%\\RevitCommandCenter\\logs.",
-    "export.upload_undeliverable": "File berhasil diunggah, tapi Cloudinary menolak saat tautannya dibuka. Terunggah dan bisa diunduh adalah dua izin berbeda: akun Cloudinary baru secara bawaan tidak mengizinkan PDF diunduh. Buka Cloudinary → Settings → Security → Restricted media types, matikan pembatasan untuk PDF, lalu buka tautannya lagi — file lamanya pun langsung bisa diunduh tanpa perlu dicetak ulang."
+    "export.upload_undeliverable": "File berhasil diunggah, tapi Cloudinary menolak saat tautannya dibuka. Terunggah dan bisa diunduh adalah dua izin berbeda: akun Cloudinary baru secara bawaan tidak mengizinkan PDF diunduh. Buka Cloudinary → Settings → Security → Restricted media types, matikan pembatasan untuk PDF, lalu buka tautannya lagi — file lamanya pun langsung bisa diunduh tanpa perlu dicetak ulang.",
+    "import_table.merges_lost": "Sel yang di-merge di Excel tidak punya padanan di sebuah schedule — nilainya masuk ke kolom pertama yang tadinya ia lintasi. Kalau bentuk tabelnya yang penting, pakai \"Schedule (drafting view)\" yang menggambar tabelnya apa adanya."
   },
   "notify": {
     "title": "Pemberitahuan Telegram",
@@ -281,5 +315,8 @@
     "notFound": "Telegram tidak menemukan chat dengan nomor itu. Periksa lagi angkanya.",
     "unreachable": "Telegram tidak bisa dihubungi dari server. Coba lagi sebentar lagi.",
     "failed": "Gagal menyimpan pengaturan pemberitahuan."
+  },
+  "inspect": {
+    "title": "Baca Model"
   }
 }

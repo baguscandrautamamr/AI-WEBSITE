@@ -204,7 +204,12 @@ export default function ImportTable() {
         </div>
       )}
 
-      <p className="text-xs text-text-secondary">{t("importTable.note")}</p>
+      {/* Catatan penutupnya mengikuti target: yang berlaku untuk tabel yang
+          DIGAMBAR — "hasilnya gambar, bukan schedule yang membaca model" —
+          justru kebalikan dari yang benar untuk schedule sungguhan. */}
+      <p className="text-xs text-text-secondary">
+        {t(target === "schedule_view" ? "importTable.noteSchedule" : "importTable.note")}
+      </p>
     </div>
   );
 }

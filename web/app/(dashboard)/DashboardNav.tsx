@@ -49,6 +49,9 @@ export default function DashboardNav({ role }: { role: Role }) {
   // Yang mengubah model (halaman electrical) butuh editor ke atas.
   const items: { href: string; label: string; roles: Role[] }[] = [
     { href: "/electrical", label: t("nav.electrical"), roles: ["editor", "admin"] },
+    // Semua peran: tidak ada perintah di halaman itu yang membuka transaksi
+    // Revit, jadi seorang viewer bisa membaca isi model tanpa bisa mengubahnya.
+    { href: "/inspect", label: t("nav.inspect"), roles: ["viewer", "editor", "admin"] },
     { href: "/standard", label: t("nav.standard"), roles: ["viewer", "editor", "admin"] },
     { href: "/export-import", label: t("nav.exportImport"), roles: ["viewer", "editor", "admin"] },
     // Import mengubah model, jadi viewer tidak melihatnya sama sekali — bukan

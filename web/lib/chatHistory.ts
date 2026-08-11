@@ -43,7 +43,7 @@ function push(turns: Turn[], role: Turn["role"], content: string) {
  * dan menautkannya ke tipe UI berarti ia tidak bisa diuji tanpa merender React.
  */
 export interface ChatBubble {
-  role: "user" | "assistant" | "proposal" | "choice";
+  role: "user" | "assistant" | "proposal" | "choice" | "batch";
   text: string;
   commandText?: string;
   /** Nama tool yang dipanggil, mis. `place_lighting`. */
@@ -52,6 +52,9 @@ export interface ChatBubble {
   /** Gelembung `choice`: family yang ditebak, dan yang akhirnya dipilih orangnya. */
   guessed?: string;
   answered?: string;
+  /** Gelembung `batch`: ruangan yang dituju, dan berapa yang benar-benar berangkat. */
+  rooms?: string[];
+  sent?: number;
 }
 
 /**
@@ -94,6 +97,17 @@ export function turnsFromChat(entries: readonly ChatBubble[]): Turn[] {
     if (entry.role === "assistant") return { role: "assistant" as const, content: entry.text };
 
     const tool = entry.command ?? nameFromCommandText(entry.commandText) ?? "tool";
+
+    // Satu permintaan yang jadi banyak perintah, satu per ruangan. Dicatat utuh:
+    // model yang tidak melihat kelima ruangan itu akan menganggap permintaannya
+    // belum dikerjakan dan mengirimkannya lagi.
+    if (entry.role === "batch") {
+      const rooms = entry.rooms ?? [];
+      return {
+        role: "assistant" as const,
+        content: `[CATATAN SISTEM] Kamu memanggil tool ${tool} dengan room="*"; sistem memekarkannya jadi ${rooms.length} perintah, satu per ruangan: ${rooms.join(", ")}. ${entry.sent ?? 0} di antaranya masuk antrean Revit. Jangan mengirim ulang untuk ruangan yang sama tanpa diminta.`,
+      };
+    }
 
     // Family yang ditebak tidak ada di model, jadi perintahnya ditahan dan
     // pilihannya diserahkan ke orangnya. Dicatat supaya giliran berikutnya tidak
