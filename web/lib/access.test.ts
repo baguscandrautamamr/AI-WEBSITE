@@ -3,6 +3,7 @@ import {
   ACCESS_CLASSES,
   areaOfPath,
   canOpen,
+  canOpenArea,
   isAccessClass,
   landingFor,
   type AccessClass,
@@ -107,5 +108,60 @@ describe("isAccessClass", () => {
   it("mengecualikan yang tidak bertipe AccessClass dari daftar", () => {
     const classes: AccessClass[] = [...ACCESS_CLASSES];
     expect(classes).toHaveLength(3);
+  });
+});
+
+describe("canOpenArea — kelas DAN sudah diberi akses", () => {
+  /**
+   * Lubang yang membuat fungsi ini ada.
+   *
+   * Sebuah akun yang baru mendaftar berkelas `full` — itu bawaannya, dan bawaan
+   * apa pun yang lain akan mencabut akses dari semua orang saat migrasinya jalan.
+   * Untuk halaman yang menyentuh Revit itu sudah tertutup sendiri: tidak ada
+   * proyek berarti tidak ada peran, dan setiap route Revit menuntut peran.
+   * Halaman Standar tidak punya proyek untuk dijadikan pagar, jadi ia satu-satunya
+   * yang lolos — dan akun yang sedang menunggu diberi akses tetap bisa memakai
+   * model bahasa di belakangnya.
+   */
+  it("akun yang menunggu diberi akses tidak bisa membuka Standar", () => {
+    expect(canOpenArea({ access: "full", granted: false }, "standard")).toBe(false);
+  });
+
+  it("begitu diberi satu proyek, Standar terbuka", () => {
+    expect(canOpenArea({ access: "full", granted: true }, "standard")).toBe(true);
+  });
+
+  it("standard_only tidak menuntut proyek — kelas itu SENDIRI pemberian aksesnya", () => {
+    // Menuntut proyek untuk kelas ini berarti menuntut hal yang kelas ini ada
+    // untuk menghindarinya: seorang admin yang memilihnya sudah menyatakan
+    // "orang ini boleh bertanya soal standar, tanpa proyek".
+    expect(canOpenArea({ access: "standard_only", granted: false }, "standard")).toBe(true);
+  });
+
+  it("no_standard tetap tertutup, diberi proyek atau tidak", () => {
+    expect(canOpenArea({ access: "no_standard", granted: true }, "standard")).toBe(false);
+    expect(canOpenArea({ access: "no_standard", granted: false }, "standard")).toBe(false);
+  });
+
+  it("bagian lain tidak ikut menuntut proyek di sini", () => {
+    // Halaman Revit sudah dijaga peran proyeknya masing-masing, dan `grant`
+    // memang harus tetap terbuka untuk akun berkelas penuh yang belum punya
+    // proyek — di situlah ia membuat proyek pertamanya.
+    expect(canOpenArea({ access: "full", granted: false }, "revit")).toBe(true);
+    expect(canOpenArea({ access: "full", granted: false }, "grant")).toBe(true);
+  });
+
+  it("tidak pernah lebih longgar daripada kelasnya sendiri", () => {
+    for (const cls of ACCESS_CLASSES) {
+      for (const area of ["standard", "revit", "grant"] as const) {
+        for (const granted of [true, false]) {
+          if (!canOpen(cls, area)) {
+            expect(canOpenArea({ access: cls, granted }, area), `${cls}/${area}/${granted}`).toBe(
+              false
+            );
+          }
+        }
+      }
+    }
   });
 });

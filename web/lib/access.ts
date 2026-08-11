@@ -55,6 +55,42 @@ export function canOpen(cls: AccessClass, area: Area): boolean {
 }
 
 /**
+ * Keadaan sebuah akun, selengkapnya yang dibutuhkan untuk memutuskan.
+ *
+ * Kelas saja tidak cukup, dan itu baru terlihat setelah kelas akun ada: sebuah
+ * akun yang baru mendaftar berkelas `full` — itu bawaannya, dan bawaan apa pun
+ * yang lain akan mencabut akses dari semua orang saat migrasinya jalan — tapi ia
+ * belum diberi proyek apa pun oleh admin. Untuk halaman yang menyentuh Revit itu
+ * sudah tertutup dengan sendirinya: tidak ada proyek berarti tidak ada peran,
+ * dan setiap route Revit menuntut peran.
+ *
+ * Halaman Standar tidak punya proyek untuk dijadikan pagar. Jadi ia satu-satunya
+ * halaman yang lolos: akun yang menunggu diberi akses, yang tidak bisa membuka
+ * apa pun yang lain, tetap bisa membuka halaman itu dan memakai model bahasa di
+ * belakangnya.
+ */
+export interface Standing {
+  access: AccessClass;
+  /** Admin sudah memberi akun ini setidaknya satu proyek, dengan peran apa pun. */
+  granted: boolean;
+}
+
+/**
+ * Keputusan sebenarnya: kelas DAN sudah-diberi-akses.
+ *
+ * `standard_only` dikecualikan dari syarat proyek, dan itu bukan celah — itu
+ * artinya kelas itu. Kelas itu sendiri adalah pemberian akses yang eksplisit:
+ * seorang admin memilihnya untuk akun tertentu, dan yang dipilihnya adalah
+ * "orang ini boleh bertanya soal standar, tanpa proyek". Menuntut proyek untuk
+ * kelas itu berarti menuntut hal yang kelas itu ada untuk menghindarinya.
+ */
+export function canOpenArea(standing: Standing, area: Area): boolean {
+  if (!canOpen(standing.access, area)) return false;
+  if (area !== "standard") return true;
+  return standing.access === "standard_only" || standing.granted;
+}
+
+/**
  * Halaman mana milik bagian mana.
  *
  * `/admin/users` sengaja TIDAK ada di sini: halaman itu boleh dibuka kelas apa
@@ -123,6 +159,18 @@ export const DENIED: Record<Area, string> = {
 };
 
 /**
+ * Sebab yang berbeda, dan karena itu kalimat yang berbeda.
+ *
+ * "Kelas akunmu tidak mencakup halaman ini" salah untuk akun yang menunggu:
+ * kelasnya justru mencakupnya, yang belum ada adalah pemberian aksesnya. Dan
+ * yang membacanya perlu tahu bedanya, karena yang harus ia lakukan berbeda —
+ * bukan minta kelasnya diubah, melainkan minta dimasukkan ke sebuah proyek.
+ */
+export const DENIED_WAITING =
+  "akunmu belum diberi akses proyek, jadi belum ada halaman yang bisa dibuka. " +
+  "Minta admin memasukkanmu ke sebuah proyek dulu.";
+
+/**
  * Penjaga kelas untuk sebuah route.
  *
  * Ada supaya tidak ada route yang lahir tanpa pemeriksaan ini — alasan yang sama
@@ -141,9 +189,40 @@ export async function guardArea(
   area: Area
 ): Promise<{ ok: true; access: AccessClass } | { ok: false; access: AccessClass; reason: string }> {
   const access = await accessClassOf(supabase, userId);
-  return canOpen(access, area)
-    ? { ok: true, access }
-    : { ok: false, access, reason: DENIED[area] };
+
+  if (!canOpen(access, area)) return { ok: false, access, reason: DENIED[area] };
+
+  // Hanya untuk `standard`, dan hanya kalau perlu: bagian lain sudah tertutup
+  // oleh peran proyek masing-masing, dan satu query tambahan pada setiap
+  // pengiriman perintah adalah biaya untuk pemeriksaan yang tidak menambah apa
+  // pun.
+  if (area === "standard" && access !== "standard_only") {
+    if (!(await hasAnyProject(supabase, userId))) {
+      return { ok: false, access, reason: DENIED_WAITING };
+    }
+  }
+
+  return { ok: true, access };
+}
+
+/**
+ * Apakah admin sudah memasukkan akun ini ke setidaknya satu proyek.
+ *
+ * Klien sesi, jadi `upa_self_read` yang menentukan barisnya — jawaban ini tidak
+ * bisa dibesar-besarkan oleh permintaan yang berbohong. `head: true` supaya yang
+ * dikirim balik hanya jumlahnya: yang ditanyakan bukan proyek mana, hanya apakah
+ * ada.
+ */
+export async function hasAnyProject(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<boolean> {
+  const { count } = await supabase
+    .from("user_project_access")
+    .select("project_id", { count: "exact", head: true })
+    .eq("user_id", userId);
+
+  return (count ?? 0) > 0;
 }
 
 /**

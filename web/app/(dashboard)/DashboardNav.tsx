@@ -9,9 +9,17 @@ import { createClient } from "@/lib/supabase/client";
 import { APP_NAME } from "@/lib/brand";
 import BrandMark from "@/app/BrandMark";
 import type { Role } from "@/lib/commands";
-import { areaOfPath, canOpen, type AccessClass } from "@/lib/access";
+import { areaOfPath, canOpenArea, type AccessClass } from "@/lib/access";
 
-export default function DashboardNav({ role, access }: { role: Role; access: AccessClass }) {
+export default function DashboardNav({
+  role,
+  access,
+  granted,
+}: {
+  role: Role;
+  access: AccessClass;
+  granted: boolean;
+}) {
   const { t, locale, setLocale } = useI18n();
   const { theme, setTheme } = useTheme();
   const pathname = usePathname();
@@ -93,7 +101,7 @@ export default function DashboardNav({ role, access }: { role: Role; access: Acc
         // adalah AccessGuard dan pemeriksaan di setiap route.
         .filter((i) => {
           const area = areaOfPath(i.href);
-          return !area || canOpen(access, area);
+          return !area || canOpenArea({ access, granted }, area);
         })
         .map((item) => (
           <Link

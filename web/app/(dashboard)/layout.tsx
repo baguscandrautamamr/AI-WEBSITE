@@ -51,6 +51,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   if (!signedIn) redirect("/login");
 
+  /**
+   * Sudah dimasukkan admin ke sebuah proyek, dengan peran apa pun.
+   *
+   * Dihitung dari daftar yang sudah diambil di atas, bukan dengan query kedua.
+   * Yang dijaga olehnya cuma satu halaman — Standar — tapi justru halaman itulah
+   * yang tidak punya proyek untuk dijadikan pagar, jadi tanpa ini sebuah akun
+   * yang menunggu diberi akses tetap bisa membukanya.
+   */
+  const granted = roles.length > 0;
+
   const highest = roles.includes("admin")
     ? "admin"
     : roles.includes("editor")
@@ -65,7 +75,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           bersebelahan, jadi sidebar 224px memakan lebar layar telepon dan
           sisanya terdorong keluar. */}
       <div className="flex min-h-screen flex-col md:flex-row">
-        <DashboardNav role={highest} access={access} />
+        <DashboardNav role={highest} access={access} granted={granted} />
 
         {/* min-w-0 adalah inti perbaikannya.
             Anak sebuah flex container punya min-width:auto, artinya ia menolak
@@ -75,7 +85,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
             Dengan min-w-0 ia boleh menyusut, dan isi yang lebar menggulir di
             dalam kotaknya sendiri. */}
         <main className="min-w-0 flex-1 p-4 md:p-6">
-          <AccessGuard access={access}>{children}</AccessGuard>
+          <AccessGuard access={access} granted={granted}>
+            {children}
+          </AccessGuard>
         </main>
       </div>
     </ProjectsProvider>
