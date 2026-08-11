@@ -369,6 +369,11 @@ kesimpulan dari bukti, bukan dari kode yang bisa dibaca di sini:
   disimpulkan: nama family saja yang cocok, mengikuti contoh di katalog
   (`fixture_type=act_e_downlight`). Cara memastikannya: satu perintah dengan
   centang "Uji coba saja", lalu lihat family apa yang dilaporkan.
+- **Apakah add-in menerima `door_offset`.** Jarak saklar dari tepi daun pintu
+  standarnya 300 mm dan add-in sudah memakainya sendiri; kolom ini hanya cara
+  menyebut angka LAIN. Sengaja tanpa nilai default, jadi ia tidak pernah ikut
+  terkirim kecuali benar-benar diisi — perintah saklar yang tidak menyentuhnya
+  berjalan persis seperti sebelumnya, apa pun versi add-in-nya.
 - **Apakah add-in menerima argumen `family` untuk keenam kategori baru.**
   Presedennya `place_lighting_device`, yang sudah menerimanya sejak awal, dan
   `model_info` memang melaporkan family untuk kedelapan kategori. Kalau ternyata
@@ -376,6 +381,30 @@ kesimpulan dari bukti, bukan dari kode yang bisa dibaca di sini:
   add-in sebagai galat, bukan diabaikan diam-diam. Kolom yang dibiarkan kosong
   tidak mengirim apa pun, jadi perintah yang tidak menyentuhnya berjalan persis
   seperti sebelumnya.
+
+## Import tabel: tiga tujuan, dua di antaranya cuma gambar
+
+`import_table` punya tiga nilai `target`, dan bedanya penting:
+
+| target | Yang jadi | Bisa difilter/diurutkan? |
+|---|---|---|
+| `schedule` | Drafting view berisi GAMBAR dari tabelnya | tidak |
+| `legend` | Legend view berisi gambar yang sama, bisa dipakai ulang di banyak sheet | tidak |
+| `schedule_view` | Schedules/Quantities yang sebenarnya | ya |
+
+Dua yang pertama menggambar garis dan teks; isinya tidak tahu apa-apa soal model
+dan tidak ikut berubah saat modelnya berubah. Yang ketiga adalah schedule
+sungguhan seperti yang dibuat TableGen (DiRootsOne).
+
+**Sisi Revit-nya ada di repo `electrical_ai`, bukan di sini.** Website hanya
+menuliskan `target=schedule_view` ke antrean; yang membuat view-nya add-in. Dan
+itu bukan pekerjaan yang sama dengan menggambar tabel: sebuah Schedule di Revit
+MEMBACA data model — ia tidak bisa memuat sel bebas. Baris dari Excel harus
+punya wujud di model lebih dulu, biasanya lewat key schedule atau elemen
+pembawa parameter. Sampai add-in mendukungnya, pilihan itu dijawab galat, dan
+galat yang terlihat lebih baik daripada diam-diam jatuh kembali jadi drafting
+view — orang yang memilih "schedule asli" lalu menerima gambar tidak akan tahu
+sampai ia mencoba memfilternya.
 
 ## Yang belum ada
 

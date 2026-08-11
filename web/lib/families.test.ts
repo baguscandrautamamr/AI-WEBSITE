@@ -9,6 +9,7 @@ import {
   COMMANDS,
   COMMANDS_BY_NAME,
   familyCategoryOf,
+  fieldApplies,
   modifyCategoryFor,
   modifyValuesFrom,
 } from "./commands";
@@ -278,5 +279,29 @@ describe("katalog — setiap perintah perangkat bisa memilih family", () => {
       expect(field, spec.name).toBeTruthy();
       expect(field!.familyCategory, spec.name).toBe(modifyCategoryFor(spec.name));
     }
+  });
+});
+
+describe("fieldApplies", () => {
+  const doorOffsetOf = (command: string) => {
+    const found = COMMANDS_BY_NAME[command].fields.find((f) => f.name === "door_offset");
+    if (!found) throw new Error(`${command}.door_offset tidak ada`);
+    return found;
+  };
+
+  it("saklar selalu punya jarak dari pintu", () => {
+    expect(fieldApplies(doorOffsetOf("place_lighting_device"), {})).toBe(true);
+  });
+
+  it("pada modifikasi ia hanya berlaku untuk kategori saklar", () => {
+    const field = doorOffsetOf("modify_devices");
+    expect(fieldApplies(field, { what: "lighting_device" })).toBe(true);
+    expect(fieldApplies(field, { what: "lighting" })).toBe(false);
+    expect(fieldApplies(field, {})).toBe(false);
+  });
+
+  it("kolom tanpa syarat selalu berlaku", () => {
+    const count = COMMANDS_BY_NAME.place_lighting.fields.find((f) => f.name === "count")!;
+    expect(fieldApplies(count, {})).toBe(true);
   });
 });

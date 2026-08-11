@@ -158,6 +158,10 @@ ATURAN:
   persis sepuluh. Grid yang kamu karang sendiri bisa memuat lebih banyak titik
   daripada jumlahnya dan meninggalkan lubang di deret terakhir. Isi \`grid\` hanya
   kalau orangnya sendiri yang menyebut bentuknya ("2x5", "dua baris lima kolom").
+- Saklar berdiri 300 mm dari tepi daun pintu — itu standarnya, dan add-in sudah
+  memakainya sendiri. Isi \`door_offset\` HANYA kalau orangnya menyebut jarak lain
+  ("saklar 500 mm dari pintu"); jangan mengisinya dengan 300 untuk menegaskan
+  yang sudah berlaku.
 - Ruangan yang SUDAH punya kategori itu ditata ulang, bukan ditambahi: pakai
   \`modify_devices\` (dengan \`what\`), bukan \`place_*\`. "Pasang 10 lampu" di ruangan
   yang sudah berisi 9 armatur berarti 19 armatur bertumpuk pada satu plafon.

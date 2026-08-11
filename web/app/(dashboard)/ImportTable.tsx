@@ -7,7 +7,7 @@ import { canRun, COMMANDS_BY_NAME } from "@/lib/commands";
 import ResultView from "./ResultView";
 
 type Phase = "idle" | "uploading" | "queued" | "done" | "failed";
-type Target = "schedule" | "legend";
+type Target = "schedule" | "legend" | "schedule_view";
 
 /**
  * Membawa spreadsheet apa adanya ke dalam model sebagai tabel.
@@ -140,11 +140,19 @@ export default function ImportTable() {
           >
             <option value="schedule">{t("importTable.targetSchedule")}</option>
             <option value="legend">{t("importTable.targetLegend")}</option>
+            {/* Schedule yang sebenarnya — Schedules/Quantities di browser
+                proyek, bukan gambar dari tabelnya. Dua yang di atas adalah view
+                yang isinya digambar; yang ini view yang isinya DIBACA dari
+                model, jadi ia bisa difilter, diurutkan, dan ikut berubah saat
+                modelnya berubah. */}
+            <option value="schedule_view">{t("importTable.targetScheduleView")}</option>
           </select>
           <span className="block text-xs opacity-55">
             {target === "schedule"
               ? t("importTable.targetScheduleHint")
-              : t("importTable.targetLegendHint")}
+              : target === "legend"
+                ? t("importTable.targetLegendHint")
+                : t("importTable.targetScheduleViewHint")}
           </span>
         </label>
 

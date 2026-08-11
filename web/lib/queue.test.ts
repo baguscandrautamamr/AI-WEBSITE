@@ -351,3 +351,51 @@ describe("buildPayload — nama family", () => {
     expect(payload.follow).toBe("Thin Lines: A");
   });
 });
+
+describe("buildPayload — kolom yang tidak berlaku", () => {
+  // "Jarak dari pintu" hanya berarti sesuatu untuk saklar. Kalau kolomnya
+  // terisi saat kategorinya masih lighting_device lalu kategorinya diganti,
+  // angkanya tidak boleh ikut berangkat sebagai argumen yang tidak berarti
+  // apa-apa untuk perintah itu.
+  it("tidak mengirim door_offset saat kategorinya bukan saklar", () => {
+    const { payload } = buildPayload(spec("modify_devices"), {
+      room: "Meeting 1",
+      what: "lighting",
+      count: 4,
+      door_offset: 500,
+    });
+    expect(payload).not.toHaveProperty("door_offset");
+  });
+
+  it("mengirimnya saat kategorinya saklar", () => {
+    const { payload } = buildPayload(spec("modify_devices"), {
+      room: "Meeting 1",
+      what: "lighting_device",
+      count: 2,
+      door_offset: 500,
+    });
+    expect(payload.door_offset).toBe(500);
+  });
+
+  it("place_lighting_device menerimanya tanpa syarat", () => {
+    const { payload, commandText } = buildPayload(spec("place_lighting_device"), {
+      room: "Meeting 1",
+      door_offset: 450,
+    });
+    expect(payload.door_offset).toBe(450);
+    expect(commandText).toContain("door_offset=450");
+  });
+
+  it("kosong berarti standar 300 mm milik add-in, tanpa argumen tambahan", () => {
+    // Argumen yang selalu terkirim adalah argumen yang harus dimengerti add-in
+    // versi apa pun; kolom ini sengaja tidak punya default.
+    const { payload } = buildPayload(spec("place_lighting_device"), { room: "Meeting 1" });
+    expect(payload).not.toHaveProperty("door_offset");
+  });
+
+  it("tetap memvalidasi batas nilainya", () => {
+    expect(issuesOf("place_lighting_device", { room: "A", door_offset: 5000 })).toEqual([
+      "door_offset maksimal 3000",
+    ]);
+  });
+});

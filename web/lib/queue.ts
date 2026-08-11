@@ -1,5 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { COMMANDS_BY_NAME, canRun, type CommandField, type CommandSpec, type Role } from "./commands";
+import {
+  COMMANDS_BY_NAME,
+  canRun,
+  fieldApplies,
+  type CommandField,
+  type CommandSpec,
+  type Role,
+} from "./commands";
 import { autoGrid, formatGrid, gridCount, parseGrid } from "./grid";
 import { familyNameOf } from "./families";
 
@@ -96,6 +103,11 @@ export function buildPayload(
   }
 
   for (const field of spec.fields) {
+    // Kolom yang tidak berlaku untuk isian ini tidak ikut: "jarak dari pintu"
+    // yang diketik saat kategorinya masih saklar tidak boleh ikut berangkat
+    // setelah kategorinya diganti jadi armatur.
+    if (!fieldApplies(field, values)) continue;
+
     const v = coerce(field, values[field.name], issues);
     if (v === undefined) {
       if (field.required) issues.push(`${field.name} wajib diisi`);
