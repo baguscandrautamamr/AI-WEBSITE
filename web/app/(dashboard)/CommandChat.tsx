@@ -150,7 +150,10 @@ export default function CommandChat({
               return (
                 <div
                   key={e.id}
-                  className="ml-auto max-w-[80%] whitespace-pre-wrap rounded-2xl bg-accent px-3 py-2 text-sm text-white"
+                  // `w-fit` supaya gelembungnya selebar kalimatnya. Tanpa itu,
+                  // sebuah div block mengisi penuh induknya dan `ml-auto`
+                  // dihitung jadi nol — "HELLO" jadi pita biru selebar layar.
+                  className="ml-auto w-fit max-w-[80%] whitespace-pre-wrap rounded-2xl bg-accent px-3 py-2 text-sm text-white"
                 >
                   {e.text}
                 </div>

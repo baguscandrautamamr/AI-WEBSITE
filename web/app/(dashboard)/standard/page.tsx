@@ -300,7 +300,17 @@ export default function StandardPage() {
               key={i}
               className={`rounded-2xl px-3 py-2 text-sm ${
                 m.role === "user"
-                  ? "bg-accent text-white ml-auto max-w-[80%] whitespace-pre-wrap"
+                  ? // `w-fit`, bukan hanya `ml-auto`.
+                    //
+                    // Sebuah div itu block: lebarnya `auto` berarti mengisi
+                    // penuh, dan `margin-left: auto` pada kotak yang sudah
+                    // selebar induknya dihitung jadi nol. Jadi "HELLO" tampil
+                    // sebagai pita biru selebar layar yang isinya satu kata di
+                    // ujung kiri — rata kanannya pun tidak terjadi.
+                    //
+                    // `max-w-[80%]` tetap: yang panjang melipat di 80%, bukan
+                    // memanjang jadi satu baris sampai ke tepi.
+                    "bg-accent text-white ml-auto w-fit max-w-[80%] whitespace-pre-wrap"
                   : "glass-input max-w-[92%]"
               }`}
             >
