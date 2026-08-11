@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
+import { COMMANDS_BY_NAME } from "@/lib/commands";
 import Markdown from "./Markdown";
+import ResultView from "./ResultView";
 
 /**
  * Isi satu gelembung percakapan, tanpa identitasnya.
@@ -34,6 +36,21 @@ export type ChatBody =
       error?: string;
       /** Nilai yang dipakai, supaya bisa dibuka ulang di formulir. */
       values?: Record<string, unknown>;
+      /**
+       * Jawaban Revit, di gelembung yang sama dengan perintahnya.
+       *
+       * Sebelumnya jawabannya muncul sebagai gelembung asisten TERSENDIRI yang
+       * isinya baris perintah plus "selesai dijalankan di Revit." — jadi untuk
+       * satu pertanyaan ("ada berapa cable tray?") yang terbaca adalah tiga hal:
+       * perintah, laporan bahwa perintah itu selesai, dan angkanya di panel lain
+       * di bawah halaman. Yang ditanyakan cuma satu, dan jawabannya harus satu.
+       */
+      runId?: string;
+      runStatus?: "completed" | "failed" | "cancelled";
+      /** Satu baris jawaban, dirangkai dari hasilnya sendiri. */
+      summary?: string;
+      result?: unknown;
+      runError?: string;
     }
   /**
    * Family mana yang dipakai — ditanyakan, bukan ditebak.
@@ -238,48 +255,7 @@ export default function CommandChat({
               );
             }
 
-            return (
-              <div key={e.id} className="glass-input max-w-[92%] space-y-2 rounded-2xl text-sm">
-                {e.text && <Markdown>{e.text}</Markdown>}
-                <code className="block break-all text-xs opacity-80">{e.commandText}</code>
-                {/* Ada yang kurang berarti perintahnya TIDAK berangkat, dan
-                    daftar ini yang menjelaskan apa yang perlu disebutkan. */}
-                {e.issues?.length ? (
-                  <ul className="list-disc space-y-0.5 pl-5 text-xs text-amber-600 dark:text-amber-400">
-                    {e.issues.map((i) => (
-                      <li key={i}>{i}</li>
-                    ))}
-                  </ul>
-                ) : e.state === "failed" ? (
-                  <p className="text-xs text-red-500">
-                    {t("chat.notSent")}
-                    {e.error ? ` — ${e.error}` : ""}
-                  </p>
-                ) : e.state === "held" ? (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">{t("chat.held")}</p>
-                ) : e.state === "queued" ? (
-                  <p className="text-xs opacity-60">{t("chat.sentToRevit")}</p>
-                ) : (
-                  // Masih dalam perjalanan ke commands_queue. Belum boleh disebut
-                  // terkirim, karena penulisannya masih bisa gagal.
-                  <p className="text-xs opacity-60">{t("chat.sendingToRevit")}</p>
-                )}
-
-                {/* Formulirnya dibuka hanya kalau diminta.
-                    Percakapan ini sudah menyusun perintahnya; formulir yang
-                    terbuka sendiri di bawah cuma satu layar penuh yang harus
-                    dilewati untuk sampai ke hasil. */}
-                {e.command && e.values && (
-                  <button
-                    type="button"
-                    onClick={() => onOpenForm(e.command!, e.values!)}
-                    className="text-xs text-accent underline"
-                  >
-                    {t("chat.openForm")}
-                  </button>
-                )}
-              </div>
-            );
+            return <Proposal key={e.id} entry={e} onOpenForm={onOpenForm} />;
           })}
           {busy && <p className="text-xs opacity-60">{t("chat.thinking")}</p>}
           <div ref={bottom} />
@@ -299,6 +275,137 @@ export default function CommandChat({
           {busy ? t("chat.sending") : t("chat.send")}
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Satu perintah dan jawabannya, dalam satu gelembung.
+ *
+ * Untuk perintah yang MEMBACA, baris `/query …` menghilang begitu jawabannya
+ * ada: yang ditanyakan adalah angkanya, bukan perintah yang kebetulan dipakai
+ * untuk mendapatkannya. Ia tetap bisa dibuka — perintah yang tidak bisa dilihat
+ * adalah perintah yang tidak bisa diperiksa, dan yang bertanya "kok cuma 37?"
+ * berhak tahu ruangan mana yang tersaring.
+ *
+ * Untuk perintah yang MENGUBAH model, barisnya tidak pernah disembunyikan.
+ * Di situ ia bukan cara sampai ke jawaban — ia adalah apa yang terjadi pada
+ * gambar orang lain, dan satu-satunya catatan tentangnya di halaman ini.
+ */
+function Proposal({
+  entry,
+  onOpenForm,
+}: {
+  entry: ChatEntry & { role: "proposal" };
+  onOpenForm: (command: string, values: Record<string, unknown>) => void;
+}) {
+  const { t } = useI18n();
+  const [showCommand, setShowCommand] = useState(false);
+
+  const spec = entry.command ? COMMANDS_BY_NAME[entry.command] : undefined;
+  const readOnly = spec?.role === "viewer";
+  const answered = entry.runStatus === "completed";
+  const collapsible = readOnly && answered && !entry.issues?.length;
+
+  return (
+    <div className="glass-input max-w-[92%] space-y-2 rounded-2xl text-sm">
+      {entry.text && <Markdown>{entry.text}</Markdown>}
+
+      {/* Yang dilipat pindah ke bawah jawaban, bukan hilang dari urutan:
+          jawabannya yang pertama dibaca, perintahnya menyusul kalau diminta. */}
+      {!collapsible && (
+        <code className="block break-all text-xs opacity-80">{entry.commandText}</code>
+      )}
+
+      {/* Ada yang kurang berarti perintahnya TIDAK berangkat, dan daftar ini
+          yang menjelaskan apa yang perlu disebutkan. */}
+      {entry.issues?.length ? (
+        <ul className="list-disc space-y-0.5 pl-5 text-xs text-amber-600 dark:text-amber-400">
+          {entry.issues.map((i) => (
+            <li key={i}>{i}</li>
+          ))}
+        </ul>
+      ) : entry.state === "failed" ? (
+        <p className="text-xs text-red-500">
+          {t("chat.notSent")}
+          {entry.error ? ` — ${entry.error}` : ""}
+        </p>
+      ) : entry.state === "held" ? (
+        <p className="text-xs text-amber-600 dark:text-amber-400">{t("chat.held")}</p>
+      ) : entry.runStatus === "failed" || entry.runStatus === "cancelled" ? (
+        <p className="text-xs text-red-500">
+          {t("chat.runFailed")}
+          {entry.runError ? ` — ${entry.runError}` : ""}
+        </p>
+      ) : answered ? (
+        <Answer entry={entry} />
+      ) : entry.state === "queued" ? (
+        // Sudah di antrean, Revit belum menjawab. Untuk perintah baca yang
+        // ditunggu adalah jawabannya, bukan kabar bahwa perintahnya terkirim.
+        <p className="text-xs opacity-60">{t(readOnly ? "chat.reading" : "chat.sentToRevit")}</p>
+      ) : (
+        // Masih dalam perjalanan ke commands_queue. Belum boleh disebut
+        // terkirim, karena penulisannya masih bisa gagal.
+        <p className="text-xs opacity-60">{t("chat.sendingToRevit")}</p>
+      )}
+
+      {collapsible && showCommand && (
+        <code className="block break-all text-xs opacity-80">{entry.commandText}</code>
+      )}
+
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {/* Perintahnya tetap bisa dilihat. Yang bertanya "kok cuma 37?" berhak
+            tahu ruangan mana yang tersaring — jawaban tanpa cara memeriksanya
+            adalah angka yang harus dipercaya begitu saja. */}
+        {collapsible && (
+          <button
+            type="button"
+            onClick={() => setShowCommand((v) => !v)}
+            className="text-xs text-accent underline"
+          >
+            {t(showCommand ? "chat.hideCommand" : "chat.showCommand")}
+          </button>
+        )}
+
+        {/* Formulirnya dibuka hanya kalau diminta.
+            Percakapan ini sudah menyusun perintahnya; formulir yang terbuka
+            sendiri di bawah cuma satu layar penuh yang harus dilewati untuk
+            sampai ke hasil. */}
+        {entry.command && entry.values && (
+          <button
+            type="button"
+            onClick={() => onOpenForm(entry.command!, entry.values!)}
+            className="text-xs text-accent underline"
+          >
+            {t("chat.openForm")}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Jawabannya: satu baris di depan, buktinya di bawahnya.
+ *
+ * Ringkasannya tidak selalu ada — sebuah hasil yang bentuknya belum dikenali
+ * tidak dipaksa jadi kalimat, karena satu kalimat yang mengarang lebih buruk
+ * daripada tidak ada kalimat. Tabelnya tetap tampil utuh, dan itu sudah jawaban.
+ *
+ * Tingginya dibatasi: 200 baris elemen di dalam sebuah gelembung chat mengubur
+ * seluruh percakapan di atasnya, dan yang dicari orangnya ada di baris pertama.
+ */
+function Answer({ entry }: { entry: ChatEntry & { role: "proposal" } }) {
+  const { t } = useI18n();
+
+  return (
+    <div className="space-y-1.5">
+      <p className="font-medium">{entry.summary || t("chat.finished")}</p>
+      {entry.result != null && (
+        <div className="max-h-56 overflow-auto rounded-xl bg-black/[0.03] p-2 dark:bg-white/[0.04]">
+          <ResultView value={entry.result} />
+        </div>
+      )}
     </div>
   );
 }

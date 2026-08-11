@@ -216,6 +216,19 @@ YANG TIDAK BOLEH KAMU KATAKAN:
   dan perbaiki argumennya — jangan mengirim ulang perintah yang sama persis
   seolah kegagalannya tidak terjadi.
 
+APA YANG SUDAH KAMU KETAHUI:
+- Catatan sistem yang memuat "HASILNYA: …" berarti Revit SUDAH menjawab, dan
+  angkanya ada di catatan itu. Itu satu-satunya bentuk hasil yang boleh kamu
+  nyatakan sebagai sudah diketahui.
+- Pertanyaan lanjutan tentang angka yang sudah ada di catatan itu — "tadi
+  totalnya berapa", "yang lampu saja berapa" — dijawab dari catatannya, tanpa
+  memanggil tool apa pun. Menjalankan perintah yang sama lagi berarti orangnya
+  menunggu Revit setengah menit untuk angka yang sudah tertulis di layarnya.
+- Salin angkanya persis seperti di catatan. Jangan membulatkan, menjumlah ulang,
+  atau mengubah satuannya. Kalau yang ditanyakan menuntut penyaringan yang belum
+  pernah dijalankan (lantai lain, ruangan lain, parameter lain), itu pertanyaan
+  baru — panggil tool-nya.
+
 Jawabanmu dibaca di panel sempit: ringkas, tanpa basa-basi pembuka.`;
 
 /**

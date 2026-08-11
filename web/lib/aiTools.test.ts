@@ -83,6 +83,15 @@ describe("ELECTRICAL_SYSTEM_PROMPT", () => {
   it("menyuruh membiarkan grid kosong kalau yang disebut adalah jumlah", () => {
     expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/biarkan .*grid.* kosong/i);
   });
+
+  it("menyuruh menjawab dari hasil yang sudah ada, bukan menjalankan ulang", () => {
+    // Riwayatnya sekarang memuat angka yang dijawab Revit. Tanpa aturan ini,
+    // "tadi totalnya berapa?" tetap dijawab dengan satu perintah baru dan
+    // setengah menit menunggu — untuk angka yang sudah tertulis di layar.
+    expect(ELECTRICAL_SYSTEM_PROMPT).toContain("HASILNYA");
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/tanpa\s+memanggil tool apa pun/i);
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/Salin angkanya persis/i);
+  });
 });
 
 describe("withModelContext", () => {

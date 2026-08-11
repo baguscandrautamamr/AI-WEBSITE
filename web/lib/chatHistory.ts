@@ -55,6 +55,17 @@ export interface ChatBubble {
   /** Gelembung `batch`: ruangan yang dituju, dan berapa yang benar-benar berangkat. */
   rooms?: string[];
   sent?: number;
+  /**
+   * Apa yang dijawab Revit, dalam satu baris — dan apakah ia sempat menjawab.
+   *
+   * Ini yang selama ini hilang dari riwayat. Yang tercatat hanyalah "perintahnya
+   * dikirim"; jawabannya — 128 armatur, 128,4 meter tray — tidak pernah sampai ke
+   * model. Jadi "tadi berapa totalnya?" dijawab dengan menjalankan perintah yang
+   * sama lagi, dan menunggu Revit lagi, untuk angka yang sudah ada di layar.
+   */
+  summary?: string;
+  runStatus?: "completed" | "failed" | "cancelled";
+  runError?: string;
 }
 
 /**
@@ -127,11 +138,35 @@ export function turnsFromChat(entries: readonly ChatBubble[]): Turn[] {
     }
     const asked = entry.commandText ? ` Argumennya: ${entry.commandText}` : "";
 
-    const dispatched = entry.issues?.length
-      ? `[CATATAN SISTEM] Kamu memanggil tool ${tool}, tapi perintahnya TIDAK dikirim karena masih ada yang kurang: ${entry.issues.join("; ")}.${asked} Tanyakan yang kurang itu, lalu panggil tool-nya lagi.`
-      : `[CATATAN SISTEM] Kamu memanggil tool ${tool}; sistem yang memasukkannya ke antrean Revit.${asked} Hasilnya belum tentu ada di giliran ini. Catatan ini bukan contoh cara menjawab — menuliskan baris perintah sebagai teks tidak mengirim apa pun ke Revit.`;
+    if (entry.issues?.length) {
+      return {
+        role: "assistant" as const,
+        content: `[CATATAN SISTEM] Kamu memanggil tool ${tool}, tapi perintahnya TIDAK dikirim karena masih ada yang kurang: ${entry.issues.join("; ")}.${asked} Tanyakan yang kurang itu, lalu panggil tool-nya lagi.`,
+      };
+    }
 
-    return { role: "assistant" as const, content: dispatched };
+    // Revit sudah menjawab. Angkanya dibawa ke sini apa adanya — itu bedanya
+    // antara menjawab "tadi berapa totalnya?" dan menjalankan perintahnya lagi
+    // untuk angka yang sudah ada di layar orangnya.
+    if (entry.runStatus === "completed" && entry.summary) {
+      return {
+        role: "assistant" as const,
+        content: `[CATATAN SISTEM] Kamu memanggil tool ${tool}; sistem menjalankannya di Revit dan Revit sudah menjawab.${asked} HASILNYA: ${entry.summary}. Angka itu datang dari model, jadi jawab pertanyaan lanjutan dari situ — jangan menjalankan perintah yang sama lagi kecuali memang diminta atau modelnya sudah berubah.`,
+      };
+    }
+
+    if (entry.runStatus === "failed" || entry.runStatus === "cancelled") {
+      const why = entry.runError ? ` Sebabnya: ${entry.runError}.` : "";
+      return {
+        role: "assistant" as const,
+        content: `[CATATAN SISTEM] Kamu memanggil tool ${tool} dan sistem mengirimkannya, tapi Revit GAGAL menjalankannya.${asked}${why} Jangan mengaku sudah selesai.`,
+      };
+    }
+
+    return {
+      role: "assistant" as const,
+      content: `[CATATAN SISTEM] Kamu memanggil tool ${tool}; sistem yang memasukkannya ke antrean Revit.${asked} Hasilnya belum tentu ada di giliran ini. Catatan ini bukan contoh cara menjawab — menuliskan baris perintah sebagai teks tidak mengirim apa pun ke Revit.`,
+    };
   });
 }
 

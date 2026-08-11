@@ -96,7 +96,40 @@
     "value": "Nilai",
     "total": "Total",
     "level": "Lantai",
-    "type": "Tipe"
+    "type": "Tipe",
+    "lighting": {
+      "title": "Lampu"
+    },
+    "lighting_device": {
+      "title": "Saklar"
+    },
+    "receptacle": {
+      "title": "Stop kontak"
+    },
+    "cable_tray": {
+      "title": "Cable tray"
+    },
+    "fire_alarm": {
+      "title": "Fire alarm"
+    },
+    "telephone": {
+      "title": "Telepon"
+    },
+    "lan": {
+      "title": "LAN"
+    },
+    "security": {
+      "title": "Sekuriti"
+    },
+    "communication": {
+      "title": "Komunikasi"
+    },
+    "query": {
+      "hangers": "Hanger",
+      "panels": "Panel",
+      "rooms": "Ruangan",
+      "sheets": "Sheet"
+    }
   },
   "admin": {
     "title": "Akses Proyek",
@@ -250,7 +283,12 @@
     "batchTitle": "— satu perintah untuk tiap ruangan ({n} ruangan):",
     "batchProgress": "{sent}/{n} masuk antrean…",
     "batchDone": "{sent}/{n} masuk antrean Revit. Hasil tiap perintah muncul di bawah.",
-    "batchSkipped": "{n} dilewati"
+    "batchSkipped": "{n} dilewati",
+    "reading": "Membaca model…",
+    "showCommand": "lihat perintah",
+    "hideCommand": "sembunyikan perintah",
+    "runFailed": "Gagal di Revit",
+    "finished": "Selesai dijalankan di Revit."
   },
   "importExcel": {
     "title": "Import Excel",

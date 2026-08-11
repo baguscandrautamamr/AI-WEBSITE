@@ -130,6 +130,52 @@ describe("turnsFromChat", () => {
     expect(turn.content.startsWith("/place_lighting")).toBe(false);
   });
 
+  it("membawa jawaban Revit ke dalam riwayat, bukan cuma kabar bahwa perintahnya dikirim", () => {
+    // Ini yang membuat "tadi totalnya berapa?" bisa dijawab. Tanpa angkanya di
+    // riwayat, satu-satunya yang bisa dilakukan model adalah menjalankan
+    // perintah yang sama lagi — dan menunggu Revit lagi — untuk angka yang sudah
+    // ada di layar orangnya.
+    const [turn] = turnsFromChat([
+      {
+        role: "proposal",
+        text: "",
+        command: "query",
+        commandText: "/query what=cable_tray",
+        runStatus: "completed",
+        summary: "Cable tray: 37 (128.4 m)",
+      },
+    ]);
+
+    expect(turn.content).toContain("Cable tray: 37 (128.4 m)");
+    expect(turn.content).toMatch(/jangan menjalankan perintah yang sama lagi/i);
+  });
+
+  it("menyebut kegagalan Revit sebagai kegagalan", () => {
+    const [turn] = turnsFromChat([
+      {
+        role: "proposal",
+        text: "",
+        command: "place_lighting",
+        commandText: "/place_lighting A count=2",
+        runStatus: "failed",
+        runError: "Family 'X' tidak ada di model",
+      },
+    ]);
+
+    expect(turn.content).toMatch(/GAGAL/);
+    expect(turn.content).toContain("Family 'X' tidak ada di model");
+    expect(turn.content).toMatch(/jangan mengaku sudah selesai/i);
+  });
+
+  it("perintah yang belum dijawab Revit tetap dicatat sebagai belum diketahui", () => {
+    const [turn] = turnsFromChat([
+      { role: "proposal", text: "", command: "query", commandText: "/query what=all" },
+    ]);
+
+    expect(turn.content).toMatch(/belum tentu ada di giliran ini/);
+    expect(turn.content).not.toMatch(/HASILNYA/);
+  });
+
   it("menyebutkan nama tool dari teks perintah kalau tidak dikirim terpisah", () => {
     const [turn] = turnsFromChat([
       { role: "proposal", text: "", commandText: "/modify_devices Lounge grid=2x5" },

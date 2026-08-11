@@ -96,7 +96,40 @@
     "value": "Value",
     "total": "Total",
     "level": "Level",
-    "type": "Type"
+    "type": "Type",
+    "lighting": {
+      "title": "Lighting"
+    },
+    "lighting_device": {
+      "title": "Switches"
+    },
+    "receptacle": {
+      "title": "Receptacles"
+    },
+    "cable_tray": {
+      "title": "Cable tray"
+    },
+    "fire_alarm": {
+      "title": "Fire alarm"
+    },
+    "telephone": {
+      "title": "Telephone"
+    },
+    "lan": {
+      "title": "LAN"
+    },
+    "security": {
+      "title": "Security"
+    },
+    "communication": {
+      "title": "Communication"
+    },
+    "query": {
+      "hangers": "Hangers",
+      "panels": "Panels",
+      "rooms": "Rooms",
+      "sheets": "Sheets"
+    }
   },
   "admin": {
     "title": "Project Access",
@@ -250,7 +283,12 @@
     "batchTitle": "— one command per room ({n} rooms):",
     "batchProgress": "{sent}/{n} queued…",
     "batchDone": "{sent}/{n} queued in Revit. Each command's result appears below.",
-    "batchSkipped": "{n} skipped"
+    "batchSkipped": "{n} skipped",
+    "reading": "Reading the model…",
+    "showCommand": "show command",
+    "hideCommand": "hide command",
+    "runFailed": "Failed in Revit",
+    "finished": "Done in Revit."
   },
   "importExcel": {
     "title": "Import Excel",
