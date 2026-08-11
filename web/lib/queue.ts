@@ -113,7 +113,9 @@ export function buildPayload(
       if (field.required) issues.push(`${field.name} wajib diisi`);
       continue;
     }
-    payload[field.name] = namesFamily(field) && typeof v === "string" ? familyNameOf(v) : v;
+    payload[field.name] = normalizesFamily(spec, field) && typeof v === "string"
+      ? familyNameOf(v)
+      : v;
   }
 
   // Aturan yang tidak bisa dinyatakan per-field.
@@ -141,8 +143,22 @@ export function buildPayload(
   return { payload, commandText };
 }
 
-/** Kolom ini berisi nama family Revit. */
-function namesFamily(field: CommandField): boolean {
+/**
+ * Nilai kolom ini dipendekkan jadi nama family saja sebelum dikirim.
+ *
+ * Untuk perintah yang MEMASANG sesuatu, ya. Bentuk tampilan Revit
+ * `Family: Type` pernah berangkat apa adanya sebagai argumen `family`, tidak
+ * cocok dengan apa pun di model, dan berakhir sebagai sepuluh armatur bawaan
+ * add-in terpasang di plafon orang tanpa satu pun galat.
+ *
+ * Untuk perintah yang hanya MEMBACA, tidak. Di situ setengah nama yang dibuang
+ * adalah presisi yang diminta: "ada berapa yang tipe DOWNLIGHT 18 WATT" dijawab
+ * dengan jumlah SELURUH family kalau bagian tipenya dipangkas di sini — dan
+ * add-in memang bisa membedakan keduanya. Sebuah pembacaan yang terlalu luas
+ * tidak merusak gambar, tapi ia menjawab pertanyaan yang lain.
+ */
+function normalizesFamily(spec: CommandSpec, field: CommandField): boolean {
+  if (spec.role === "viewer") return false;
   return Boolean(field.familyCategory || field.familyCategoryFrom);
 }
 

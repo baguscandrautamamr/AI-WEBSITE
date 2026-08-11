@@ -100,10 +100,14 @@ function Node({ value, depth }: { value: unknown; depth: number }) {
 function Scalar({ value }: { value: string }) {
   const { t } = useI18n();
 
+  // `note.*` untuk catatan, `result.*` untuk nama kelompok — add-in mengirim
+  // keduanya sebagai kunci. "lighting.title" di kolom Nama adalah baris yang
+  // benar dan tidak berarti apa-apa; yang dicari orangnya di situ kata "Lampu".
   if (/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/.test(value)) {
-    const key = `note.${value}`;
-    const translated = t(key);
-    if (translated !== key) return <span className="break-words">{translated}</span>;
+    for (const key of [`note.${value}`, `result.${value}`]) {
+      const translated = t(key);
+      if (translated !== key) return <span className="break-words">{translated}</span>;
+    }
   }
 
   if (!/^https?:\/\//i.test(value)) return <span className="break-words">{value}</span>;

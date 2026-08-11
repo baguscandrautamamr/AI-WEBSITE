@@ -104,3 +104,42 @@ describe("resolveFamilies — modify_devices", () => {
     expect(question).toBeNull();
   });
 });
+
+describe("resolveFamilies — perintah baca", () => {
+  // "Ada berapa downlight?" tidak boleh dijawab dengan sebuah pertanyaan. Yang
+  // dilindungi oleh persimpangan family adalah GAMBAR — nama yang tidak
+  // dikenali berakhir sebagai family bawaan add-in terpasang di plafon. Sebuah
+  // pembacaan tidak memasang apa pun, dan add-in sudah mencocokkan sebagian nama
+  // lalu menyebutkan family apa saja yang ada.
+  it("nama yang ambigu diteruskan, bukan ditanyakan balik", () => {
+    const { values, question } = resolveFamilies(
+      COMMANDS_BY_NAME.query,
+      { room: "PANTRY 6", what: "lighting", family: "downlight" },
+      MODEL
+    );
+
+    expect(question).toBeNull();
+    expect(values.family).toBe("downlight");
+  });
+
+  it("tapi ejaan yang cocok persis tetap dirapikan ke ejaan model", () => {
+    const { values, question } = resolveFamilies(
+      COMMANDS_BY_NAME.query,
+      { what: "lighting", family: "act_e_downlight 22watt" },
+      MODEL
+    );
+
+    expect(question).toBeNull();
+    expect(values.family).toBe("ACT_E_DOWNLIGHT 22WATT");
+  });
+
+  it("dan perintah pemasangan tetap ditahan seperti sebelumnya", () => {
+    const { question } = resolveFamilies(
+      lighting,
+      { room: "PANTRY 6", count: 6, fixture_type: "downlight" },
+      MODEL
+    );
+
+    expect(question).toMatchObject({ category: "lighting", guessed: "downlight" });
+  });
+});

@@ -17,6 +17,7 @@ import {
 import { familiesFor, matchFamily, type RevitFamily } from "@/lib/families";
 import { autoGrid, awkwardCount, flip, formatGrid, friendlierCounts, gridCount, parseGrid } from "@/lib/grid";
 import { turnsFromChat } from "@/lib/chatHistory";
+import { summarizeResult } from "@/lib/resultSummary";
 import CommandChat, { type ChatBody, type ChatEntry } from "./CommandChat";
 import ResultView from "./ResultView";
 
@@ -159,6 +160,14 @@ export default function CommandRunner({
   const [chatEntries, setChatEntries] = useState<ChatEntry[]>([]);
   const [chatBusy, setChatBusy] = useState(false);
   const chatId = useRef(0);
+
+  /**
+   * Gelembung mana yang menunggu jawaban perintah mana: id antrean → id gelembung.
+   *
+   * Jawaban Revit datang lewat polling, terlepas dari percakapan, dan tanpa peta
+   * ini ia tidak bisa menemukan jalan kembali ke gelembung yang menanyakannya.
+   */
+  const runBubble = useRef(new Map<string, number>());
 
   /**
    * Isi ruangan yang sudah dibaca dari Revit, per ruangan dan kategori.
@@ -759,7 +768,13 @@ export default function CommandRunner({
       // Teks perintahnya diperbarui: yang berangkat bisa berbeda dari yang
       // diusulkan — modifikasi alih-alih penambahan, dan grid yang dihitung
       // dari jumlahnya. Gelembung ini harus menyebut yang benar-benar dikirim.
-      patchChat(bubble, { state: "queued", commandText: queued.commandText });
+      //
+      // Id antreannya dicatat di sini: itu satu-satunya tali antara gelembung ini
+      // dan jawaban yang datang dari Revit beberapa detik kemudian, dan tanpanya
+      // jawabannya cuma bisa ditempel sebagai gelembung baru yang tidak tahu
+      // pertanyaan mana yang ia jawab.
+      runBubble.current.set(queued.id, bubble);
+      patchChat(bubble, { state: "queued", commandText: queued.commandText, runId: queued.id });
     } catch (err) {
       const withIssues = err as Error & { issues?: string[] };
       patchChat(bubble, {
@@ -1029,15 +1044,41 @@ export default function CommandRunner({
     );
   });
 
-  // Hasil dari Revit dilaporkan balik ke percakapan, supaya satu utas memuat
-  // permintaan, perintah, dan akibatnya — bukan chat di satu tempat dan hasil
-  // di tempat lain.
+  /**
+   * Jawaban Revit dibawa ke gelembung yang menanyakannya.
+   *
+   * Sebelumnya ia jadi gelembung asisten tersendiri berisi baris perintah plus
+   * "selesai dijalankan di Revit." Untuk satu pertanyaan sesederhana "ada berapa
+   * cable tray?" yang terbaca adalah tiga hal berturut-turut: perintahnya,
+   * laporan bahwa perintah itu selesai, dan angkanya — di panel Hasil, di bawah
+   * halaman, di luar layar telepon. Tidak satu pun dari ketiganya adalah jawaban.
+   *
+   * Sekarang gelembungnya sendiri yang berubah jadi jawaban, dan ringkasannya
+   * ikut masuk riwayat: pertanyaan lanjutan dijawab dari angka yang sudah ada,
+   * bukan dengan menjalankan perintahnya lagi.
+   *
+   * Perintah yang dikirim dari formulir tidak punya gelembung. Untuk itu jalan
+   * lama tetap dipakai — kalimat pendek, karena angkanya sudah tampil utuh di
+   * panel Hasil tepat di sebelah tombol yang baru ditekan orangnya.
+   */
   const reported = useRef(new Set<string>());
   useEffect(() => {
     if (!chat) return;
     for (const run of runs) {
       if (!TERMINAL.includes(run.status) || reported.current.has(run.id)) continue;
       reported.current.add(run.id);
+
+      const bubble = runBubble.current.get(run.id);
+      if (bubble !== undefined) {
+        runBubble.current.delete(run.id);
+        patchChat(bubble, {
+          runStatus: run.status as "completed" | "failed" | "cancelled",
+          result: run.result,
+          summary: run.status === "completed" ? summarizeResult(run.result, t) : undefined,
+          runError: run.error ?? undefined,
+        });
+        continue;
+      }
 
       const outcome =
         run.status === "completed"
@@ -1230,6 +1271,7 @@ export default function CommandRunner({
                 modelLoading={modelLoading}
                 onLoadModel={loadModel}
                 familyOptions={familyOptionsFor(selected.positional, values, model)}
+                familyCategory={familyCategoryOf(selected.positional, values)}
                 onChange={(v) =>
                   setValues((s) => ({ ...s, [selected.positional!.name]: v }))
                 }
@@ -1251,6 +1293,7 @@ export default function CommandRunner({
                 modelLoading={modelLoading}
                 onLoadModel={loadModel}
                 familyOptions={familyOptionsFor(f, values, model)}
+                familyCategory={familyCategoryOf(f, values)}
                 extra={
                   f.name === "grid" ? (
                     <GridNote
@@ -1804,6 +1847,7 @@ function Field({
   modelLoading,
   onLoadModel,
   familyOptions,
+  familyCategory,
   extra,
   onChange,
 }: {
@@ -1829,6 +1873,17 @@ function Field({
    * adalah mengetik nama family dari ingatan.
    */
   familyOptions: RevitFamily[];
+  /**
+   * Kategori yang daftar itu berasal dari — kosong kalau belum ada satu pun.
+   *
+   * Dibutuhkan untuk membedakan dua sebab daftar kosong yang berbunyi sama dan
+   * bukan hal yang sama: model yang memang tidak punya family kategori itu, dan
+   * kategori yang belum dipilih sama sekali. Kolom "Kategori" pada /query berisi
+   * `all` secara bawaan, dan `all` bukan sebuah kategori — jadi pesannya dulu
+   * berbunyi "model ini tidak punya family untuk kategori itu" pada model yang
+   * penuh family.
+   */
+  familyCategory?: string;
   /** Keterangan tambahan di bawah kolom, mis. grid yang dihitung dari jumlah. */
   extra?: React.ReactNode;
   onChange: (v: unknown) => void;
@@ -1957,11 +2012,15 @@ function Field({
             {roomsLoading ? t("command.roomsLoading") : t("command.roomsLoad")}
           </button>
         )}
-        {/* Kolom nama family tanpa daftar: satu-satunya sebabnya adalah model yang
-            belum menjawab. Tombolnya di sini, bukan cuma di baris atas halaman —
-            di sinilah pertanyaannya muncul, dan tanpa jalan dari sini yang tersisa
-            hanya mengetik nama family dari ingatan. */}
-        {isFamilyField && typeOptions.length === 0 && (
+        {/* Kolom nama family tanpa daftar, PADA kategori yang sudah dipilih:
+            sebabnya model yang belum menjawab. Tombolnya di sini, bukan cuma di
+            baris atas halaman — di sinilah pertanyaannya muncul, dan tanpa jalan
+            dari sini yang tersisa hanya mengetik nama family dari ingatan.
+
+            Tanpa kategori, membaca model tidak menghasilkan daftar apa pun, jadi
+            tombolnya tidak ditawarkan: ia hanya akan menunggu Revit lalu tidak
+            mengubah apa pun di layar. */}
+        {isFamilyField && typeOptions.length === 0 && familyCategory && (
           <button
             type="button"
             onClick={onLoadModel}
@@ -2067,7 +2126,11 @@ function Field({
               yang diketik di sini harus persis sama dengan nama di Revit. */}
           {isFamilyField && typeOptions.length === 0 && (
             <span className="block text-xs opacity-55">
-              {model ? t("command.familiesNone") : t("command.familiesAsk")}
+              {!familyCategory
+                ? t("command.familiesNoCategory")
+                : model
+                  ? t("command.familiesNone")
+                  : t("command.familiesAsk")}
             </span>
           )}
           {/* Nama yang diketik sendiri dan tidak ada di daftar model.

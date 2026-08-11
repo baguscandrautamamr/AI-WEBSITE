@@ -29,11 +29,14 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     window.localStorage.setItem(STORAGE_KEY, next);
   };
 
+  // Kunci yang berhenti di tengah sarang mengembalikan kuncinya sendiri, bukan
+  // objek. Yang memanggil `t()` menaruh hasilnya langsung ke JSX, dan sebuah
+  // objek di sana bukan teks yang aneh — itu halaman yang gagal dirender.
   const t = (key: string) => {
     const parts = key.split(".");
     let cur: any = dictionaries[locale];
     for (const p of parts) cur = cur?.[p];
-    return cur ?? key;
+    return typeof cur === "string" ? cur : key;
   };
 
   return <I18nContext.Provider value={{ locale, t, setLocale }}>{children}</I18nContext.Provider>;

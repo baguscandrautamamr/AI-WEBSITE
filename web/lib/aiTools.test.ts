@@ -83,28 +83,69 @@ describe("ELECTRICAL_SYSTEM_PROMPT", () => {
   it("menyuruh membiarkan grid kosong kalau yang disebut adalah jumlah", () => {
     expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/biarkan .*grid.* kosong/i);
   });
+
+  it("menyuruh menjawab dari hasil yang sudah ada, bukan menjalankan ulang", () => {
+    // Riwayatnya sekarang memuat angka yang dijawab Revit. Tanpa aturan ini,
+    // "tadi totalnya berapa?" tetap dijawab dengan satu perintah baru dan
+    // setengah menit menunggu — untuk angka yang sudah tertulis di layar.
+    expect(ELECTRICAL_SYSTEM_PROMPT).toContain("HASILNYA");
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/tanpa\s+memanggil tool apa pun/i);
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/Salin angkanya persis/i);
+  });
 });
 
 describe("withModelContext", () => {
-  // Daftar inilah yang disalin model ke argumennya. Kalau ia memuat bentuk
-  // tampilan Revit (`Family: Type`), perintahnya berangkat membawa nilai yang
-  // tidak cocok dengan apa pun — dan add-in memasang family bawaannya sendiri
-  // tanpa satu pun galat muncul.
-  it("menyebut nama family, bukan bentuk tampilan Revit", () => {
+  const sample = {
+    familyTypes: {
+      "Lighting Fixtures": [
+        "ACT_E_DOWNLIGHT 22WATT: DOWNLIGHT 22 WATT",
+        "ACT_E_DOWNLIGHT 22WATT: DOWNLIGHT 18 WATT",
+      ],
+    },
+    rooms: ["LOUNGE 5"],
+  };
+
+  // Daftar inilah yang disalin model ke argumennya. Kalau bentuk tampilan Revit
+  // (`Family: Type`) muncul di daftar family, perintahnya berangkat membawa nilai
+  // yang tidak cocok dengan apa pun — dan add-in memasang family bawaannya
+  // sendiri tanpa satu pun galat muncul.
+  it("daftar family memuat nama family saja, tanpa bentuk tampilan Revit", () => {
+    const prompt = withModelContext(ELECTRICAL_SYSTEM_PROMPT, sample);
+    const families = prompt.slice(
+      prompt.indexOf("YANG ADA DI MODEL"),
+      prompt.indexOf("NAMA TIPE DI MODEL")
+    );
+
+    expect(families).toContain("ACT_E_DOWNLIGHT 22WATT");
+    expect(families).not.toContain("DOWNLIGHT 22 WATT");
+    // Titik dua hanya milik label kategorinya; tidak ada satu pun di sisi nilai,
+    // karena di situlah bentuk `Family: Type` akan terlihat.
+    const line = families.split("\n").find((l) => l.includes("ACT_E_DOWNLIGHT")) ?? "";
+    expect(line.slice(line.indexOf(":") + 1)).not.toContain(":");
+    // Satu family, satu kali — dua tipe di dalamnya bukan dua pilihan.
+    expect(families.match(/ACT_E_DOWNLIGHT 22WATT/g)).toHaveLength(1);
+  });
+
+  // Nama tipe dulu dibuang seluruhnya, dan akibatnya `where="Type=…"` tidak bisa
+  // dipakai sama sekali: satu-satunya nama yang sah di situ justru yang tidak
+  // pernah dikirim.
+  it("nama tipe ikut, di bloknya sendiri, dengan larangan memakainya untuk `family`", () => {
+    const prompt = withModelContext(ELECTRICAL_SYSTEM_PROMPT, sample);
+    const types = prompt.slice(prompt.indexOf("NAMA TIPE DI MODEL"));
+
+    expect(types).toContain("DOWNLIGHT 22 WATT");
+    expect(types).toContain("DOWNLIGHT 18 WATT");
+    expect(types).toMatch(/JANGAN untuk argumen/);
+    expect(types).toMatch(/where="Type=/);
+  });
+
+  it("tidak menambah blok tipe kalau modelnya tidak melaporkan tipe", () => {
     const prompt = withModelContext(ELECTRICAL_SYSTEM_PROMPT, {
-      familyTypes: {
-        "Lighting Fixtures": [
-          "ACT_E_DOWNLIGHT 22WATT: DOWNLIGHT 22 WATT",
-          "ACT_E_DOWNLIGHT 22WATT: DOWNLIGHT 18 WATT",
-        ],
-      },
-      rooms: ["LOUNGE 5"],
+      familyTypes: { "Lighting Fixtures": ["ACT_E_DOWNLIGHT 22WATT"] },
     });
 
     expect(prompt).toContain("ACT_E_DOWNLIGHT 22WATT");
-    expect(prompt).not.toContain("DOWNLIGHT 22 WATT");
-    // Satu family, satu kali — dua tipe di dalamnya bukan dua pilihan.
-    expect(prompt.match(/ACT_E_DOWNLIGHT 22WATT/g)).toHaveLength(1);
+    expect(prompt).not.toContain("NAMA TIPE DI MODEL");
   });
 
   it("menyebut ruangan yang ada di model", () => {
@@ -151,6 +192,37 @@ describe("katalog inspect — jalan menuju \"baca apa pun\"", () => {
     // dari model yang memang tidak punya nilainya.
     expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/what=categories/);
     expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/Jangan menebak nama parameter/);
+  });
+
+  it("query menawarkan penyaringan per family, bukan cuma per ruangan dan lantai", () => {
+    // Tanpa ini, "berapa downlight 22W di lantai 1" dijawab dengan jumlah SELURUH
+    // armatur di lantai 1 — angka yang benar untuk pertanyaan yang tidak
+    // ditanyakan siapa pun, dan yang terbaca persis seperti jawabannya.
+    const query = toolsForRole("viewer").find((t) => t.name === "query");
+    expect(query?.input_schema.properties.family).toBeTruthy();
+    expect(query?.description).toMatch(/family/);
+  });
+
+  it("prompt menyuruh menyaring pertanyaan yang menyebut nama family", () => {
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/MENYEBUT NAMA FAMILY/);
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/where="Family=/);
+    // Dan menyuruh memakai ~ ketika ejaannya tidak berasal dari daftar model:
+    // `=` menuntut sama persis, dan nol baris tidak bisa dibedakan dari tidak ada.
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/where="Family~/);
+  });
+
+  it("prompt menyebut kolom yang tidak perlu ditanyakan lebih dulu", () => {
+    // Enam kolom ini selalu ada. Menyuruh what=parameters untuk keenamnya adalah
+    // satu putaran ke Revit untuk sesuatu yang sudah pasti.
+    for (const column of ["Family", "Type", "Level", "Room", "Category", "Length"]) {
+      expect(ELECTRICAL_SYSTEM_PROMPT, column).toContain(`\`${column}\``);
+    }
+  });
+
+  it("prompt menyebut multi-kategori dan multi-syarat", () => {
+    expect(ELECTRICAL_SYSTEM_PROMPT).toContain('category="lighting, lighting_device, receptacle"');
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/SEMUANYA harus terpenuhi/);
+    expect(ELECTRICAL_SYSTEM_PROMPT).toContain("group_by=Family");
   });
 
   it("prompt menyebut bahwa query sudah melaporkan panjang, watt, dan luas", () => {

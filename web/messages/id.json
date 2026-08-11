@@ -96,7 +96,41 @@
     "value": "Nilai",
     "total": "Total",
     "level": "Lantai",
-    "type": "Tipe"
+    "type": "Tipe",
+    "lighting": {
+      "title": "Lampu"
+    },
+    "lighting_device": {
+      "title": "Saklar"
+    },
+    "receptacle": {
+      "title": "Stop kontak"
+    },
+    "cable_tray": {
+      "title": "Cable tray"
+    },
+    "fire_alarm": {
+      "title": "Fire alarm"
+    },
+    "telephone": {
+      "title": "Telepon"
+    },
+    "lan": {
+      "title": "LAN"
+    },
+    "security": {
+      "title": "Sekuriti"
+    },
+    "communication": {
+      "title": "Komunikasi"
+    },
+    "query": {
+      "hangers": "Hanger",
+      "panels": "Panel",
+      "rooms": "Ruangan",
+      "sheets": "Sheet"
+    },
+    "family": "Hanya family"
   },
   "admin": {
     "title": "Akses Proyek",
@@ -227,7 +261,8 @@
     "familyUnknown": "Nama ini tidak ada di daftar family model. Add-in tidak akan mengeluh — ia memakai family bawaannya, dan yang salah baru terlihat di gambar.",
     "crossroadSkip": "Lewati ruangan ini",
     "crossroadStop": "Hentikan sisanya",
-    "crossroadApplyRest": "Pakai jawaban ini untuk ruangan berikutnya juga"
+    "crossroadApplyRest": "Pakai jawaban ini untuk ruangan berikutnya juga",
+    "familiesNoCategory": "Pilih satu kategori dulu di sebelah — daftar family mengikutinya. Dengan \"all\", nama yang diketik dicocokkan ke SEMUA kategori."
   },
   "chat": {
     "placeholder": "mis. pasang 6 lampu di Meeting 1 tinggi 3 meter",
@@ -250,7 +285,12 @@
     "batchTitle": "— satu perintah untuk tiap ruangan ({n} ruangan):",
     "batchProgress": "{sent}/{n} masuk antrean…",
     "batchDone": "{sent}/{n} masuk antrean Revit. Hasil tiap perintah muncul di bawah.",
-    "batchSkipped": "{n} dilewati"
+    "batchSkipped": "{n} dilewati",
+    "reading": "Membaca model…",
+    "showCommand": "lihat perintah",
+    "hideCommand": "sembunyikan perintah",
+    "runFailed": "Gagal di Revit",
+    "finished": "Selesai dijalankan di Revit."
   },
   "importExcel": {
     "title": "Import Excel",
