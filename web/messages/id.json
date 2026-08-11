@@ -71,7 +71,13 @@
     "dwg": "DWG",
     "ifc": "IFC",
     "upload_error": "Sebab",
-    "dry_run_note": "Uji coba — tidak ada yang berubah di model. Angka di bawah adalah yang AKAN terjadi. Hilangkan centang \"Uji coba saja\" lalu kirim lagi untuk menjalankannya sungguhan."
+    "dry_run_note": "Uji coba — tidak ada yang berubah di model. Angka di bawah adalah yang AKAN terjadi. Hilangkan centang \"Uji coba saja\" lalu kirim lagi untuk menjalankannya sungguhan.",
+    "family_used": "Family dipakai",
+    "elements": "Elemen dibuat",
+    "replaced_rows": "Baris lama diganti",
+    "view": "View",
+    "target": "Masuk ke",
+    "source_sheet": "Sheet Excel"
   },
   "admin": {
     "title": "Akses Proyek",
@@ -269,7 +275,8 @@
     "print.no_bot_token": "Pengiriman ke Telegram menyala tapi token bot-nya belum diisi, jadi file tidak terkirim ke chat mana pun.",
     "export_cad.no_setup": "Diekspor tanpa CAD export setup, jadi memakai bawaan Revit — layer dan ketebalan garisnya kemungkinan tidak sesuai standar kantor.",
     "export.upload_failed": "Kredensial Cloudinary ada tapi unggahannya gagal, jadi file tetap di PC Revit. Biasanya karena kunci sudah diganti dan belum diperbarui di config.json, atau jaringan memblokirnya. Cek logs di %APPDATA%\\RevitCommandCenter\\logs.",
-    "export.upload_undeliverable": "File berhasil diunggah, tapi Cloudinary menolak saat tautannya dibuka. Terunggah dan bisa diunduh adalah dua izin berbeda: akun Cloudinary baru secara bawaan tidak mengizinkan PDF diunduh. Buka Cloudinary → Settings → Security → Restricted media types, matikan pembatasan untuk PDF, lalu buka tautannya lagi — file lamanya pun langsung bisa diunduh tanpa perlu dicetak ulang."
+    "export.upload_undeliverable": "File berhasil diunggah, tapi Cloudinary menolak saat tautannya dibuka. Terunggah dan bisa diunduh adalah dua izin berbeda: akun Cloudinary baru secara bawaan tidak mengizinkan PDF diunduh. Buka Cloudinary → Settings → Security → Restricted media types, matikan pembatasan untuk PDF, lalu buka tautannya lagi — file lamanya pun langsung bisa diunduh tanpa perlu dicetak ulang.",
+    "import_table.merges_lost": "Sel yang di-merge di Excel tidak punya padanan di sebuah schedule — nilainya masuk ke kolom pertama yang tadinya ia lintasi. Kalau bentuk tabelnya yang penting, pakai \"Schedule (drafting view)\" yang menggambar tabelnya apa adanya."
   },
   "notify": {
     "title": "Pemberitahuan Telegram",

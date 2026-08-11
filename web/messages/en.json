@@ -71,7 +71,13 @@
     "dwg": "DWG",
     "ifc": "IFC",
     "upload_error": "Reason",
-    "dry_run_note": "Dry run — nothing in the model changed. The numbers below are what WOULD happen. Untick \"Dry run\" and send again to do it for real."
+    "dry_run_note": "Dry run — nothing in the model changed. The numbers below are what WOULD happen. Untick \"Dry run\" and send again to do it for real.",
+    "family_used": "Family used",
+    "elements": "Elements created",
+    "replaced_rows": "Previous rows replaced",
+    "view": "View",
+    "target": "Placed in",
+    "source_sheet": "Excel sheet"
   },
   "admin": {
     "title": "Project Access",
@@ -269,7 +275,8 @@
     "print.no_bot_token": "Telegram delivery is on but the bot token is empty, so the file was not sent to any chat.",
     "export_cad.no_setup": "Exported with no CAD export setup, so Revit defaults were used — layers and line weights are unlikely to match the office standard.",
     "export.upload_failed": "Cloudinary credentials are present but every upload failed, so the file stayed on the Revit PC. Usually the keys were rotated and config.json still holds the old ones, or the network blocked it. Check the logs in %APPDATA%\\RevitCommandCenter\\logs.",
-    "export.upload_undeliverable": "The file uploaded, but Cloudinary refused it when the link was opened. Uploaded and downloadable are two different permissions: a new Cloudinary account does not allow PDF delivery by default. Open Cloudinary → Settings → Security → Restricted media types, lift the restriction on PDF, then open the link again — files uploaded earlier become downloadable too, with nothing to reprint."
+    "export.upload_undeliverable": "The file uploaded, but Cloudinary refused it when the link was opened. Uploaded and downloadable are two different permissions: a new Cloudinary account does not allow PDF delivery by default. Open Cloudinary → Settings → Security → Restricted media types, lift the restriction on PDF, then open the link again — files uploaded earlier become downloadable too, with nothing to reprint.",
+    "import_table.merges_lost": "A merged cell has no counterpart in a schedule — its value lands in the first column it spanned. If the table's shape is what matters, use \"Schedule (drafting view)\", which draws it as it stands."
   },
   "notify": {
     "title": "Telegram notifications",
