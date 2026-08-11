@@ -129,7 +129,8 @@
       "panels": "Panel",
       "rooms": "Ruangan",
       "sheets": "Sheet"
-    }
+    },
+    "family": "Hanya family"
   },
   "admin": {
     "title": "Akses Proyek",
@@ -260,7 +261,8 @@
     "familyUnknown": "Nama ini tidak ada di daftar family model. Add-in tidak akan mengeluh — ia memakai family bawaannya, dan yang salah baru terlihat di gambar.",
     "crossroadSkip": "Lewati ruangan ini",
     "crossroadStop": "Hentikan sisanya",
-    "crossroadApplyRest": "Pakai jawaban ini untuk ruangan berikutnya juga"
+    "crossroadApplyRest": "Pakai jawaban ini untuk ruangan berikutnya juga",
+    "familiesNoCategory": "Pilih satu kategori dulu di sebelah — daftar family mengikutinya. Dengan \"all\", nama yang diketik dicocokkan ke SEMUA kategori."
   },
   "chat": {
     "placeholder": "mis. pasang 6 lampu di Meeting 1 tinggi 3 meter",

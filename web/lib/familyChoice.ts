@@ -42,6 +42,21 @@ export function resolveFamilies(
 ): FamilyResolution {
   const out = { ...values };
 
+  /**
+   * Perintah baca tidak pernah ditahan oleh pertanyaan ini.
+   *
+   * Yang dilindungi pertanyaan itu adalah gambar: nama yang tidak dikenali
+   * berakhir sebagai family bawaan add-in terpasang di plafon, dan itu tidak
+   * bisa dibatalkan dari sini. Sebuah pembacaan tidak memasang apa pun. Yang
+   * terburuk yang bisa terjadi adalah jawaban yang terlalu luas atau nol baris —
+   * dan add-in sudah mencocokkan sebagian nama sendiri lalu menyebutkan family
+   * apa saja yang sebenarnya ada, yang persis merupakan jawaban atas pertanyaan
+   * yang akan diajukan di sini.
+   *
+   * Menahannya berarti "ada berapa downlight?" dijawab dengan sebuah pertanyaan.
+   */
+  const asks = spec.role !== "viewer";
+
   for (const field of spec.fields) {
     const category = familyCategoryOf(field, out);
     if (!category) continue;
@@ -60,6 +75,10 @@ export function resolveFamilies(
       out[field.name] = match.name;
       continue;
     }
+
+    // Ejaan yang tidak dikenali diteruskan apa adanya ke add-in, yang akan
+    // mencocokkan sebagiannya dan melaporkan apa yang dipakai.
+    if (!asks) continue;
 
     return {
       values: out,

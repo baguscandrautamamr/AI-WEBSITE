@@ -184,6 +184,28 @@ ATURAN:
 - Panjang, watt, dan luas SUDAH dilaporkan \`query\`: \`what=cable_tray\` memberi
   total meter, \`what=lighting\` memberi total watt, \`what=room\` memberi total m².
   Jangan bilang tidak ada caranya.
+- Pertanyaan yang MENYEBUT NAMA FAMILY atau nama tipe — "berapa downlight 22W di
+  lantai 1", "yang ACT_E_DOWNLIGHT saja ada berapa" — DISARING, jangan dijawab
+  dengan jumlah seluruh kategori. Dua jalan, keduanya benar: \`query\` dengan
+  \`family="…"\` kalau yang diminta satu angka, atau \`inspect\` dengan
+  \`where="Family=…"\` kalau butuh kolom, penjumlahan, atau pengelompokan.
+  Menjawab "128 armatur" untuk pertanyaan tentang satu family adalah angka yang
+  benar untuk pertanyaan yang tidak ditanyakan siapa pun, dan tidak ada apa pun di
+  jawaban itu yang menunjukkannya.
+- Ejaan nama family diambil dari daftar model di bawah, persis. Kalau yang disebut
+  orangnya TIDAK ada di daftar itu, pakai \`~\` (mengandung) alih-alih \`=\` —
+  \`where="Family~DOWNLIGHT 22"\`. \`=\` menuntut sama persis, dan satu spasi yang
+  berbeda mengembalikan NOL baris — yang tidak bisa dibedakan dari model yang
+  memang tidak punya. (Untuk \`query family=\` add-in sudah mencoba sebagian nama
+  sendiri, jadi di situ cukup tulis apa adanya.)
+- "Di ruangan itu ada family apa saja, masing-masing berapa" = SATU perintah:
+  \`inspect what=elements category=lighting room="X" group_by=Family\`. \`category\`
+  boleh beberapa dipisah koma — \`category="lighting, lighting_device, receptacle"\`
+  — jadi kedelapan kategori perangkat bisa sekali jalan, bukan delapan perintah.
+- \`where\` boleh beberapa syarat dipisah koma dan SEMUANYA harus terpenuhi:
+  \`where="Family=ACT_E_DOWNLIGHT 22WATT, Level=LANTAI 1"\`. Kolom \`Family\`,
+  \`Type\`, \`Level\`, \`Room\`, \`Category\`, dan \`Length\` selalu ada — tidak perlu
+  \`what=parameters\` lebih dulu untuk keenamnya.
 - Kalau permintaannya soal standar atau regulasi (SNI, PUIL, IEC, NEC) dan bukan
   perintah untuk model, jawab singkat bahwa itu ada di halaman "Standar
   Electrical", jangan panggil tool apa pun.
@@ -272,8 +294,46 @@ export function withModelContext(
 
   if (!lines.length) return prompt;
 
+  // Nama TIPE, di bloknya sendiri.
+  //
+  // Dibuang seluruhnya dari sini sebelumnya, dan sebabnya nyata: begitu bentuk
+  // `Family: Type` muncul di daftar, model menyalinnya utuh ke argumen `family`,
+  // yang tidak cocok dengan apa pun dan berakhir sebagai family bawaan add-in
+  // terpasang tanpa satu pun galat. Tapi membuangnya berarti `where="Type=…"`
+  // tidak bisa dipakai sama sekali — satu-satunya nama yang boleh dipakai di situ
+  // justru yang tidak pernah dikirim.
+  //
+  // Jadi keduanya ada, terpisah, masing-masing dengan keterangan untuk apa. Dan
+  // `queue.ts` tetap merapikan argumen `family` ke nama family saja, karena
+  // sebuah label di prompt bukan jaminan.
+  const typeLines: string[] = [];
+
+  for (const [category, entries] of Object.entries(context.familyTypes ?? {})) {
+    if (!Array.isArray(entries)) continue;
+
+    const types = [
+      ...new Set(
+        entries
+          .map((entry) => {
+            const cut = entry.indexOf(":");
+            return cut === -1 ? "" : entry.slice(cut + 1).trim();
+          })
+          .filter(Boolean)
+      ),
+    ];
+
+    if (types.length) typeLines.push(`- ${category}: ${types.slice(0, 30).join(" | ")}`);
+  }
+
+  const types = typeLines.length
+    ? `
+
+NAMA TIPE DI MODEL — dipakai HANYA untuk where="Type=…" pada inspect, JANGAN untuk argumen \`family\`:
+${typeLines.join("\n")}`
+    : "";
+
   return `${prompt}
 
 YANG ADA DI MODEL YANG SEDANG TERBUKA (pilih dari sini, jangan mengarang):
-${lines.join("\n")}`;
+${lines.join("\n")}${types}`;
 }

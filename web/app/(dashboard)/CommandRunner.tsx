@@ -1271,6 +1271,7 @@ export default function CommandRunner({
                 modelLoading={modelLoading}
                 onLoadModel={loadModel}
                 familyOptions={familyOptionsFor(selected.positional, values, model)}
+                familyCategory={familyCategoryOf(selected.positional, values)}
                 onChange={(v) =>
                   setValues((s) => ({ ...s, [selected.positional!.name]: v }))
                 }
@@ -1292,6 +1293,7 @@ export default function CommandRunner({
                 modelLoading={modelLoading}
                 onLoadModel={loadModel}
                 familyOptions={familyOptionsFor(f, values, model)}
+                familyCategory={familyCategoryOf(f, values)}
                 extra={
                   f.name === "grid" ? (
                     <GridNote
@@ -1845,6 +1847,7 @@ function Field({
   modelLoading,
   onLoadModel,
   familyOptions,
+  familyCategory,
   extra,
   onChange,
 }: {
@@ -1870,6 +1873,17 @@ function Field({
    * adalah mengetik nama family dari ingatan.
    */
   familyOptions: RevitFamily[];
+  /**
+   * Kategori yang daftar itu berasal dari — kosong kalau belum ada satu pun.
+   *
+   * Dibutuhkan untuk membedakan dua sebab daftar kosong yang berbunyi sama dan
+   * bukan hal yang sama: model yang memang tidak punya family kategori itu, dan
+   * kategori yang belum dipilih sama sekali. Kolom "Kategori" pada /query berisi
+   * `all` secara bawaan, dan `all` bukan sebuah kategori — jadi pesannya dulu
+   * berbunyi "model ini tidak punya family untuk kategori itu" pada model yang
+   * penuh family.
+   */
+  familyCategory?: string;
   /** Keterangan tambahan di bawah kolom, mis. grid yang dihitung dari jumlah. */
   extra?: React.ReactNode;
   onChange: (v: unknown) => void;
@@ -1998,11 +2012,15 @@ function Field({
             {roomsLoading ? t("command.roomsLoading") : t("command.roomsLoad")}
           </button>
         )}
-        {/* Kolom nama family tanpa daftar: satu-satunya sebabnya adalah model yang
-            belum menjawab. Tombolnya di sini, bukan cuma di baris atas halaman —
-            di sinilah pertanyaannya muncul, dan tanpa jalan dari sini yang tersisa
-            hanya mengetik nama family dari ingatan. */}
-        {isFamilyField && typeOptions.length === 0 && (
+        {/* Kolom nama family tanpa daftar, PADA kategori yang sudah dipilih:
+            sebabnya model yang belum menjawab. Tombolnya di sini, bukan cuma di
+            baris atas halaman — di sinilah pertanyaannya muncul, dan tanpa jalan
+            dari sini yang tersisa hanya mengetik nama family dari ingatan.
+
+            Tanpa kategori, membaca model tidak menghasilkan daftar apa pun, jadi
+            tombolnya tidak ditawarkan: ia hanya akan menunggu Revit lalu tidak
+            mengubah apa pun di layar. */}
+        {isFamilyField && typeOptions.length === 0 && familyCategory && (
           <button
             type="button"
             onClick={onLoadModel}
@@ -2108,7 +2126,11 @@ function Field({
               yang diketik di sini harus persis sama dengan nama di Revit. */}
           {isFamilyField && typeOptions.length === 0 && (
             <span className="block text-xs opacity-55">
-              {model ? t("command.familiesNone") : t("command.familiesAsk")}
+              {!familyCategory
+                ? t("command.familiesNoCategory")
+                : model
+                  ? t("command.familiesNone")
+                  : t("command.familiesAsk")}
             </span>
           )}
           {/* Nama yang diketik sendiri dan tidak ada di daftar model.

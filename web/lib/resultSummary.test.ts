@@ -42,6 +42,20 @@ describe("summarizeResult — /query", () => {
     expect(summary).toBe("busbar riser: 4");
   });
 
+  it("menyebut family yang disaring — tanpa itu angkanya ambigu", () => {
+    // "Lampu: 6" untuk satu family terbaca persis sama dengan "Lampu: 6" untuk
+    // seluruh ruangan.
+    expect(
+      summarizeResult(
+        {
+          groups: [{ label: "lighting.title", count: 6 }],
+          family: "ACT_E_DOWNLIGHT 22WATT",
+        },
+        t
+      )
+    ).toBe("Lampu: 6 · ACT_E_DOWNLIGHT 22WATT");
+  });
+
   it("memotong daftar yang kepanjangan alih-alih menumpahkan semuanya", () => {
     const groups = Array.from({ length: 10 }, (_, i) => ({ label: `x${i}`, count: i }));
     const summary = summarizeResult({ groups }, t);

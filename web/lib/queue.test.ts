@@ -333,6 +333,21 @@ describe("buildPayload — nama family", () => {
     expect(payload.family).toBe("ACT_E_SOCKET");
   });
 
+  // Perintah baca tidak dipangkas: di situ setengah nama yang dibuang adalah
+  // presisi yang diminta. "Ada berapa yang tipe DOWNLIGHT 18 WATT" akan dijawab
+  // dengan jumlah SELURUH family kalau bagian tipenya hilang di sini — dan add-in
+  // memang bisa membedakan keduanya.
+  it("TIDAK memangkas nama untuk perintah yang hanya membaca", () => {
+    const { payload, commandText } = buildPayload(spec("query"), {
+      room: "LOUNGE 5",
+      what: "lighting",
+      family: "ACT_E_DOWNLIGHT 22WATT: DOWNLIGHT 18 WATT",
+    });
+
+    expect(payload.family).toBe("ACT_E_DOWNLIGHT 22WATT: DOWNLIGHT 18 WATT");
+    expect(commandText).toContain("DOWNLIGHT 18 WATT");
+  });
+
   it("berlaku untuk modify_devices, yang kategorinya ikut kolom what", () => {
     const { payload } = buildPayload(spec("modify_devices"), {
       room: "Lounge",

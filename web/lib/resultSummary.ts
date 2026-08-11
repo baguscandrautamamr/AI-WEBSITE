@@ -59,7 +59,11 @@ function summarize(result: Dict, t: (key: string) => string): string {
         return detail ? `${name}: ${count} (${detail})` : `${name}: ${count}`;
       });
 
-    return join(parts);
+    // Jumlah yang sudah disaring per family harus mengatakannya. "Lampu: 6" untuk
+    // pertanyaan tentang satu family terbaca sama dengan "Lampu: 6" untuk seluruh
+    // ruangan, dan yang membaca ringkasannya tidak punya cara membedakannya.
+    const family = str(result.family);
+    return family ? `${join(parts)} · ${family}` : join(parts);
   }
 
   // --- /inspect what=categories -------------------------------------------

@@ -777,8 +777,8 @@ export const COMMANDS: CommandSpec[] = [
       // mengukur panjang tray" untuk sesuatu yang sudah ia punya. Kemampuan
       // yang tidak tertulis di deskripsi tool adalah kemampuan yang tidak
       // pernah dipakai.
-      id: "Membaca model dan melaporkan apa yang sudah ada, per kategori tetap. Ikut melaporkan TOTAL: meter untuk cable_tray, watt untuk lighting, m² untuk room. Tidak membuka transaksi Revit, jadi viewer boleh menjalankannya. Untuk kategori atau parameter di luar daftar ini, pakai /inspect.",
-      en: "Reads the model and reports what is there, per fixed category. It also reports TOTALS: metres for cable_tray, watts for lighting, m² for room. Opens no Revit transaction. For categories or parameters outside this list, use /inspect.",
+      id: "Membaca model dan melaporkan apa yang sudah ada, per kategori tetap. Bisa disaring per ruangan, per lantai, DAN per family (`family=`) — jadi \"berapa downlight 22W di lantai 1\" dijawab perintah ini, bukan dengan jumlah seluruh armatur. Ikut melaporkan TOTAL: meter untuk cable_tray, watt untuk lighting, m² untuk room. Tidak membuka transaksi Revit, jadi viewer boleh menjalankannya. Untuk kategori atau parameter di luar daftar ini, pakai /inspect.",
+      en: "Reads the model and reports what is there, per fixed category. It filters by room, by level, AND by family (`family=`) — so \"how many 22W downlights on level 1\" is answered here, not with a count of every fixture. It also reports TOTALS: metres for cable_tray, watts for lighting, m² for room. Opens no Revit transaction. For categories or parameters outside this list, use /inspect.",
     },
     role: "viewer",
     group: "read",
@@ -813,6 +813,21 @@ export const COMMANDS: CommandSpec[] = [
       },
       { name: "level", type: "text", label: { id: "Lantai", en: "Level" }, hint: { id: "mis. \"Level 1\"", en: "e.g. \"Level 1\"" } },
       {
+        name: "family",
+        type: "text",
+        // Daftarnya mengikuti kolom "Kategori" di atasnya, sama seperti pada
+        // /modify_devices: `what=lighting` berarti pilihannya family armatur,
+        // `what=security` berarti kamera. `all` tidak punya daftar — dan memang
+        // tidak seharusnya, karena satu family tidak berarti apa-apa untuk
+        // sebelas kategori sekaligus.
+        familyCategoryFrom: "what",
+        label: { id: "Family (opsional)", en: "Family (optional)" },
+        hint: {
+          id: "Hitung hanya family ini. Kosongkan untuk seluruh kategori.",
+          en: "Count only this family. Leave empty for the whole category.",
+        },
+      },
+      {
         name: "detail",
         type: "select",
         default: "summary",
@@ -821,14 +836,14 @@ export const COMMANDS: CommandSpec[] = [
       },
       { name: "limit", type: "integer", default: 30, min: 1, max: 500, label: { id: "Batas item", en: "Limit" } },
     ],
-    example: "/query Office_A what=lighting detail=list",
+    example: "/query Office_A what=lighting family=\"ACT_E_DOWNLIGHT 22WATT\" detail=list",
   },
   {
     name: "inspect",
     label: { id: "Baca Model", en: "Inspect Model" },
     description: {
-      id: "Membaca APA PUN di model — kategori apa saja yang ada, parameter apa saja yang dimiliki sebuah kategori, lalu barisnya sendiri dengan kolom yang kamu sebut. Tidak membuka transaksi Revit.",
-      en: "Reads ANYTHING in the model — which categories exist, what a category can be asked about, then the rows themselves with the columns you name. Opens no Revit transaction.",
+      id: "Membaca APA PUN di model — kategori apa saja yang ada, parameter apa saja yang dimiliki sebuah kategori, lalu barisnya sendiri dengan kolom yang kamu sebut. Kolom Family, Type, Level, dan Room selalu ada dan bisa disaring (`where`) maupun dikelompokkan (`group_by`), jadi \"di ruangan ini family apa saja dan berapa\" satu perintah. `category` boleh beberapa dipisah koma, dan `where` boleh beberapa syarat dipisah koma yang semuanya harus terpenuhi. Tidak membuka transaksi Revit.",
+      en: "Reads ANYTHING in the model — which categories exist, what a category can be asked about, then the rows themselves with the columns you name. The Family, Type, Level, and Room columns always exist and can be filtered on (`where`) and grouped by (`group_by`), so \"which families are in this room, and how many\" is one command. `category` takes several, comma separated, and `where` takes several conditions, comma separated, all of which must hold. Opens no Revit transaction.",
     },
     role: "viewer",
     group: "read",
@@ -853,8 +868,8 @@ export const COMMANDS: CommandSpec[] = [
         type: "text",
         label: { id: "Kategori", en: "Category" },
         hint: {
-          id: "Nama Revit (\"Doors\"), nama OST (\"OST_Doors\"), atau kata pendek yang dipakai perintah lain (\"lighting\"). Wajib untuk parameters dan elements.",
-          en: "A Revit name (\"Doors\"), an OST name (\"OST_Doors\"), or the short key the other commands use (\"lighting\"). Required for parameters and elements.",
+          id: "Nama Revit (\"Doors\"), nama OST (\"OST_Doors\"), atau kata pendek yang dipakai perintah lain (\"lighting\"). BOLEH BEBERAPA, dipisah koma — mis. \"lighting, lighting_device, receptacle\". Wajib untuk parameters dan elements.",
+          en: "A Revit name (\"Doors\"), an OST name (\"OST_Doors\"), or the short key the other commands use (\"lighting\"). SEVERAL are allowed, comma separated — e.g. \"lighting, lighting_device, receptacle\". Required for parameters and elements.",
         },
         showWhen: { field: "what", is: ["parameters", "elements"] },
       },
@@ -873,8 +888,8 @@ export const COMMANDS: CommandSpec[] = [
         type: "text",
         label: { id: "Saringan", en: "Filter" },
         hint: {
-          id: "Satu syarat: Width>800, Mark~LF-, Comments!=. Pakai ~ untuk \"mengandung\".",
-          en: "One condition: Width>800, Mark~LF-, Comments!=. Use ~ for \"contains\".",
+          id: "Syarat: Width>800, Mark~LF-, Comments!=. Pakai ~ untuk \"mengandung\". BOLEH BEBERAPA dipisah koma, semuanya harus terpenuhi — mis. \"Family=ACT_E_DOWNLIGHT 22WATT, Width>800\". Kolom Family, Type, Level, dan Room ikut bisa disaring.",
+          en: "Conditions: Width>800, Mark~LF-, Comments!=. Use ~ for \"contains\". SEVERAL are allowed, comma separated, all of which must hold — e.g. \"Family=ACT_E_DOWNLIGHT 22WATT, Width>800\". The Family, Type, Level, and Room columns can be filtered on too.",
         },
         showWhen: { field: "what", is: ["elements"] },
       },
@@ -893,8 +908,8 @@ export const COMMANDS: CommandSpec[] = [
         type: "text",
         label: { id: "Kelompokkan menurut", en: "Group by" },
         hint: {
-          id: "Satu nama parameter — mis. Type. Hasilnya berapa elemen per nilai.",
-          en: "One parameter name — e.g. Type. The result is how many elements per value.",
+          id: "Satu nama parameter — mis. Family, Type, Level, atau Room. Hasilnya berapa elemen per nilai.",
+          en: "One parameter name — e.g. Family, Type, Level, or Room. The result is how many elements per value.",
         },
         showWhen: { field: "what", is: ["elements"] },
       },
@@ -921,7 +936,7 @@ export const COMMANDS: CommandSpec[] = [
         showWhen: { field: "what", is: ["elements"] },
       },
     ],
-    example: "/inspect what=elements category=Doors params=Mark,Width total=Width where=Width>800",
+    example: "/inspect what=elements category=lighting room=\"LOUNGE 5\" where=\"Family=ACT_E_DOWNLIGHT 22WATT\" group_by=Type",
   },
   {
     name: "list_sheets",
