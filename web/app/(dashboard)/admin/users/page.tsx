@@ -39,8 +39,11 @@ interface AccessData {
   searchMinChars: number;
   /** Boleh memberi peran di proyek. Kelas standard_only hanya melihat. */
   canGrant: boolean;
-  /** Boleh mengubah kelas akun — admin global saja, karena kelas berlaku global. */
-  canSetClass: boolean;
+  /**
+   * Admin global. Menentukan dua hal yang keduanya berlaku di seluruh sistem:
+   * mengubah kelas akun, dan menghapus akun.
+   */
+  isGlobalAdmin: boolean;
 }
 
 /**
@@ -98,7 +101,7 @@ export default function AdminUsersPage() {
    * lain menentukan permintaannya diterima.
    */
   const [canGrant, setCanGrant] = useState(true);
-  const [canSetClass, setCanSetClass] = useState(false);
+  const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
   const [picked, setPicked] = useState<User | null>(null);
   /** Peran yang dipilih untuk tiap akun menunggu, sebelum tombol Beri ditekan. */
   const [pendingRole, setPendingRole] = useState<Record<string, Role>>({});
@@ -110,7 +113,7 @@ export default function AdminUsersPage() {
     setAccess(data.access);
     setMinChars(data.searchMinChars);
     setCanGrant(data.canGrant);
-    setCanSetClass(data.canSetClass);
+    setIsGlobalAdmin(data.isGlobalAdmin);
     setProjectId((prev) => prev || data.projects[0]?.id || "");
     setLoading(false);
   }, []);
@@ -131,7 +134,7 @@ export default function AdminUsersPage() {
       access: body.access ?? [],
       searchMinChars: body.searchMinChars ?? 2,
       canGrant: Boolean(body.canGrant),
-      canSetClass: Boolean(body.canSetClass),
+      isGlobalAdmin: Boolean(body.isGlobalAdmin),
     };
     apply(cached);
 
@@ -224,6 +227,26 @@ export default function AdminUsersPage() {
     setBusy(false);
   }
 
+  /**
+   * Menghapus sebuah akun, kedua sisinya: identitas login dan barisnya.
+   *
+   * Dikonfirmasi dengan namanya, bukan dengan "yakin?" — daftar ini berisi
+   * beberapa baris yang bentuknya sama persis, dan tombol yang salah baris adalah
+   * kesalahan yang paling mudah dilakukan di sini dan tidak bisa dibatalkan.
+   */
+  async function removeAccount(user: User) {
+    if (!window.confirm(t("admin.deleteConfirm").replace("{name}", user.full_name))) return;
+
+    setBusy(true);
+    setError(null);
+    const res = await fetch(`/api/admin/users?userId=${encodeURIComponent(user.id)}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) setError((await res.json()).error ?? t("admin.deleteFailed"));
+    else await load();
+    setBusy(false);
+  }
+
   async function revoke(targetUserId: string) {
     setBusy(true);
     setError(null);
@@ -307,7 +330,7 @@ export default function AdminUsersPage() {
                 Terlihat karena tanpa itu tidak ada cara mengetahui mengapa
                 seorang editor tidak bisa membuka halaman Electrical — peran dan
                 kelas dua-duanya menentukan, dan yang satu tak terlihat. */}
-            {canSetClass ? (
+            {isGlobalAdmin ? (
               <ClassPicker
                 value={classOf(a.user_id)}
                 disabled={busy}
@@ -339,10 +362,13 @@ export default function AdminUsersPage() {
           <p className="text-xs text-text-secondary">{t("admin.pendingNote")}</p>
           {waiting.map((u) => (
             <div key={u.id} className="glass-input flex flex-wrap items-center gap-2 text-sm">
-              <span className="flex-1 min-w-[10rem]">
+              {/* Boleh dipangkas, dan min-width-nya kecil: barisnya memuat empat
+                  kendali, dan nama yang menolak menyusut mendorong tombol
+                  terakhir — Hapus — turun ke barisnya sendiri. */}
+              <span className="min-w-[6rem] flex-1 truncate">
                 {u.full_name} <span className="opacity-55">({u.auth_provider})</span>
               </span>
-              {canSetClass ? (
+              {isGlobalAdmin ? (
                 <ClassPicker
                   value={u.access_class}
                   disabled={busy}
@@ -377,6 +403,21 @@ export default function AdminUsersPage() {
                     {t("admin.grant")}
                   </button>
                 </>
+              )}
+
+              {/* Menghapus akun berlaku di seluruh sistem dan tidak bisa
+                  dibatalkan, jadi tombolnya hanya ada untuk admin global —
+                  syarat yang sama dengan mengubah kelas akun, dan bukan "admin
+                  di setidaknya satu proyek" yang bisa dipenuhi siapa pun dengan
+                  membuat satu proyek sendiri. */}
+              {isGlobalAdmin && (
+                <button
+                  onClick={() => removeAccount(u)}
+                  disabled={busy}
+                  className="text-xs text-red-500 hover:underline disabled:opacity-40"
+                >
+                  {t("admin.delete")}
+                </button>
               )}
             </div>
           ))}

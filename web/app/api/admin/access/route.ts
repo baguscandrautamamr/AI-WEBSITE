@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { guardArea, isAccessClass } from "@/lib/access";
+import { guardArea, isAccessClass, isGlobalAdmin } from "@/lib/access";
 
 export const runtime = "nodejs";
 
@@ -175,9 +175,6 @@ export async function GET(req: Request) {
   // dari daftar proyek: memberi peran di sebuah proyek (admin proyek), dan
   // mengubah kelas akun (admin global). Yang tidak boleh melakukannya tidak
   // melihat kontrolnya — bukan melihat lalu ditolak setelah menekannya.
-  const [{ data: me }] = await Promise.all([
-    service.from("users").select("role").eq("id", guard.userId).maybeSingle(),
-  ]);
 
   return NextResponse.json({
     projects: projects ?? [],
@@ -193,7 +190,10 @@ export async function GET(req: Request) {
     // jalan yang ia punya untuk mulai. Batas per-proyek tetap ditegakkan POST
     // dan DELETE, yang memang tahu proyek mana yang dimaksud.
     canGrant: guard.canGrant,
-    canSetClass: me?.role === "admin",
+    // Satu wewenang, satu nama. Ia menentukan dua hal yang keduanya berlaku
+    // global — mengubah kelas akun dan menghapus akun — jadi menamainya menurut
+    // salah satunya akan menyesatkan pemakai berikutnya.
+    isGlobalAdmin: await isGlobalAdmin(service, guard.userId),
   });
 }
 
@@ -330,13 +330,7 @@ async function requireGlobalAdmin() {
     return { error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
   }
 
-  const { data } = await createServiceClient()
-    .from("users")
-    .select("role, is_active")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (data?.role !== "admin" || data?.is_active === false) {
+  if (!(await isGlobalAdmin(createServiceClient(), user.id))) {
     return {
       error: NextResponse.json(
         { error: "hanya admin global yang boleh mengubah kelas akun" },

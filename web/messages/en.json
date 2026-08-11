@@ -167,7 +167,10 @@
       "standard_only": "Standards only",
       "no_standard": "Full, without Standards"
     },
-    "notAdminViewOnly": "Your account class covers the Standards & Regulations page only, so there is no project to manage here. If that looks wrong, ask an admin to change your account class."
+    "notAdminViewOnly": "Your account class covers the Standards & Regulations page only, so there is no project to manage here. If that looks wrong, ask an admin to change your account class.",
+    "delete": "Delete",
+    "deleteConfirm": "Delete the account \"{name}\" entirely? Its login and data are removed, and this cannot be undone.",
+    "deleteFailed": "Could not delete the account"
   },
   "auth": {
     "login": "Sign in",

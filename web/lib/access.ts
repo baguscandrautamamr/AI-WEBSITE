@@ -250,3 +250,32 @@ export async function roleForProject(
     .maybeSingle();
   return (data?.role as Role) ?? null;
 }
+
+/**
+ * Admin GLOBAL — `users.role = 'admin'`, bukan admin sebuah proyek.
+ *
+ * Pembedaan ini bukan kerapian. "Admin di setidaknya satu proyek" adalah syarat
+ * yang bisa dipenuhi siapa pun: membuat proyek menjadikan pembuatnya admin di
+ * situ. Jadi apa pun yang berlaku GLOBAL — kelas akun, menghapus akun — tidak
+ * boleh bergantung pada syarat itu, atau ia bukan syarat sama sekali.
+ *
+ * Butuh service role: `users_self_read` hanya mengembalikan baris sendiri, dan
+ * meski yang ditanyakan di sini memang baris sendiri, peran global tidak boleh
+ * bergantung pada policy yang bisa berubah.
+ *
+ * `is_active` ikut diperiksa di sini walaupun belum diperiksa saat login — akun
+ * yang sudah dinonaktifkan tidak boleh tetap memegang wewenang yang paling luas.
+ */
+export async function isGlobalAdmin(
+  service: SupabaseClient,
+  userId: string
+): Promise<boolean> {
+  const { data } = await service
+    .from("users")
+    .select("role, is_active")
+    .eq("id", userId)
+    .maybeSingle();
+
+  const row = data as { role?: unknown; is_active?: unknown } | null;
+  return row?.role === "admin" && row?.is_active !== false;
+}

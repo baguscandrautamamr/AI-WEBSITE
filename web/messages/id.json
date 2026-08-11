@@ -167,7 +167,10 @@
       "standard_only": "Hanya Standar",
       "no_standard": "Penuh, tanpa Standar"
     },
-    "notAdminViewOnly": "Kelas akunmu hanya mencakup halaman Standar & Regulasi, jadi tidak ada proyek yang bisa dikelola dari sini. Kalau ini keliru, minta admin mengubah kelas akunmu."
+    "notAdminViewOnly": "Kelas akunmu hanya mencakup halaman Standar & Regulasi, jadi tidak ada proyek yang bisa dikelola dari sini. Kalau ini keliru, minta admin mengubah kelas akunmu.",
+    "delete": "Hapus",
+    "deleteConfirm": "Hapus akun \"{name}\" seluruhnya? Identitas login dan datanya dihapus, dan ini tidak bisa dibatalkan.",
+    "deleteFailed": "Gagal menghapus akun"
   },
   "auth": {
     "login": "Masuk",
