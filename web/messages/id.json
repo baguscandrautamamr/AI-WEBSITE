@@ -198,7 +198,8 @@
     "sinceDays": "{n} hari lalu",
     "cancel": "Batalkan perintah ini",
     "cancelFailed": "Gagal membatalkan perintah",
-    "crossroadDryRun": "\"Uji coba saja\" sedang dicentang, dan perintah modifikasi tidak punya uji coba — jadi menata ulang dari sini akan benar-benar mengubah model. Hilangkan centangnya dulu kalau memang mau menata ulang."
+    "crossroadDryRun": "\"Uji coba saja\" sedang dicentang, dan perintah modifikasi tidak punya uji coba — jadi menata ulang dari sini akan benar-benar mengubah model. Hilangkan centangnya dulu kalau memang mau menata ulang.",
+    "familyUnknown": "Nama ini tidak ada di daftar family model. Add-in tidak akan mengeluh — ia memakai family bawaannya, dan yang salah baru terlihat di gambar."
   },
   "chat": {
     "placeholder": "mis. pasang 6 lampu di Meeting 1 tinggi 3 meter",
@@ -212,7 +213,12 @@
     "sendingToRevit": "Mengirim ke antrean Revit…",
     "notSent": "TIDAK terkirim",
     "held": "Ditahan — tidak ada yang dikirim ke Revit.",
-    "nothingSent": "Tidak ada perintah yang dikirim ke Revit oleh giliran ini. Kalau memang mau dijalankan, minta sekali lagi dengan lebih tegas."
+    "nothingSent": "Tidak ada perintah yang dikirim ke Revit oleh giliran ini. Kalau memang mau dijalankan, minta sekali lagi dengan lebih tegas.",
+    "chooseFamily": "Family {what} mana yang dipakai?",
+    "chooseGuessed": "(yang saya isi tadi, “{name}”, tidak ada di model)",
+    "chooseDefault": "Biarkan add-in yang pilih",
+    "chosen": "Dipakai: {name}",
+    "openForm": "Ubah di formulir"
   },
   "importExcel": {
     "title": "Import Excel",

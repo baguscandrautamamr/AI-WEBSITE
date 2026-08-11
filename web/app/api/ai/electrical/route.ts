@@ -7,6 +7,7 @@ import { anthropic, MODEL } from "@/lib/anthropic";
 import { ELECTRICAL_SYSTEM_PROMPT, mentionsCommand, toolsForRole, withModelContext } from "@/lib/aiTools";
 import { COMMANDS_BY_NAME, canRun } from "@/lib/commands";
 import { CommandValidationError, buildPayload } from "@/lib/queue";
+import { resolveFamilies } from "@/lib/familyChoice";
 
 export const runtime = "nodejs";
 
@@ -169,11 +170,30 @@ export async function POST(req: Request) {
   // pasti ditolak server ketahuan di sini — lengkap dengan alasannya, sehingga
   // pengguna bisa melengkapinya di form tanpa menebak.
   try {
-    const { commandText } = buildPayload(spec, values);
+    // Nama family yang ditebak diperiksa terhadap isi model yang sebenarnya
+    // SEBELUM perintahnya boleh berangkat. "Lampu downlight" tidak menyebut
+    // family mana pun; model memilih yang paling masuk akal, dan yang paling
+    // masuk akal bukan selalu yang benar. Add-in tidak pernah mengeluh soal
+    // nama yang tidak ketemu — ia memakai bawaannya dan melaporkan sukses.
+    const resolved = resolveFamilies(spec, values, body.context?.familyTypes);
+
+    if (resolved.question) {
+      // Ditahan, dan daftarnya ditawarkan di percakapan — satu ketukan, bukan
+      // mengisi ulang formulir.
+      return NextResponse.json({
+        kind: "choose",
+        command: spec.name,
+        values: resolved.values,
+        note: text || null,
+        ...resolved.question,
+      });
+    }
+
+    const { commandText } = buildPayload(spec, resolved.values);
     return NextResponse.json({
       kind: "command",
       command: spec.name,
-      values,
+      values: resolved.values,
       commandText,
       confirm: Boolean(spec.confirm),
       note: text || null,

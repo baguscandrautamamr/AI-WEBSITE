@@ -76,6 +76,26 @@ dikirim, dinormalkan di `buildPayload` (bukan di form) supaya perintah dari
 percakapan ikut terkena, dan daftar yang masuk prompt AI juga berisi nama family
 saja. Bentuk ini sama dengan contoh di katalog: `fixture_type=act_e_downlight`.
 
+**Tebakan family diperiksa, bukan diteruskan.** "Pasang lampu downlight" tidak
+menyebut family mana pun, dan model harus memilih satu — lalu tebakannya
+berangkat tanpa ada yang memeriksanya. `web/lib/familyChoice.ts` mencocokkannya
+dengan isi model yang sebenarnya sebelum perintahnya boleh jalan: cocok persis
+(atau satu-satunya yang mendekati, "downlight" untuk satu family downlight) →
+ejaannya dirapikan jadi ejaan model dan perintahnya berangkat; beberapa kandidat
+atau tidak ada sama sekali → perintahnya DITAHAN dan daftarnya muncul sebagai
+tombol di percakapan. Satu ketukan, bukan membuka formulir dan mengisi ulang.
+Yang memilih tetap orangnya — hanya dia yang tahu family mana yang benar untuk
+proyeknya — dan "biarkan add-in yang pilih" tetap ada sebagai pilihan yang
+dinyatakan, bukan yang terjadi karena tidak ada yang menjawab. Di formulir,
+nama yang diketik sendiri dan tidak ada di daftar model diberi peringatan dengan
+alasan yang sama.
+
+**Formulir hanya terbuka kalau diminta.** Usulan dari percakapan dulu langsung
+mengisi dan membuka formulir di bawahnya; percakapan itu sudah menyusun
+perintahnya, jadi yang tersisa cuma satu layar penuh yang harus dilewati untuk
+sampai ke hasil. Sekarang gelembungnya punya tombol "Ubah di formulir", dan
+formulirnya muncul saat tombol itu — atau tombol perintah di atas — ditekan.
+
 **Setiap perintah perangkat bisa memilih family, bukan cuma lampu dan saklar.**
 Kolom "Tipe" di sebelahnya bukan penggantinya: ia daftar tertutup yang menyatakan
 maksud (`double_grounded`, `dual`, `dome`) dan add-in menerjemahkannya ke family

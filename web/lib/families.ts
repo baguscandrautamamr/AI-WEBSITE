@@ -173,6 +173,40 @@ export function familyTypesFor(
   return found;
 }
 
+/**
+ * Mencocokkan sebuah nama dengan family yang ada di model.
+ *
+ * Longgar dengan sengaja: yang mengetiknya bisa manusia yang menyingkat, bisa
+ * model bahasa yang menyalin bentuk tampilan Revit lengkap dengan ": Tipe"-nya.
+ * Yang TIDAK boleh terjadi adalah menerima nama yang tidak ada lalu
+ * meneruskannya — add-in tidak menjawab "family tidak ditemukan", ia diam-diam
+ * memakai bawaannya, dan kesalahannya baru muncul sebagai gambar yang salah.
+ *
+ * `exact` — satu nama yang jelas. `many` — beberapa kandidat, yang harus
+ * ditanyakan. `none` — tidak ada yang mendekati, jadi seluruh daftar kategori
+ * itu yang ditawarkan.
+ */
+export function matchFamily(
+  families: RevitFamily[],
+  query: string
+): { kind: "exact"; name: string } | { kind: "many" | "none"; choices: string[] } {
+  const wanted = normalize(familyNameOf(query));
+  if (!wanted) return { kind: "none", choices: families.map((f) => f.name) };
+
+  const exact = families.find((f) => normalize(f.name) === wanted);
+  if (exact) return { kind: "exact", name: exact.name };
+
+  // "downlight" untuk "ACT_E_DOWNLIGHT 22WATT" — sebutan yang wajar, dan satu
+  // kandidat berarti tidak ada yang perlu ditanyakan.
+  const near = families.filter(
+    (f) => normalize(f.name).includes(wanted) || wanted.includes(normalize(f.name))
+  );
+  if (near.length === 1) return { kind: "exact", name: near[0].name };
+  if (near.length > 1) return { kind: "many", choices: near.map((f) => f.name) };
+
+  return { kind: "none", choices: families.map((f) => f.name) };
+}
+
 /** Kategori mana saja yang benar-benar punya family di model ini. */
 export function categoriesWithFamilies(
   familyTypes: Record<string, string[]> | undefined | null

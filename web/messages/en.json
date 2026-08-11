@@ -198,7 +198,8 @@
     "sinceDays": "{n} d ago",
     "cancel": "Cancel this command",
     "cancelFailed": "Could not cancel the command",
-    "crossroadDryRun": "\"Dry run\" is checked, and the modify command has no dry run — so re-laying out from here would really change the model. Clear the checkbox first if that is what you want."
+    "crossroadDryRun": "\"Dry run\" is checked, and the modify command has no dry run — so re-laying out from here would really change the model. Clear the checkbox first if that is what you want.",
+    "familyUnknown": "This name is not in the model's family list. The add-in will not complain — it falls back to its own default, and the mistake only shows up in the drawing."
   },
   "chat": {
     "placeholder": "e.g. place 6 lights in Meeting 1 at 3 m",
@@ -212,7 +213,12 @@
     "sendingToRevit": "Sending to the Revit queue…",
     "notSent": "NOT sent",
     "held": "Held — nothing was sent to Revit.",
-    "nothingSent": "This turn sent no command to Revit. If you do want it run, ask once more, plainly."
+    "nothingSent": "This turn sent no command to Revit. If you do want it run, ask once more, plainly.",
+    "chooseFamily": "Which {what} family should be used?",
+    "chooseGuessed": "(the one I filled in, “{name}”, is not in the model)",
+    "chooseDefault": "Let the add-in pick",
+    "chosen": "Using: {name}",
+    "openForm": "Edit in the form"
   },
   "importExcel": {
     "title": "Import Excel",

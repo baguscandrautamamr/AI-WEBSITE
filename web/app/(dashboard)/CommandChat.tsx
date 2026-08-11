@@ -32,6 +32,29 @@ export type ChatBody =
        */
       state?: "sending" | "queued" | "failed" | "held";
       error?: string;
+      /** Nilai yang dipakai, supaya bisa dibuka ulang di formulir. */
+      values?: Record<string, unknown>;
+    }
+  /**
+   * Family mana yang dipakai — ditanyakan, bukan ditebak.
+   *
+   * "Pasang lampu downlight" tidak menyebut family mana pun, dan model harus
+   * memilih satu. Tebakannya tidak pernah dikoreksi siapa pun: add-in yang tidak
+   * menemukan nama itu memakai family bawaannya dan melaporkan sukses, jadi yang
+   * salah baru terlihat di gambar. Daftarnya ditawarkan di sini supaya
+   * menjawabnya satu ketukan — bukan membuka formulir dan mengisi ulang.
+   */
+  | {
+      role: "choice";
+      text: string;
+      command: string;
+      values: Record<string, unknown>;
+      field: string;
+      category: string;
+      guessed: string;
+      choices: string[];
+      /** Sudah dijawab; tombolnya tinggal jejak. */
+      answered?: string;
     };
 
 export type ChatEntry = ChatBody & { id: number };
@@ -55,11 +78,17 @@ export default function CommandChat({
   busy,
   disabled,
   onSend,
+  onChoose,
+  onOpenForm,
 }: {
   entries: ChatEntry[];
   busy: boolean;
   disabled: boolean;
   onSend: (message: string) => void;
+  /** Family dipilih dari daftar; `null` berarti biarkan add-in yang memilih. */
+  onChoose: (entry: ChatEntry & { role: "choice" }, family: string | null) => void;
+  /** Membuka formulir dengan isian perintah ini — hanya kalau diminta. */
+  onOpenForm: (command: string, values: Record<string, unknown>) => void;
 }) {
   const { t } = useI18n();
   const [input, setInput] = useState("");
@@ -110,6 +139,54 @@ export default function CommandChat({
               );
             }
 
+            if (e.role === "choice") {
+              return (
+                <div key={e.id} className="glass-input max-w-[92%] space-y-2 rounded-2xl text-sm">
+                  {e.text && <Markdown>{e.text}</Markdown>}
+                  <p className="text-xs">
+                    {t("chat.chooseFamily").replace("{what}", e.category)}
+                    {e.guessed && (
+                      <span className="opacity-60">
+                        {" "}
+                        {t("chat.chooseGuessed").replace("{name}", e.guessed)}
+                      </span>
+                    )}
+                  </p>
+
+                  {e.answered ? (
+                    <p className="text-xs opacity-70">
+                      {t("chat.chosen").replace(
+                        "{name}",
+                        e.answered === "" ? t("chat.chooseDefault") : e.answered
+                      )}
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {e.choices.map((name) => (
+                        <button
+                          key={name}
+                          type="button"
+                          onClick={() => onChoose(e, name)}
+                          className="glass-input px-2.5 py-1 text-xs hover:opacity-80"
+                        >
+                          {name}
+                        </button>
+                      ))}
+                      {/* Membiarkan add-in memilih tetap pilihan yang sah — dan
+                          dinyatakan, bukan terjadi karena tidak ada yang menjawab. */}
+                      <button
+                        type="button"
+                        onClick={() => onChoose(e, null)}
+                        className="px-2.5 py-1 text-xs text-accent underline"
+                      >
+                        {t("chat.chooseDefault")}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
             return (
               <div key={e.id} className="glass-input max-w-[92%] space-y-2 rounded-2xl text-sm">
                 {e.text && <Markdown>{e.text}</Markdown>}
@@ -135,6 +212,20 @@ export default function CommandChat({
                   // Masih dalam perjalanan ke commands_queue. Belum boleh disebut
                   // terkirim, karena penulisannya masih bisa gagal.
                   <p className="text-xs opacity-60">{t("chat.sendingToRevit")}</p>
+                )}
+
+                {/* Formulirnya dibuka hanya kalau diminta.
+                    Percakapan ini sudah menyusun perintahnya; formulir yang
+                    terbuka sendiri di bawah cuma satu layar penuh yang harus
+                    dilewati untuk sampai ke hasil. */}
+                {e.command && e.values && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenForm(e.command!, e.values!)}
+                    className="text-xs text-accent underline"
+                  >
+                    {t("chat.openForm")}
+                  </button>
                 )}
               </div>
             );
