@@ -64,9 +64,49 @@ pemeriksaan yang hanya ada di salah satunya bisa dilewati dengan mengetik
 kalimat. Dilewati kalau Revit tidak menjawab — pemeriksaan tambahan tidak boleh
 jadi alasan perintahnya tertahan.
 
-**Nama family dipilih dari model, tidak diketik.** `model_info` mengembalikan
-`family_types`; `web/lib/families.ts` mencocokkan kuncinya dengan kategori yang
-disebut katalog (`familyCategory` pada field), tahan terhadap ejaan — huruf
+**Yang dikirim adalah nama family, bukan bentuk tampilan Revit.** `model_info`
+melaporkan tipe sebagai `Family: Type` — "ACT_E_DOWNLIGHT 22WATT: DOWNLIGHT 22
+WATT". Itu cara Revit MENAMPILKAN sebuah FamilySymbol, bukan nilai yang bisa
+dicocokkan kembali: perintah dengan `fixture_type="ACT_E_DOWNLIGHT 22WATT:
+DOWNLIGHT 22 WATT"` berjalan tanpa galat, melaporkan sepuluh armatur terpasang,
+dan yang benar-benar terpasang adalah family bawaan add-in — RECESSED 600x600,
+bukan downlight yang diminta. Kegagalan pencocokan namanya tidak diteruskan ke
+mana pun; ia hanya jadi gambar yang salah. Jadi bagian sebelum titik dua yang
+dikirim, dinormalkan di `buildPayload` (bukan di form) supaya perintah dari
+percakapan ikut terkena, dan daftar yang masuk prompt AI juga berisi nama family
+saja. Bentuk ini sama dengan contoh di katalog: `fixture_type=act_e_downlight`.
+
+**Tebakan family diperiksa, bukan diteruskan.** "Pasang lampu downlight" tidak
+menyebut family mana pun, dan model harus memilih satu — lalu tebakannya
+berangkat tanpa ada yang memeriksanya. `web/lib/familyChoice.ts` mencocokkannya
+dengan isi model yang sebenarnya sebelum perintahnya boleh jalan: cocok persis
+(atau satu-satunya yang mendekati, "downlight" untuk satu family downlight) →
+ejaannya dirapikan jadi ejaan model dan perintahnya berangkat; beberapa kandidat
+atau tidak ada sama sekali → perintahnya DITAHAN dan daftarnya muncul sebagai
+tombol di percakapan. Satu ketukan, bukan membuka formulir dan mengisi ulang.
+Yang memilih tetap orangnya — hanya dia yang tahu family mana yang benar untuk
+proyeknya — dan "biarkan add-in yang pilih" tetap ada sebagai pilihan yang
+dinyatakan, bukan yang terjadi karena tidak ada yang menjawab. Di formulir,
+nama yang diketik sendiri dan tidak ada di daftar model diberi peringatan dengan
+alasan yang sama.
+
+**Formulir hanya terbuka kalau diminta.** Usulan dari percakapan dulu langsung
+mengisi dan membuka formulir di bawahnya; percakapan itu sudah menyusun
+perintahnya, jadi yang tersisa cuma satu layar penuh yang harus dilewati untuk
+sampai ke hasil. Sekarang gelembungnya punya tombol "Ubah di formulir", dan
+formulirnya muncul saat tombol itu — atau tombol perintah di atas — ditekan.
+
+**Setiap perintah perangkat bisa memilih family, bukan cuma lampu dan saklar.**
+Kolom "Tipe" di sebelahnya bukan penggantinya: ia daftar tertutup yang menyatakan
+maksud (`double_grounded`, `dual`, `dome`) dan add-in menerjemahkannya ke family
+bawaannya sendiri. Family mana yang benar untuk sebuah proyek hanya bisa
+ditentukan dari isi file .rvt-nya, dan untuk enam dari delapan kategori tidak ada
+cara menyatakannya sama sekali. Sekarang semuanya punya kolom `family` yang berisi
+family kategori itu dari model yang terbuka. Kosong = bawaan add-in, persis
+seperti sebelumnya.
+
+**Kategori family dinyatakan, tidak diterka.** `web/lib/families.ts` mencocokkan
+kunci `family_types` dengan `familyCategory` di katalog, tahan ejaan — huruf
 besar-kecil, spasi, garis bawah, dan bentuk jamak diabaikan, karena add-in
 menamainya menurut kategori Revit ("Lighting Fixtures") sementara form menamai
 kolomnya menurut argumen perintah (`fixture_type`). Pemetaan sebelumnya adalah
@@ -318,6 +358,24 @@ ada di PC yang menjalankan Revit. Dengan ini, URL-nya ikut ditulis ke
 dianggap nama parameter. Jadi alurnya export → sunting di Excel → kirim balik.
 Centang "uji coba" untuk menjalankan lalu membatalkannya, dan lihat apa yang
 akan berubah sebelum benar-benar menulis ke model.
+
+## Yang belum bisa dipastikan dari repo ini
+
+Add-in Revit ada di repo `electrical_ai`, jadi dua hal di atas berdiri pada
+kesimpulan dari bukti, bukan dari kode yang bisa dibaca di sini:
+
+- **Bentuk nilai `fixture_type`/`family`.** Yang pasti: `Family: Type` TIDAK
+  cocok — perintah dengan bentuk itu memasang family bawaan add-in. Yang
+  disimpulkan: nama family saja yang cocok, mengikuti contoh di katalog
+  (`fixture_type=act_e_downlight`). Cara memastikannya: satu perintah dengan
+  centang "Uji coba saja", lalu lihat family apa yang dilaporkan.
+- **Apakah add-in menerima argumen `family` untuk keenam kategori baru.**
+  Presedennya `place_lighting_device`, yang sudah menerimanya sejak awal, dan
+  `model_info` memang melaporkan family untuk kedelapan kategori. Kalau ternyata
+  belum diterima, kegagalannya kelihatan — argumen yang tidak dikenal dijawab
+  add-in sebagai galat, bukan diabaikan diam-diam. Kolom yang dibiarkan kosong
+  tidak mengirim apa pun, jadi perintah yang tidak menyentuhnya berjalan persis
+  seperti sebelumnya.
 
 ## Yang belum ada
 

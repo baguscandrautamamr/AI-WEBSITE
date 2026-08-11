@@ -117,6 +117,31 @@ const mounting = (def: string): CommandField => ({
   label: { id: "Pemasangan", en: "Mounting" },
 });
 
+/**
+ * Family Revit yang dipakai perangkat ini, dipilih dari model yang terbuka.
+ *
+ * Ada di SETIAP perintah perangkat, bukan hanya lampu dan saklar. Kolom "Tipe"
+ * di sebelahnya bukan pengganti: ia daftar tertutup yang menyatakan MAKSUD —
+ * `double_grounded`, `dual`, `dome` — dan add-in menerjemahkannya ke family
+ * bawaannya sendiri. Family mana yang benar untuk sebuah proyek adalah
+ * keputusan yang hanya bisa diambil dari isi file .rvt-nya, dan sampai kolom ini
+ * ada, satu-satunya cara menyatakannya untuk enam dari delapan kategori adalah
+ * tidak ada sama sekali.
+ *
+ * Kosong berarti add-in memakai bawaannya, persis seperti sebelumnya — jadi
+ * perintah yang tidak menyentuh kolom ini berjalan sama seperti kemarin.
+ */
+const family = (category: FamilyCategory): CommandField => ({
+  name: "family",
+  type: "text",
+  familyCategory: category,
+  label: { id: "Family Revit", en: "Revit family" },
+  hint: {
+    id: "Dipilih dari family yang benar-benar ada di model. Kosongkan untuk memakai bawaan add-in.",
+    en: "Picked from the families actually loaded in the model. Leave empty to use the add-in's default.",
+  },
+});
+
 export const COMMANDS: CommandSpec[] = [
   // ---------------------------------------------------------------- devices
   {
@@ -217,6 +242,7 @@ export const COMMANDS: CommandSpec[] = [
         label: { id: "Tipe", en: "Type" },
         hint: { id: "three_gang = \"S3\" di gambar.", en: "three_gang is the \"S3\" on the drawing." },
       },
+      family("lighting_device"),
       { name: "count", type: "integer", default: 1, min: 1, max: 50, label: { id: "Jumlah", en: "Count" } },
       height(1.2),
       {
@@ -231,12 +257,6 @@ export const COMMANDS: CommandSpec[] = [
         type: "text",
         label: { id: "Mengendalikan", en: "Controls" },
         hint: { id: "id sirkuit, mark armatur, atau nama grup.", en: "A circuit id, fixture mark, or group name." },
-      },
-      {
-        name: "family",
-        type: "text",
-        familyCategory: "lighting_device",
-        label: { id: "Family Revit", en: "Revit family" },
       },
     ],
     example: "/place_lighting_device Meeting_1 type=three_gang count=1 controls=LF-001",
@@ -267,6 +287,7 @@ export const COMMANDS: CommandSpec[] = [
         options: ["single", "double", "grounded", "double_grounded", "gfci", "20a"],
         label: { id: "Tipe", en: "Type" },
       },
+      family("receptacle"),
       height(0.4),
       {
         name: "placement",
@@ -321,6 +342,7 @@ export const COMMANDS: CommandSpec[] = [
         options: ["smoke", "heat", "dual", "manual_call_point"],
         label: { id: "Tipe", en: "Type" },
       },
+      family("fire_alarm"),
       {
         name: "standard",
         type: "select",
@@ -372,6 +394,7 @@ export const COMMANDS: CommandSpec[] = [
         options: ["data", "voice", "data_voice"],
         label: { id: "Tipe", en: "Type" },
       },
+      family("telephone"),
       height(0.4),
     ],
     example: "/place_telephone Office_A type=data_voice count=2",
@@ -395,6 +418,7 @@ export const COMMANDS: CommandSpec[] = [
         options: ["1Gbps", "10Gbps", "PoE"],
         label: { id: "Tipe", en: "Type" },
       },
+      family("lan"),
       { name: "poe_enabled", type: "boolean", default: false, label: { id: "PoE aktif", en: "PoE enabled" } },
       { name: "switch_panel", type: "text", default: "SW-01", label: { id: "Panel switch", en: "Switch panel" } },
       height(0.4),
@@ -419,6 +443,7 @@ export const COMMANDS: CommandSpec[] = [
         options: ["camera", "motion_sensor", "door_sensor"],
         label: { id: "Tipe", en: "Type" },
       },
+      family("security"),
       {
         name: "camera_type",
         type: "select",
@@ -454,6 +479,7 @@ export const COMMANDS: CommandSpec[] = [
         options: ["speaker", "antenna", "microphone"],
         label: { id: "Tipe", en: "Type" },
       },
+      family("communication"),
       {
         name: "system",
         type: "select",

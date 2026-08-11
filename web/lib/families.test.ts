@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { categoriesWithFamilies, familyTypesFor } from "./families";
+import {
+  categoriesWithFamilies,
+  familiesFor,
+  familyNameOf,
+  familyTypesFor,
+} from "./families";
 import {
   COMMANDS,
   COMMANDS_BY_NAME,
@@ -193,5 +198,85 @@ describe("modifyValuesFrom", () => {
       fixture_type: "",
     });
     expect(out).toEqual({ room: "Lounge", what: "lighting" });
+  });
+});
+
+describe("familyNameOf", () => {
+  // `Family: Type` adalah cara Revit MENAMPILKAN sebuah tipe, dan itulah bentuk
+  // yang dikembalikan model_info. Mengirimkannya kembali sebagai argumen tidak
+  // cocok dengan apa pun: perintahnya berjalan tanpa galat, melaporkan sepuluh
+  // armatur terpasang, dan yang terpasang adalah family bawaan add-in.
+  it("mengambil nama family dari bentuk tampilan Revit", () => {
+    expect(familyNameOf("ACT_E_DOWNLIGHT 22WATT: DOWNLIGHT 22 WATT")).toBe(
+      "ACT_E_DOWNLIGHT 22WATT"
+    );
+    expect(familyNameOf("ACT_E_LIGHTING RECESSED 600x600_: RECESSED 600x600 NORMAL")).toBe(
+      "ACT_E_LIGHTING RECESSED 600x600_"
+    );
+  });
+
+  it("membiarkan nama yang memang sudah nama family", () => {
+    expect(familyNameOf("ACT_E_DOWNLIGHT 22WATT")).toBe("ACT_E_DOWNLIGHT 22WATT");
+    expect(familyNameOf("  Downlight  ")).toBe("Downlight");
+  });
+});
+
+describe("familiesFor", () => {
+  it("satu baris per family, dengan tipe di dalamnya", () => {
+    expect(
+      familiesFor(
+        {
+          "Lighting Fixtures": [
+            "ACT_E_DOWNLIGHT 22WATT: DOWNLIGHT 22 WATT",
+            "ACT_E_DOWNLIGHT 22WATT: DOWNLIGHT 18 WATT",
+            "ACT_E_TL 2x36W: TL 2x36",
+          ],
+        },
+        "lighting"
+      )
+    ).toEqual([
+      { name: "ACT_E_DOWNLIGHT 22WATT", types: ["DOWNLIGHT 22 WATT", "DOWNLIGHT 18 WATT"] },
+      { name: "ACT_E_TL 2x36W", types: ["TL 2x36"] },
+    ]);
+  });
+
+  it("bekerja untuk kedelapan kategori perangkat", () => {
+    const model = {
+      "Lighting Fixtures": ["A: 1"],
+      "Lighting Devices": ["B: 1"],
+      "Electrical Fixtures": ["C: 1"],
+      "Fire Alarm Devices": ["D: 1"],
+      "Telephone Devices": ["E: 1"],
+      "Data Devices": ["F: 1"],
+      "Security Devices": ["G: 1"],
+      "Communication Devices": ["H: 1"],
+    };
+
+    const got = [
+      "lighting",
+      "lighting_device",
+      "receptacle",
+      "fire_alarm",
+      "telephone",
+      "lan",
+      "security",
+      "communication",
+    ].map((category) => familiesFor(model, category).map((f) => f.name));
+
+    expect(got).toEqual([["A"], ["B"], ["C"], ["D"], ["E"], ["F"], ["G"], ["H"]]);
+  });
+});
+
+describe("katalog — setiap perintah perangkat bisa memilih family", () => {
+  // Kolom "Tipe" adalah daftar tertutup yang menyatakan MAKSUD
+  // (double_grounded, dual, dome); ia tidak bisa menyebut family mana di file
+  // .rvt yang harus dipakai. Sebelum ini hanya lampu dan saklar yang punya
+  // kolomnya — enam kategori lain tidak punya cara menyatakannya sama sekali.
+  it("semua place_* punya kolom family yang menunjuk kategorinya sendiri", () => {
+    for (const spec of COMMANDS.filter((c) => c.name.startsWith("place_"))) {
+      const field = spec.fields.find((f) => f.familyCategory);
+      expect(field, spec.name).toBeTruthy();
+      expect(field!.familyCategory, spec.name).toBe(modifyCategoryFor(spec.name));
+    }
   });
 });

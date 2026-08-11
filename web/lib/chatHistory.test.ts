@@ -137,6 +137,32 @@ describe("turnsFromChat", () => {
     expect(turn.content).toContain("memanggil tool modify_devices");
   });
 
+  it("mencatat pertanyaan family beserta jawabannya", () => {
+    // Supaya giliran berikutnya tidak menebak nama yang sama lagi, dan supaya
+    // ejaan yang akhirnya dipilih ikut terbaca sebagai ejaan yang benar.
+    const [turn] = turnsFromChat([
+      {
+        role: "choice",
+        text: "",
+        command: "place_lighting",
+        guessed: "downlight",
+        answered: "ACT_E_DOWNLIGHT 22WATT",
+      },
+    ]);
+
+    expect(turn.role).toBe("assistant");
+    expect(turn.content).toContain("TIDAK dikirim");
+    expect(turn.content).toContain("downlight");
+    expect(turn.content).toContain("ACT_E_DOWNLIGHT 22WATT");
+  });
+
+  it("menyebut pertanyaan family yang belum dijawab apa adanya", () => {
+    const [turn] = turnsFromChat([
+      { role: "choice", text: "", command: "place_lighting", guessed: "LED_15W" },
+    ]);
+    expect(turn.content).toContain("belum menjawab");
+  });
+
   it("menyebutkan yang kurang untuk perintah yang tidak berangkat", () => {
     const [turn] = turnsFromChat([
       {

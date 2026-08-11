@@ -13,7 +13,7 @@ import {
   type CommandField,
   type CommandSpec,
 } from "@/lib/commands";
-import { familyTypesFor } from "@/lib/families";
+import { familiesFor, matchFamily, type RevitFamily } from "@/lib/families";
 import { autoGrid, awkwardCount, flip, formatGrid, friendlierCounts, gridCount, parseGrid } from "@/lib/grid";
 import { turnsFromChat } from "@/lib/chatHistory";
 import CommandChat, { type ChatBody, type ChatEntry } from "./CommandChat";
@@ -693,6 +693,80 @@ export default function CommandRunner({
     }
   }
 
+  /**
+   * Mengirim sebuah usulan dari percakapan, lalu mengoreksi gelembungnya dengan
+   * apa yang benar-benar terjadi.
+   *
+   * Dipakai dua kali: oleh usulan yang langsung berangkat, dan oleh jawaban atas
+   * pertanyaan "family mana". Keduanya harus melewati konfirmasi yang sama dan
+   * persimpangan "ruangan ini sudah berisi" yang sama.
+   */
+  async function runProposal(
+    bubble: number,
+    spec: CommandSpec,
+    vals: Record<string, unknown>
+  ) {
+    // Satu pertanyaan untuk yang tidak bisa dibatalkan. Kecepatan tidak
+    // sebanding dengan menghapus perangkat di model orang lain karena satu
+    // kalimat yang salah tafsir.
+    if (spec.confirm && !window.confirm(t("command.confirm"))) {
+      patchChat(bubble, { state: "held" });
+      return;
+    }
+
+    try {
+      const queued = await dispatch(spec, vals);
+      // null = orangnya membatalkan di persimpangan "ruangan ini sudah berisi".
+      if (!queued) {
+        patchChat(bubble, { state: "held" });
+        return;
+      }
+      // Teks perintahnya diperbarui: yang berangkat bisa berbeda dari yang
+      // diusulkan — modifikasi alih-alih penambahan, dan grid yang dihitung
+      // dari jumlahnya. Gelembung ini harus menyebut yang benar-benar dikirim.
+      patchChat(bubble, { state: "queued", commandText: queued.commandText });
+    } catch (err) {
+      const withIssues = err as Error & { issues?: string[] };
+      patchChat(bubble, {
+        state: "failed",
+        error: withIssues.issues?.join(" ") ?? withIssues.message ?? t("command.sendFailed"),
+      });
+    }
+  }
+
+  /**
+   * Jawaban atas "family mana yang dipakai".
+   *
+   * `null` berarti biarkan add-in yang memilih — pilihan yang sah, dan sekarang
+   * dinyatakan alih-alih terjadi karena tidak ada yang menjawab.
+   */
+  async function chooseFamily(entry: ChatEntry & { role: "choice" }, familyName: string | null) {
+    patchChat(entry.id, { answered: familyName ?? "" });
+
+    const spec = COMMANDS_BY_NAME[entry.command];
+    if (!spec) return;
+
+    const vals = { ...entry.values };
+    if (familyName) vals[entry.field] = familyName;
+    else delete vals[entry.field];
+
+    const bubble = addChat({
+      role: "proposal",
+      text: "",
+      commandText: `/${spec.name}`,
+      command: spec.name,
+      values: vals,
+      state: "sending",
+    });
+
+    setChatBusy(true);
+    try {
+      await runProposal(bubble, spec, vals);
+    } finally {
+      setChatBusy(false);
+    }
+  }
+
   /** Satu giliran percakapan: kalimat masuk, usulan perintah keluar. */
   async function sendChat(message: string) {
     if (!project) return;
@@ -737,11 +811,24 @@ export default function CommandRunner({
         return;
       }
 
-      // Form tetap diisi, tapi ia bukan lagi gerbang yang harus dilewati: ia
-      // jadi tempat memperbaiki satu angka lalu menjalankan ulang.
-      const spec = COMMANDS_BY_NAME[body.command];
-      if (spec) pick(spec, body.values ?? {});
+      // Family yang ditebak model tidak cocok dengan satu pun family di model.
+      // Perintahnya ditahan dan daftarnya ditawarkan sebagai tombol — dijawab
+      // satu ketukan, tanpa membuka formulir dan mengisi ulang.
+      if (body.kind === "choose") {
+        addChat({
+          role: "choice",
+          text: body.note ?? "",
+          command: body.command,
+          values: body.values ?? {},
+          field: body.field,
+          category: body.category,
+          guessed: body.guessed ?? "",
+          choices: body.choices ?? [],
+        });
+        return;
+      }
 
+      const spec = COMMANDS_BY_NAME[body.command];
       const incomplete = Boolean(body.issues?.length);
 
       const bubble = addChat({
@@ -749,6 +836,7 @@ export default function CommandRunner({
         text: body.note ?? "",
         commandText: body.commandText ?? `/${body.command}`,
         command: body.command,
+        values: body.values ?? {},
         issues: body.issues,
         // Belum "terkirim". Baris antreannya baru ada beberapa ratus milidetik
         // dari sekarang, dan penulisannya masih bisa gagal.
@@ -766,45 +854,12 @@ export default function CommandRunner({
         return;
       }
 
-      // Langsung berangkat, seperti bot Telegram.
-      //
-      // Satu kalimat, satu perintah, hasilnya balik ke utas yang sama.
-      // Sebelumnya usulannya berhenti di form dan orangnya masih harus menekan
-      // kirim di sana — dua langkah untuk satu maksud, dan di telepon langkah
-      // kedua itu berada di luar layar, jadi yang terasa adalah chat yang
-      // mengerti permintaan lalu tidak melakukan apa-apa.
-      //
       // Yang kurang lengkap tidak dikirim: daftar `issues` di gelembungnya
       // menyebutkan apa yang belum disebut, dan menebak sisanya berarti
       // menempatkan perangkat dengan angka yang tidak pernah diminta siapa pun.
       if (incomplete) return;
 
-      // Satu pertanyaan untuk yang tidak bisa dibatalkan. Kecepatan tidak
-      // sebanding dengan menghapus perangkat di model orang lain karena satu
-      // kalimat yang salah tafsir.
-      if (spec.confirm && !window.confirm(t("command.confirm"))) {
-        patchChat(bubble, { state: "held" });
-        return;
-      }
-
-      try {
-        const queued = await dispatch(spec, body.values ?? {});
-        // null = orangnya membatalkan di persimpangan "ruangan ini sudah berisi".
-        if (!queued) {
-          patchChat(bubble, { state: "held" });
-          return;
-        }
-        // Teks perintahnya diperbarui: yang berangkat bisa berbeda dari yang
-        // diusulkan — modifikasi alih-alih penambahan, dan grid yang dihitung
-        // dari jumlahnya. Gelembung ini harus menyebut yang benar-benar dikirim.
-        patchChat(bubble, { state: "queued", commandText: queued.commandText });
-      } catch (err) {
-        const withIssues = err as Error & { issues?: string[] };
-        patchChat(bubble, {
-          state: "failed",
-          error: withIssues.issues?.join(" ") ?? withIssues.message ?? t("command.sendFailed"),
-        });
-      }
+      await runProposal(bubble, spec, body.values ?? {});
     } catch (err) {
       addChat({ role: "assistant", text: err instanceof Error ? err.message : String(err) });
     } finally {
@@ -916,12 +971,6 @@ export default function CommandRunner({
   const knownContents =
     roomValue && focusCategory ? (roomContents[contentsKey(roomValue, focusCategory)] ?? null) : null;
 
-  /** Family armatur yang benar-benar termuat di model yang sedang terbuka. */
-  const lightingFamilies = useMemo(
-    () => familyTypesFor(model?.familyTypes, "lighting"),
-    [model]
-  );
-
   if (projectsLoading) return <p className="opacity-60">{t("common.loading")}</p>;
 
   if (!projects.length) {
@@ -997,27 +1046,6 @@ export default function CommandRunner({
           )}
         </div>
 
-        {/* Family armatur yang benar-benar termuat di file ini.
-            Ada di sini, di luar formulir, karena ini pertanyaan yang muncul
-            SEBELUM memilih perintah: "lampu apa saja yang tersedia di model
-            ini". Tanpa daftar, satu-satunya jawabannya adalah mengetik nama dari
-            ingatan — dan nama family yang salah baru ditolak Revit beberapa menit
-            kemudian, dengan gambar yang tetap kosong. */}
-        {lightingFamilies.length > 0 && (
-          <details className="text-xs">
-            <summary className="cursor-pointer opacity-70">
-              {t("command.familiesTitle").replace("{n}", String(lightingFamilies.length))}
-            </summary>
-            <ul className="mt-2 max-h-40 space-y-0.5 overflow-auto">
-              {lightingFamilies.map((name) => (
-                <li key={name} className="break-all opacity-75">
-                  <code>{name}</code>
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-
         {/* Tombol per command — inilah yang menembak ke add-in Revit.
             Satu baris yang bisa digeser di telepon: dibungkus jadi lima baris,
             deretan ini mendorong formulirnya sejauh satu layar penuh ke bawah. */}
@@ -1046,6 +1074,11 @@ export default function CommandRunner({
           busy={chatBusy}
           disabled={!project}
           onSend={sendChat}
+          onChoose={chooseFamily}
+          onOpenForm={(command, values) => {
+            const spec = COMMANDS_BY_NAME[command];
+            if (spec) pick(spec, values);
+          }}
         />
       )}
 
@@ -1270,8 +1303,8 @@ function familyOptionsFor(
   field: CommandField,
   values: Record<string, unknown>,
   model: ModelInfo | null
-): string[] {
-  return familyTypesFor(model?.familyTypes, familyCategoryOf(field, values));
+): RevitFamily[] {
+  return familiesFor(model?.familyTypes, familyCategoryOf(field, values));
 }
 
 /**
@@ -1664,7 +1697,7 @@ function Field({
    * "Tipe armatur" selalu berupa kotak teks, dan satu-satunya cara mengisinya
    * adalah mengetik nama family dari ingatan.
    */
-  familyOptions: string[];
+  familyOptions: RevitFamily[];
   /** Keterangan tambahan di bawah kolom, mis. grid yang dihitung dari jumlah. */
   extra?: React.ReactNode;
   onChange: (v: unknown) => void;
@@ -1681,6 +1714,14 @@ function Field({
 
   /** Kolom ini memang kolom nama family, entah daftarnya sudah terbaca atau belum. */
   const isFamilyField = Boolean(field.familyCategory || field.familyCategoryFrom);
+
+  /** Diketik sendiri, dan tidak ada satu pun family di model yang bernama begitu. */
+  const unknownFamily =
+    isFamilyField &&
+    typeof value === "string" &&
+    value.trim() !== "" &&
+    typeOptions.length > 0 &&
+    matchFamily(typeOptions, value).kind !== "exact";
 
   // Pilihan yang hanya diketahui model yang sedang terbuka.
   if (field.optionsFrom) {
@@ -1838,9 +1879,15 @@ function Field({
             }}
           >
             <option value="">{t("command.typePick")}</option>
-            {typeOptions.map((name) => (
-              <option key={name} value={name}>
-                {name}
+            {/* Nilainya nama family saja, tanpa ": Tipe" di belakangnya.
+                Bentuk `Family: Type` adalah cara Revit MENAMPILKAN sebuah tipe,
+                dan mengirimkannya kembali sebagai argumen tidak cocok dengan apa
+                pun: perintahnya tetap berjalan, tetap melaporkan sepuluh armatur
+                terpasang, dan yang terpasang adalah family bawaan add-in. */}
+            {typeOptions.map((option) => (
+              <option key={option.name} value={option.name}>
+                {option.name}
+                {option.types.length > 1 ? ` (${option.types.length} tipe)` : ""}
               </option>
             ))}
             {/* Jalan keluar, bukan jalan utama: daftar ini hanya sebaik model
@@ -1890,6 +1937,15 @@ function Field({
           {isFamilyField && typeOptions.length === 0 && (
             <span className="block text-xs opacity-55">
               {model ? t("command.familiesNone") : t("command.familiesAsk")}
+            </span>
+          )}
+          {/* Nama yang diketik sendiri dan tidak ada di daftar model.
+              Add-in tidak menjawab "family tidak ditemukan" — ia memakai
+              bawaannya lalu melaporkan sukses, jadi kalau tidak dikatakan di
+              sini, tidak dikatakan di mana pun sampai gambarnya dilihat. */}
+          {isFamilyField && typeOptions.length > 0 && unknownFamily && (
+            <span className="block text-xs text-amber-600 dark:text-amber-400">
+              {t("command.familyUnknown")}
             </span>
           )}
         </>

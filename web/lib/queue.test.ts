@@ -305,3 +305,49 @@ describe("enqueueCommand", () => {
     expect(insert).not.toHaveBeenCalled();
   });
 });
+
+describe("buildPayload — nama family", () => {
+  // model_info melaporkan tipe dalam bentuk tampilan Revit, `Family: Type`, dan
+  // itulah yang disalin asisten ke argumennya. Perintahnya berjalan tanpa galat,
+  // melaporkan sepuluh armatur terpasang — dan yang terpasang adalah family
+  // bawaan add-in, bukan yang diminta. Dinormalkan di sini, bukan di form, supaya
+  // perintah dari percakapan ikut terkena.
+  it("mengirim nama family saja, bukan bentuk tampilan Revit", () => {
+    const { payload, commandText } = buildPayload(spec("place_lighting"), {
+      room: "LOUNGE 5",
+      count: 10,
+      fixture_type: "ACT_E_DOWNLIGHT 22WATT: DOWNLIGHT 22 WATT",
+    });
+
+    expect(payload.fixture_type).toBe("ACT_E_DOWNLIGHT 22WATT");
+    expect(commandText).toContain('fixture_type="ACT_E_DOWNLIGHT 22WATT"');
+    expect(commandText).not.toContain("DOWNLIGHT 22 WATT\"");
+  });
+
+  it("berlaku untuk kolom family di setiap perintah perangkat", () => {
+    const { payload } = buildPayload(spec("place_receptacle"), {
+      room: "Office A",
+      count: 4,
+      family: "ACT_E_SOCKET: SOCKET 2P+E",
+    });
+    expect(payload.family).toBe("ACT_E_SOCKET");
+  });
+
+  it("berlaku untuk modify_devices, yang kategorinya ikut kolom what", () => {
+    const { payload } = buildPayload(spec("modify_devices"), {
+      room: "Lounge",
+      what: "lighting",
+      count: 6,
+      fixture_type: "ACT_E_DOWNLIGHT 22WATT: DOWNLIGHT 22 WATT",
+    });
+    expect(payload.fixture_type).toBe("ACT_E_DOWNLIGHT 22WATT");
+  });
+
+  it("tidak menyentuh kolom lain yang kebetulan mengandung titik dua", () => {
+    const { payload } = buildPayload(spec("create_cable_tray"), {
+      tray_id: "CT-A1",
+      follow: "Thin Lines: A",
+    });
+    expect(payload.follow).toBe("Thin Lines: A");
+  });
+});

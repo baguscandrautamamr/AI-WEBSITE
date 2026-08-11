@@ -43,12 +43,15 @@ function push(turns: Turn[], role: Turn["role"], content: string) {
  * dan menautkannya ke tipe UI berarti ia tidak bisa diuji tanpa merender React.
  */
 export interface ChatBubble {
-  role: "user" | "assistant" | "proposal";
+  role: "user" | "assistant" | "proposal" | "choice";
   text: string;
   commandText?: string;
   /** Nama tool yang dipanggil, mis. `place_lighting`. */
   command?: string;
   issues?: string[];
+  /** Gelembung `choice`: family yang ditebak, dan yang akhirnya dipilih orangnya. */
+  guessed?: string;
+  answered?: string;
 }
 
 /**
@@ -91,6 +94,23 @@ export function turnsFromChat(entries: readonly ChatBubble[]): Turn[] {
     if (entry.role === "assistant") return { role: "assistant" as const, content: entry.text };
 
     const tool = entry.command ?? nameFromCommandText(entry.commandText) ?? "tool";
+
+    // Family yang ditebak tidak ada di model, jadi perintahnya ditahan dan
+    // pilihannya diserahkan ke orangnya. Dicatat supaya giliran berikutnya tidak
+    // menebak nama yang sama lagi — dan supaya nama yang akhirnya dipilih ikut
+    // terbaca sebagai ejaan yang benar.
+    if (entry.role === "choice") {
+      const answered = entry.answered
+        ? `Orangnya memilih "${entry.answered}" — pakai ejaan itu kalau family yang sama disebut lagi.`
+        : entry.answered === ""
+          ? "Orangnya memilih membiarkan add-in yang menentukan family."
+          : "Orangnya belum menjawab.";
+
+      return {
+        role: "assistant" as const,
+        content: `[CATATAN SISTEM] Family "${entry.guessed ?? ""}" yang kamu isi untuk ${tool} tidak ada di model, jadi perintahnya TIDAK dikirim dan daftar family kategori itu ditawarkan ke pengguna. ${answered}`,
+      };
+    }
     const asked = entry.commandText ? ` Argumennya: ${entry.commandText}` : "";
 
     const dispatched = entry.issues?.length
