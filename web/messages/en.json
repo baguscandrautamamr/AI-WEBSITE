@@ -268,7 +268,7 @@
   "import": {
     "title": "Import into Revit",
     "subtitle": "Two ways to bring a spreadsheet into the model. Pick the one that matches what is in the file.",
-    "whichTable": "Import Table — for any spreadsheet (cost estimate, cable list, a supplier table). The table is drawn into a Revit view as it stands.",
+    "whichTable": "Import Table — for any spreadsheet (a bill of quantities, a cable list, a supplier's table). Either drawn into a view as it stands, or turned into a real Schedules/Quantities view that can be filtered and sorted.",
     "whichExcel": "Import Excel — only for files that came from the Export button, because it needs an Element Id or Mark column to know which row belongs to which element. Used to update parameters on elements that already exist."
   },
   "note": {

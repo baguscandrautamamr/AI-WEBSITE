@@ -268,7 +268,7 @@
   "import": {
     "title": "Import ke Revit",
     "subtitle": "Dua cara membawa spreadsheet masuk ke model. Pilih yang sesuai dengan isi filenya.",
-    "whichTable": "Import Tabel — untuk spreadsheet apa pun (RAB, daftar kabel, tabel dari supplier). Tabelnya digambar ke sebuah view di Revit apa adanya.",
+    "whichTable": "Import Tabel — untuk spreadsheet apa pun (RAB, daftar kabel, tabel dari supplier). Bisa digambar ke sebuah view apa adanya, atau jadi Schedules/Quantities sungguhan yang bisa difilter dan diurutkan.",
     "whichExcel": "Import Excel — hanya untuk file yang berasal dari tombol Export, karena butuh kolom Element Id atau Mark untuk tahu baris mana milik elemen mana. Dipakai untuk memperbarui parameter elemen yang sudah ada."
   },
   "note": {
