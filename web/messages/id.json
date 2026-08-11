@@ -167,7 +167,10 @@
       "standard_only": "Hanya Standar",
       "no_standard": "Penuh, tanpa Standar"
     },
-    "notAdminViewOnly": "Kelas akunmu hanya mencakup halaman Standar & Regulasi, jadi tidak ada proyek yang bisa dikelola dari sini. Kalau ini keliru, minta admin mengubah kelas akunmu."
+    "notAdminViewOnly": "Kelas akunmu hanya mencakup halaman Standar & Regulasi, jadi tidak ada proyek yang bisa dikelola dari sini. Kalau ini keliru, minta admin mengubah kelas akunmu.",
+    "delete": "Hapus",
+    "deleteConfirm": "Hapus akun \"{name}\" seluruhnya? Identitas login dan datanya dihapus, dan ini tidak bisa dibatalkan.",
+    "deleteFailed": "Gagal menghapus akun"
   },
   "auth": {
     "login": "Masuk",
@@ -372,6 +375,8 @@
     "deniedTitle": "Halaman ini bukan bagian dari akunmu",
     "standardOnly": "Kelas akunmu hanya mencakup halaman Standar & Regulasi. Halaman yang menyentuh model Revit tidak tersedia. Kalau ini keliru, minta admin mengubah kelas akunmu.",
     "noStandard": "Kelas akunmu mencakup semuanya kecuali halaman Standar & Regulasi. Kalau ini keliru, minta admin mengubah kelas akunmu.",
-    "goHome": "Ke halaman yang bisa dibuka"
+    "goHome": "Ke halaman yang bisa dibuka",
+    "waitingTitle": "Akunmu belum diberi akses",
+    "waiting": "Akunmu sudah terdaftar, tapi admin belum memasukkanmu ke proyek mana pun — jadi belum ada halaman yang bisa dibuka, termasuk halaman Standar & Regulasi. Minta admin memasukkanmu ke sebuah proyek."
   }
 }

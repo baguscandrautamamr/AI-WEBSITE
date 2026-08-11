@@ -167,7 +167,10 @@
       "standard_only": "Standards only",
       "no_standard": "Full, without Standards"
     },
-    "notAdminViewOnly": "Your account class covers the Standards & Regulations page only, so there is no project to manage here. If that looks wrong, ask an admin to change your account class."
+    "notAdminViewOnly": "Your account class covers the Standards & Regulations page only, so there is no project to manage here. If that looks wrong, ask an admin to change your account class.",
+    "delete": "Delete",
+    "deleteConfirm": "Delete the account \"{name}\" entirely? Its login and data are removed, and this cannot be undone.",
+    "deleteFailed": "Could not delete the account"
   },
   "auth": {
     "login": "Sign in",
@@ -372,6 +375,8 @@
     "deniedTitle": "This page is not part of your account",
     "standardOnly": "Your account class covers the Standards & Regulations page only. Pages that touch the Revit model are not available. If that looks wrong, ask an admin to change your account class.",
     "noStandard": "Your account class covers everything except the Standards & Regulations page. If that looks wrong, ask an admin to change your account class.",
-    "goHome": "Go to a page you can open"
+    "goHome": "Go to a page you can open",
+    "waitingTitle": "Your account has no access yet",
+    "waiting": "Your account is registered, but an admin has not added you to any project — so there is no page to open yet, including Standards & Regulations. Ask an admin to add you to a project."
   }
 }

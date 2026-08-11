@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { areaOfPath, canOpen, landingFor, type AccessClass } from "@/lib/access";
+import { areaOfPath, canOpen, canOpenArea, landingFor, type AccessClass } from "@/lib/access";
 import { useI18n } from "@/lib/i18n";
 
 /**
@@ -25,26 +25,53 @@ import { useI18n } from "@/lib/i18n";
  */
 export default function AccessGuard({
   access,
+  granted,
   children,
 }: {
   access: AccessClass;
+  /** Admin sudah memasukkan akun ini ke sebuah proyek. */
+  granted: boolean;
   children: React.ReactNode;
 }) {
   const { t } = useI18n();
   const pathname = usePathname();
 
   const area = areaOfPath(pathname);
-  if (!area || canOpen(access, area)) return <>{children}</>;
+  if (!area || canOpenArea({ access, granted }, area)) return <>{children}</>;
+
+  /**
+   * Dua sebab penolakan, dua kalimat.
+   *
+   * Kelasnya memang mencakup halaman ini tapi akunnya belum diberi proyek — itu
+   * hal yang berbeda dari kelas yang tidak mencakupnya, dan yang harus dilakukan
+   * orangnya juga berbeda: bukan minta kelasnya diubah, melainkan minta
+   * dimasukkan ke sebuah proyek. Satu kalimat untuk keduanya akan menyuruh
+   * separuh pembacanya menanyakan hal yang salah.
+   */
+  const waiting = canOpen(access, area) && !granted;
 
   return (
     <div className="glass-panel space-y-3 p-6">
-      <h1 className="text-lg font-medium">{t("access.deniedTitle")}</h1>
+      <h1 className="text-lg font-medium">
+        {t(waiting ? "access.waitingTitle" : "access.deniedTitle")}
+      </h1>
       <p className="text-sm text-text-secondary">
-        {t(access === "standard_only" ? "access.standardOnly" : "access.noStandard")}
+        {t(
+          waiting
+            ? "access.waiting"
+            : access === "standard_only"
+              ? "access.standardOnly"
+              : "access.noStandard"
+        )}
       </p>
-      <Link href={landingFor(access)} className="btn-accent inline-block">
-        {t("access.goHome")}
-      </Link>
+      {/* Tautan "ke halaman yang bisa dibuka" hanya kalau memang ada satu.
+          Akun yang menunggu tidak punya, dan tombol yang mengembalikannya ke
+          halaman ini lagi cuma memutar orangnya di tempat. */}
+      {!waiting && (
+        <Link href={landingFor(access)} className="btn-accent inline-block">
+          {t("access.goHome")}
+        </Link>
+      )}
     </div>
   );
 }
