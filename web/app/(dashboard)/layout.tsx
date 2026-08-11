@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { accessClassOf, DEFAULT_ACCESS_CLASS, type AccessClass } from "@/lib/access";
 import { ProjectsProvider } from "@/lib/useProjects";
+import AccessGuard from "./AccessGuard";
 import DashboardNav from "./DashboardNav";
 
 // Seluruh dashboard bergantung pada cookie sesi. Lihat catatan di app/page.tsx:
@@ -16,6 +18,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
   let roles: string[] = [];
   let signedIn = false;
 
+  /**
+   * Kelas akun, dibaca sekali di sini.
+   *
+   * Di layout, bukan di tiap halaman: layout ini satu-satunya tempat di seluruh
+   * dashboard yang pasti berjalan di server untuk SETIAP halaman di bawahnya.
+   * Halaman-halamannya sendiri komponen klien, jadi tidak ada satu pun dari
+   * mereka yang bisa memeriksa ini sendiri tanpa dipecah dua.
+   */
+  let access: AccessClass = DEFAULT_ACCESS_CLASS;
+
   try {
     const supabase = await createClient();
     const {
@@ -24,11 +36,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
     if (user) {
       signedIn = true;
-      const { data: access } = await supabase
+      const { data: granted } = await supabase
         .from("user_project_access")
         .select("role")
         .returns<{ role: "viewer" | "editor" | "admin" }[]>();
-      roles = (access ?? []).map((a) => a.role);
+      roles = (granted ?? []).map((a) => a.role);
+      access = await accessClassOf(supabase, user.id);
     }
   } catch (err) {
     // Konfigurasi atau Supabase bermasalah. Menampilkan 500 di sini menutup
@@ -52,7 +65,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           bersebelahan, jadi sidebar 224px memakan lebar layar telepon dan
           sisanya terdorong keluar. */}
       <div className="flex min-h-screen flex-col md:flex-row">
-        <DashboardNav role={highest} />
+        <DashboardNav role={highest} access={access} />
 
         {/* min-w-0 adalah inti perbaikannya.
             Anak sebuah flex container punya min-width:auto, artinya ia menolak
@@ -61,7 +74,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
             adalah aplikasi yang bisa digeser ke kanan dengan latar kosong.
             Dengan min-w-0 ia boleh menyusut, dan isi yang lebar menggulir di
             dalam kotaknya sendiri. */}
-        <main className="min-w-0 flex-1 p-4 md:p-6">{children}</main>
+        <main className="min-w-0 flex-1 p-4 md:p-6">
+          <AccessGuard access={access}>{children}</AccessGuard>
+        </main>
       </div>
     </ProjectsProvider>
   );

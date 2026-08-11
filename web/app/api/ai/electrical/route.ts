@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { roleForProject } from "@/lib/access";
+import { guardArea, roleForProject } from "@/lib/access";
 import { rateLimit, tooManyRequests } from "@/lib/rateLimit";
 import { buildMessages } from "@/lib/chatHistory";
 import { anthropic, MODEL } from "@/lib/anthropic";
@@ -68,6 +68,13 @@ export async function POST(req: Request) {
   // Peran menentukan tool apa yang boleh ditawarkan. Seorang viewer tidak
   // seharusnya melihat asisten menawarkan /place_lighting, lalu ditolak server
   // sesudahnya — lebih jujur kalau pilihannya memang tidak pernah ada.
+  // Kelas akun lebih dulu, sebelum peran proyek: akun yang kelasnya tidak
+  // mencakup Revit tidak boleh sampai ke pertanyaan "peran apa dia di proyek
+  // ini", karena jawabannya bisa saja "editor" — kelas dan peran adalah dua
+  // pagar yang berdiri sendiri.
+  const gate = await guardArea(supabase, user.id, "revit");
+  if (!gate.ok) return NextResponse.json({ error: gate.reason }, { status: 403 });
+
   const role = await roleForProject(supabase, user.id, projectId);
   if (!role) {
     return NextResponse.json(

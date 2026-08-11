@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { rateLimit, tooManyRequests } from "@/lib/rateLimit";
 import { anthropic, MODEL } from "@/lib/anthropic";
+import { guardArea } from "@/lib/access";
 
 export const runtime = "nodejs";
 
@@ -163,6 +164,13 @@ export async function POST(req: Request) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
+  // Halaman ini satu-satunya yang tidak punya proyek untuk dijadikan pagar:
+  // standards mode dirancang bekerja tanpa proyek, jadi sebelum kelas akun ada,
+  // "sudah login" adalah seluruh syaratnya — termasuk untuk akun yang belum
+  // pernah diberi proyek apa pun.
+  const gate = await guardArea(supabase, user.id, "standard");
+  if (!gate.ok) return NextResponse.json({ error: gate.reason }, { status: 403 });
+
   let message: unknown;
   try {
     ({ message } = await req.json());
@@ -307,6 +315,9 @@ export async function GET() {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
+  const gate = await guardArea(supabase, user.id, "standard");
+  if (!gate.ok) return NextResponse.json({ error: gate.reason }, { status: 403 });
+
   const { data, error } = await supabase
     .from("standards_threads")
     .select("turns")
@@ -335,6 +346,9 @@ export async function DELETE() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const gate = await guardArea(supabase, user.id, "standard");
+  if (!gate.ok) return NextResponse.json({ error: gate.reason }, { status: 403 });
 
   const { error } = await supabase
     .from("standards_threads")

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { useProjects } from "@/lib/useProjects";
+import { ACCESS_CLASSES, type AccessClass } from "@/lib/access";
 
 type Role = "viewer" | "editor" | "admin";
 
@@ -17,6 +18,8 @@ interface User {
   full_name: string;
   auth_provider: "telegram" | "web";
   is_active: boolean;
+  /** Halaman mana yang boleh dibuka akun ini. Berbeda dari peran di proyek. */
+  access_class: AccessClass;
 }
 
 interface Access {
@@ -34,6 +37,10 @@ interface AccessData {
   pending: User[];
   access: Access[];
   searchMinChars: number;
+  /** Boleh memberi peran di proyek. Kelas standard_only hanya melihat. */
+  canGrant: boolean;
+  /** Boleh mengubah kelas akun — admin global saja, karena kelas berlaku global. */
+  canSetClass: boolean;
 }
 
 /**
@@ -82,6 +89,16 @@ export default function AdminUsersPage() {
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
   const [minChars, setMinChars] = useState(2);
+  /**
+   * Dua izin yang berbeda, dan keduanya datang dari server.
+   *
+   * Tidak diturunkan dari daftar proyek di browser: "boleh memberi akses" adalah
+   * keputusan yang dibuat route, dan menghitungnya ulang di sini berarti dua
+   * jawaban yang bisa berbeda — yang satu menentukan tombolnya terlihat, yang
+   * lain menentukan permintaannya diterima.
+   */
+  const [canGrant, setCanGrant] = useState(true);
+  const [canSetClass, setCanSetClass] = useState(false);
   const [picked, setPicked] = useState<User | null>(null);
   /** Peran yang dipilih untuk tiap akun menunggu, sebelum tombol Beri ditekan. */
   const [pendingRole, setPendingRole] = useState<Record<string, Role>>({});
@@ -92,6 +109,8 @@ export default function AdminUsersPage() {
     setPending(data.pending);
     setAccess(data.access);
     setMinChars(data.searchMinChars);
+    setCanGrant(data.canGrant);
+    setCanSetClass(data.canSetClass);
     setProjectId((prev) => prev || data.projects[0]?.id || "");
     setLoading(false);
   }, []);
@@ -111,6 +130,8 @@ export default function AdminUsersPage() {
       pending: body.pending ?? [],
       access: body.access ?? [],
       searchMinChars: body.searchMinChars ?? 2,
+      canGrant: Boolean(body.canGrant),
+      canSetClass: Boolean(body.canSetClass),
     };
     apply(cached);
 
@@ -181,6 +202,28 @@ export default function AdminUsersPage() {
     setBusy(false);
   }
 
+  /**
+   * Mengubah kelas akun seseorang.
+   *
+   * PATCH, bukan POST yang sama dengan pemberian peran: yang ini berlaku untuk
+   * SELURUH akun — di semua proyek, dan di halaman yang tidak punya proyek sama
+   * sekali — sementara POST memberi peran pada satu proyek. Dikirim ke endpoint
+   * yang sama tapi metode yang berbeda, karena keduanya juga dijaga berbeda:
+   * peran oleh admin proyek, kelas oleh admin global.
+   */
+  async function setClass(targetUserId: string, next: AccessClass) {
+    setBusy(true);
+    setError(null);
+    const res = await fetch("/api/admin/access", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: targetUserId, accessClass: next }),
+    });
+    if (!res.ok) setError((await res.json()).error ?? t("admin.classFailed"));
+    else await load();
+    setBusy(false);
+  }
+
   async function revoke(targetUserId: string) {
     setBusy(true);
     setError(null);
@@ -203,15 +246,23 @@ export default function AdminUsersPage() {
       <div className="glass-panel max-w-2xl space-y-4 p-4 sm:p-6">
         <div>
           <h1 className="text-lg font-medium">{t("admin.title")}</h1>
-          <p className="text-sm text-text-secondary">{t("admin.notAdmin")}</p>
+          <p className="text-sm text-text-secondary">
+            {canGrant ? t("admin.notAdmin") : t("admin.notAdminViewOnly")}
+          </p>
         </div>
-        <NewProject onCreated={load} />
+        {/* Membuat proyek berarti memberi diri sendiri akses admin di dalamnya,
+            jadi formulirnya ikut kelas `grant`. Ditampilkan tanpa itu, ia
+            formulir yang selalu ditolak — dan yang menekannya tidak punya cara
+            menduga sebabnya, karena "buat proyek" tidak berbunyi seperti
+            "beri akses". */}
+        {canGrant && <NewProject onCreated={load} />}
         {error && <p className="text-sm text-red-500">{error}</p>}
       </div>
     );
   }
 
   const nameOf = (id: string) => members.find((u) => u.id === id)?.full_name ?? id.slice(0, 8);
+  const classOf = (id: string) => members.find((u) => u.id === id)?.access_class ?? "full";
   const onProject = access.filter((a) => a.project_id === projectId);
   // Orang yang sudah ada di proyek ini tidak perlu muncul lagi sebagai hasil.
   const grantable = matches.filter((u) => !onProject.some((a) => a.user_id === u.id));
@@ -247,17 +298,34 @@ export default function AdminUsersPage() {
           <p className="text-sm text-text-secondary">{t("admin.noMembers")}</p>
         )}
         {onProject.map((a) => (
-          <div key={a.user_id} className="glass-input flex items-center justify-between gap-3 text-sm">
-            <span>
+          <div key={a.user_id} className="glass-input flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
+            <span className="flex-1 min-w-[9rem]">
               {nameOf(a.user_id)} <span className="opacity-55">· {a.role}</span>
             </span>
-            <button
-              onClick={() => revoke(a.user_id)}
-              disabled={busy}
-              className="text-xs text-red-500 hover:underline disabled:opacity-40"
-            >
-              {t("admin.revoke")}
-            </button>
+
+            {/* Kelas akun selalu TERLIHAT, kontrolnya hanya untuk admin global.
+                Terlihat karena tanpa itu tidak ada cara mengetahui mengapa
+                seorang editor tidak bisa membuka halaman Electrical — peran dan
+                kelas dua-duanya menentukan, dan yang satu tak terlihat. */}
+            {canSetClass ? (
+              <ClassPicker
+                value={classOf(a.user_id)}
+                disabled={busy}
+                onChange={(next) => setClass(a.user_id, next)}
+              />
+            ) : (
+              <span className="text-xs opacity-55">{t(`admin.class.${classOf(a.user_id)}`)}</span>
+            )}
+
+            {canGrant && (
+              <button
+                onClick={() => revoke(a.user_id)}
+                disabled={busy}
+                className="text-xs text-red-500 hover:underline disabled:opacity-40"
+              >
+                {t("admin.revoke")}
+              </button>
+            )}
           </div>
         ))}
       </div>
@@ -274,30 +342,56 @@ export default function AdminUsersPage() {
               <span className="flex-1 min-w-[10rem]">
                 {u.full_name} <span className="opacity-55">({u.auth_provider})</span>
               </span>
-              <select
-                className="glass-input"
-                value={pendingRole[u.id] ?? "viewer"}
-                onChange={(e) =>
-                  setPendingRole((prev) => ({ ...prev, [u.id]: e.target.value as Role }))
-                }
-              >
-                <option value="viewer">viewer</option>
-                <option value="editor">editor</option>
-                <option value="admin">admin</option>
-              </select>
-              <button
-                onClick={() => grant(u, pendingRole[u.id] ?? "viewer")}
-                disabled={busy}
-                className="btn-accent"
-              >
-                {t("admin.grant")}
-              </button>
+              {canSetClass ? (
+                <ClassPicker
+                  value={u.access_class}
+                  disabled={busy}
+                  onChange={(next) => setClass(u.id, next)}
+                />
+              ) : (
+                <span className="text-xs opacity-55">{t(`admin.class.${u.access_class}`)}</span>
+              )}
+
+              {/* Akun berkelas standard_only tidak butuh peran proyek sama
+                  sekali — halaman yang memakai proyek tidak ada baginya. Kolom
+                  peran di sebelahnya hanya akan mengundang pemberian yang tidak
+                  berarti apa-apa. */}
+              {canGrant && u.access_class !== "standard_only" && (
+                <>
+                  <select
+                    className="glass-input"
+                    value={pendingRole[u.id] ?? "viewer"}
+                    onChange={(e) =>
+                      setPendingRole((prev) => ({ ...prev, [u.id]: e.target.value as Role }))
+                    }
+                  >
+                    <option value="viewer">viewer</option>
+                    <option value="editor">editor</option>
+                    <option value="admin">admin</option>
+                  </select>
+                  <button
+                    onClick={() => grant(u, pendingRole[u.id] ?? "viewer")}
+                    disabled={busy}
+                    className="btn-accent"
+                  >
+                    {t("admin.grant")}
+                  </button>
+                </>
+              )}
             </div>
           ))}
         </div>
       )}
 
-      <div className="space-y-2">
+      {/* Yang tidak boleh memberi akses tidak melihat blok ini sama sekali.
+          Menampilkannya lalu menolak di server berarti seseorang mencari orang,
+          memilih perannya, menekan tombolnya, dan baru kemudian diberi tahu —
+          tiga langkah yang seluruhnya sia-sia. */}
+      {!canGrant && (
+        <p className="text-xs text-text-secondary">{t("admin.viewOnly")}</p>
+      )}
+
+      <div className={canGrant ? "space-y-2" : "hidden"}>
         <h2 className="text-sm font-medium">{t("admin.grantTitle")}</h2>
 
         {picked ? (
@@ -363,6 +457,42 @@ export default function AdminUsersPage() {
 
       {error && <p className="text-sm text-red-500">{error}</p>}
     </div>
+  );
+}
+
+/**
+ * Kelas akun sebagai satu dropdown.
+ *
+ * Sengaja BUKAN digabung ke dropdown peran di sebelahnya. Keduanya akan terbaca
+ * sebagai satu daftar pilihan yang sederajat, dan "standard_only" di antara
+ * viewer/editor/admin terbaca sebagai peran di proyek — padahal ia berlaku untuk
+ * seluruh akun, termasuk di halaman yang tidak punya proyek.
+ */
+function ClassPicker({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: AccessClass;
+  disabled: boolean;
+  onChange: (next: AccessClass) => void;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <select
+      className="glass-input text-xs"
+      value={value}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value as AccessClass)}
+      title={t("admin.classTitle")}
+    >
+      {ACCESS_CLASSES.map((cls) => (
+        <option key={cls} value={cls}>
+          {t(`admin.class.${cls}`)}
+        </option>
+      ))}
+    </select>
   );
 }
 

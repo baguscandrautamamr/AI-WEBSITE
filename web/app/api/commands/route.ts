@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { CommandValidationError, enqueueCommand } from "@/lib/queue";
-import { roleForProject } from "@/lib/access";
+import { guardArea, roleForProject } from "@/lib/access";
 
 export const runtime = "nodejs";
 
@@ -26,6 +26,13 @@ export async function POST(req: Request) {
 
   // Peran dibaca per proyek: seseorang bisa editor di satu proyek dan viewer di
   // proyek lain, persis seperti aturan peran di bot.
+  // Kelas akun lebih dulu, sebelum peran proyek: akun yang kelasnya tidak
+  // mencakup Revit tidak boleh sampai ke pertanyaan "peran apa dia di proyek
+  // ini", karena jawabannya bisa saja "editor" — kelas dan peran adalah dua
+  // pagar yang berdiri sendiri.
+  const gate = await guardArea(supabase, user.id, "revit");
+  if (!gate.ok) return NextResponse.json({ error: gate.reason }, { status: 403 });
+
   const role = await roleForProject(supabase, user.id, projectId);
   if (!role) {
     return NextResponse.json(
@@ -63,6 +70,13 @@ export async function GET(req: Request) {
   const id = new URL(req.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "parameter `id` wajib" }, { status: 400 });
 
+  // Hasil sebuah perintah Revit adalah isi model, jadi ia ikut kelas "revit" —
+  // bukan hanya pengirimannya. Kelas dan peran proyek berdiri sendiri: sebuah
+  // akun bisa berkelas standard_only DAN masih punya baris editor dari sebelum
+  // kelasnya dipersempit, jadi RLS saja tidak menutupnya.
+  const gate = await guardArea(supabase, user.id, "revit");
+  if (!gate.ok) return NextResponse.json({ error: gate.reason }, { status: 403 });
+
   // RLS membatasi baris ke proyek yang boleh diakses user, jadi tidak perlu
   // filter pemilik lagi di sini.
   const { data, error } = await supabase
@@ -98,6 +112,13 @@ export async function PATCH(req: Request) {
 
   const id = new URL(req.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "parameter `id` wajib" }, { status: 400 });
+
+  // Hasil sebuah perintah Revit adalah isi model, jadi ia ikut kelas "revit" —
+  // bukan hanya pengirimannya. Kelas dan peran proyek berdiri sendiri: sebuah
+  // akun bisa berkelas standard_only DAN masih punya baris editor dari sebelum
+  // kelasnya dipersempit, jadi RLS saja tidak menutupnya.
+  const gate = await guardArea(supabase, user.id, "revit");
+  if (!gate.ok) return NextResponse.json({ error: gate.reason }, { status: 403 });
 
   // Dibaca dengan klien user, jadi RLS yang menentukan barisnya boleh dilihat
   // atau tidak — bukan pemeriksaan di sini yang bisa ketinggalan.

@@ -158,7 +158,16 @@
     "creating": "Membuat…",
     "created": "Proyek dibuat dengan kode",
     "createFailed": "Gagal membuat proyek",
-    "createNote": "Kamu jadi admin proyek yang kamu buat. Admin sistem ikut diberi akses penuh, jadi proyeknya terlihat tanpa perlu diminta."
+    "createNote": "Kamu jadi admin proyek yang kamu buat. Admin sistem ikut diberi akses penuh, jadi proyeknya terlihat tanpa perlu diminta.",
+    "classTitle": "Kelas akun — halaman mana yang boleh dibuka. Berbeda dari peran di proyek.",
+    "classFailed": "Gagal mengubah kelas akun",
+    "viewOnly": "Kelas akunmu boleh melihat daftar ini, tapi tidak memberi akses. Yang memberi akses hanya akun berkelas penuh.",
+    "class": {
+      "full": "Akses penuh",
+      "standard_only": "Hanya Standar",
+      "no_standard": "Penuh, tanpa Standar"
+    },
+    "notAdminViewOnly": "Kelas akunmu hanya mencakup halaman Standar & Regulasi, jadi tidak ada proyek yang bisa dikelola dari sini. Kalau ini keliru, minta admin mengubah kelas akunmu."
   },
   "auth": {
     "login": "Masuk",
@@ -358,5 +367,11 @@
   },
   "inspect": {
     "title": "Baca Model"
+  },
+  "access": {
+    "deniedTitle": "Halaman ini bukan bagian dari akunmu",
+    "standardOnly": "Kelas akunmu hanya mencakup halaman Standar & Regulasi. Halaman yang menyentuh model Revit tidak tersedia. Kalau ini keliru, minta admin mengubah kelas akunmu.",
+    "noStandard": "Kelas akunmu mencakup semuanya kecuali halaman Standar & Regulasi. Kalau ini keliru, minta admin mengubah kelas akunmu.",
+    "goHome": "Ke halaman yang bisa dibuka"
   }
 }

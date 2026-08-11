@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { roleForProject } from "@/lib/access";
+import { guardArea, roleForProject } from "@/lib/access";
 
 export const runtime = "nodejs";
 
@@ -47,6 +47,9 @@ export async function GET(req: Request) {
   // Diperiksa sebelum klien service dipakai. Klien itu melewati RLS, jadi
   // satu-satunya yang menjaga batas proyek di sini adalah pemeriksaan ini —
   // dan ia harus terjadi lebih dulu, bukan sesudah datanya dibaca.
+  const gate = await guardArea(supabase, user.id, "revit");
+  if (!gate.ok) return NextResponse.json({ error: gate.reason }, { status: 403 });
+
   const role = await roleForProject(supabase, user.id, projectId);
   if (!role) {
     return NextResponse.json({ error: "tidak punya akses ke proyek ini" }, { status: 403 });
