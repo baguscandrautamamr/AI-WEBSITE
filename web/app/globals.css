@@ -226,29 +226,3 @@ pre {
   .dot { animation: none; opacity: 0.5; }
 }
 
-/* Kursor mengetik.
- *
- * Bukan karakter teks: sebuah "|" di dalam jawaban akan ikut tersalin saat
- * pembacanya menyalin teksnya, dan ikut terbaca pembaca layar sebagai isi. Ini
- * elemen kosong dengan latar, jadi ia terlihat tanpa menjadi bagian jawaban. */
-.caret {
-  display: inline-block;
-  width: 2px;
-  height: 1em;
-  margin-left: 1px;
-  vertical-align: text-bottom;
-  background: currentColor;
-  opacity: 0.7;
-  animation: caret-blink 1s step-end infinite;
-}
-
-@keyframes caret-blink {
-  50% { opacity: 0; }
-}
-
-/* Yang memilih tidak melihat animasi juga tidak melihat kursornya berkedip —
- * kedipan tetap adalah gerakan, dan di sini ia tidak membawa informasi yang
- * hilang kalau ia diam. */
-@media (prefers-reduced-motion: reduce) {
-  .caret { animation: none; }
-}

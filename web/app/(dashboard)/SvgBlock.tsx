@@ -3,19 +3,24 @@
 import { useMemo, useState } from "react";
 import DOMPurify from "dompurify";
 import { useI18n } from "@/lib/i18n";
+import { drawableSvg, svgSize } from "@/lib/diagrams";
 
 /** Lebar hasil PNG. Cukup untuk ditempel ke laporan tanpa terlihat pecah. */
 const PNG_WIDTH = 2000;
 
-/** Ukuran gambar menurut viewBox-nya, untuk menentukan tinggi PNG. */
-function sizeOf(svg: string): { width: number; height: number } {
-  const match = svg.match(/viewBox\s*=\s*["']\s*([-\d.]+)[\s,]+([-\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i);
-  if (!match) return { width: 1000, height: 700 };
-
-  const width = Number(match[3]);
-  const height = Number(match[4]);
-  return width > 0 && height > 0 ? { width, height } : { width: 1000, height: 700 };
-}
+/**
+ * Berapa karakter baru sebelum gambar yang sedang mengalir digambar ulang.
+ *
+ * Menggambar ulang setiap potongan berarti mem-parse dan menyaring ulang seluruh
+ * markup puluhan kali per detik — untuk gambar 20 KB itu beberapa milidetik
+ * setiap kali, ditambah ribuan node DOM yang langsung dibuang. Halamannya jadi
+ * tersendat justru selagi menunggu, yang persis kebalikan dari maksudnya.
+ *
+ * Dengan langkah sebesar ini, gambar biasa digambar ulang lima sampai sepuluh
+ * kali sepanjang penulisannya — cukup untuk terlihat tumbuh, dan tidak sampai
+ * membebani.
+ */
+const DRAFT_STEP = 500;
 
 function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -47,13 +52,31 @@ export default function SvgBlock({ source }: { source: string }) {
   const { t } = useI18n();
   const [saving, setSaving] = useState(false);
 
-  // Selama jawaban masih mengalir, potongan SVG yang belum utuh akan
-  // menghasilkan gambar rusak atau kosong. Ditunggu sampai tag penutupnya ada.
   const complete = /<\/svg\s*>/i.test(source);
 
+  /**
+   * Bagian gambar yang sudah boleh tampil.
+   *
+   * Dibulatkan ke bawah per DRAFT_STEP karakter, jadi nilainya hanya BERUBAH
+   * sekali per langkah walau `source` bertambah setiap potongan — dan itulah yang
+   * membuat sanitasi di bawahnya berjalan sepuluh kali, bukan seribu kali.
+   * Diturunkan begitu saja dari `source`, tanpa ref dan tanpa state, supaya tidak
+   * ada dua sumber kebenaran tentang apa yang sedang tampil.
+   *
+   * Langkah PERTAMA tidak dibulatkan. Kalau ia ikut dibulatkan, tidak ada satu
+   * garis pun yang tampil sampai 500 karakter terkumpul — dan yang terlihat
+   * selama itu adalah kotak putih kosong seukuran gambarnya, yang lebih mirip
+   * gagal daripada sedang berjalan. Sebelum 500 karakter markup-nya masih kecil,
+   * jadi menyaringnya tiap potongan tidak ada biayanya.
+   */
+  const windows = Math.floor(source.length / DRAFT_STEP);
+  const upTo = complete || windows === 0 ? source : source.slice(0, windows * DRAFT_STEP);
+
   const clean = useMemo(() => {
-    if (!complete) return null;
-    return DOMPurify.sanitize(source, {
+    const markup = drawableSvg(upTo);
+    if (!markup) return null;
+
+    return DOMPurify.sanitize(markup, {
       USE_PROFILES: { svg: true, svgFilters: true },
       // Tidak ada alasan sebuah diagram menarik sesuatu dari luar, dan setiap
       // URL di dalamnya adalah permintaan yang memberi tahu pemiliknya siapa
@@ -61,13 +84,29 @@ export default function SvgBlock({ source }: { source: string }) {
       FORBID_TAGS: ["script", "foreignObject", "image", "use"],
       FORBID_ATTR: ["href", "xlink:href", "style"],
     });
-  }, [source, complete]);
+  }, [upTo]);
 
-  if (!complete) {
+  /**
+   * Tinggi kotaknya sudah ditetapkan sejak viewBox terbaca.
+   *
+   * Tanpa ini, kotak yang tumbuh sambil digambar mendorong seluruh percakapan ke
+   * bawah berkali-kali, dan karena gulirnya mengikuti bagian bawah, yang terlihat
+   * adalah layar yang bergerak sendiri sepanjang gambar ditulis. Perbandingan
+   * sisinya sudah diketahui dari baris pertama SVG — jauh sebelum isinya ada —
+   * jadi tempatnya bisa disiapkan sekali lalu diisi tanpa menggeser apa pun.
+   */
+  const { width, height } = svgSize(source);
+  const reserved = complete ? undefined : { aspectRatio: `${width} / ${height}` };
+
+  // viewBox datang di baris pertama SVG, jauh sebelum ada satu elemen pun yang
+  // bisa digambar. Begitu ia terbaca, tempatnya sudah bisa dipesan — dan yang
+  // dipesan lebih awal tidak perlu mendorong apa pun nanti.
+  const measured = /viewBox/i.test(source);
+
+  if (!clean && !measured) {
+    // Belum ada apa pun yang bisa disiapkan, bahkan ukurannya.
     return <p className="text-xs opacity-60">{t("standard.drawing")}</p>;
   }
-
-  if (!clean) return null;
 
   /**
    * Menyimpan diagram sebagai PNG.
@@ -83,7 +122,7 @@ export default function SvgBlock({ source }: { source: string }) {
   async function downloadPng() {
     setSaving(true);
     try {
-      const { width, height } = sizeOf(clean!);
+      const { width, height } = svgSize(clean!);
       const scale = PNG_WIDTH / width;
 
       // Ukuran eksplisit disuntikkan: SVG dari model hanya membawa viewBox, dan
@@ -142,16 +181,23 @@ export default function SvgBlock({ source }: { source: string }) {
           ikut bergeser ke samping membuat seluruh tata letak terasa rusak. */}
       <div
         className="svg-diagram overflow-x-auto rounded-xl bg-white p-2 dark:bg-white/90"
-        dangerouslySetInnerHTML={{ __html: clean }}
+        style={reserved}
+        dangerouslySetInnerHTML={{ __html: clean ?? "" }}
       />
-      <button
-        type="button"
-        onClick={downloadPng}
-        disabled={saving}
-        className="text-xs text-accent underline disabled:opacity-40"
-      >
-        {saving ? t("standard.saving") : t("standard.savePng")}
-      </button>
+      {/* Unduhan baru ditawarkan setelah gambarnya utuh: PNG dari gambar yang
+          separuh adalah berkas yang terlihat benar dan isinya kurang. */}
+      {complete ? (
+        <button
+          type="button"
+          onClick={downloadPng}
+          disabled={saving}
+          className="text-xs text-accent underline disabled:opacity-40"
+        >
+          {saving ? t("standard.saving") : t("standard.savePng")}
+        </button>
+      ) : (
+        <p className="text-xs opacity-60">{t("standard.drawing")}</p>
+      )}
     </div>
   );
 }

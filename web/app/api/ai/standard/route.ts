@@ -39,13 +39,30 @@ Aturan SVG:
 - SELURUH isi harus berada di dalam viewBox, dengan margin minimal 20 unit di
   keempat sisinya. Tidak boleh ada garis atau teks yang menyentuh atau melewati
   tepinya — itu penyebab paling sering gambar terlihat terpotong.
-- TATA LETAK BERZONA. Bagi viewBox jadi zona yang tidak boleh saling masuk, dan
-  tuliskan koordinatnya dulu sebelum menggambar. Pola yang dianjurkan pada
-  viewBox="0 0 1000 640":
+- BATAS UKURAN, dan ini bagian dari benar-tidaknya gambar itu. SVG-nya ditulis
+  huruf demi huruf sementara pembacanya menunggu di depan layar — jadi setiap
+  elemen yang tidak perlu adalah detik tambahan yang ia habiskan menunggu, dan
+  gambar yang datang setelah satu menit sudah kalah oleh gambar yang datang
+  setelah dua puluh detik. Sekitar 70 elemen gambar, tidak lebih. Kalau isinya
+  tidak cukup, KURANGI bagiannya — jangan perkecil hurufnya, jangan dirapatkan.
+- Markup-nya ringkas: tanpa komentar <!-- -->, tanpa id dan class, tanpa
+  indentasi bertingkat, dan tanpa atribut yang hanya mengulang nilai bawaan.
+  Ini bukan soal gaya — tiap karakter itu ditulis satu per satu dan ditunggu.
+- JANGAN menyalin ke dalam gambar apa yang sudah kamu tulis di teks jawaban, dan
+  jangan menulis paragraf di dalam gambar. Gambar untuk yang berbentuk, teks
+  untuk yang berupa kalimat. Untuk permintaan gambar, teks jawabannya cukup
+  beberapa baris — gambarnya yang jadi jawaban.
+- Panel keterangan HANYA kalau ada yang benar-benar perlu dijelaskan di dalam
+  gambar, bukan kolom yang selalu ada. Legenda tiga baris lebih baik jadi tiga
+  label di sebelah simbolnya masing-masing.
+- TATA LETAK BERZONA, kalau memang ada panel keterangan. Bagi viewBox jadi zona
+  yang tidak boleh saling masuk, dan tuliskan koordinatnya dulu sebelum
+  menggambar. Pola yang dianjurkan pada viewBox="0 0 1000 640":
     * x 0–700   : area gambar (diagram utamanya)
-    * x 720–980 : kolom panel keterangan (legenda, spesifikasi, catatan)
+    * x 720–980 : kolom panel keterangan
   Tidak boleh ada satu pun elemen area gambar yang melewati x=700, dan tidak
-  boleh ada panel keterangan yang masuk ke bawah x=720.
+  boleh ada panel keterangan yang masuk ke bawah x=720. Tanpa panel, seluruh
+  viewBox milik gambarnya.
 - Panel keterangan ditumpuk ke bawah, bukan ditempel di atas gambar. Beri jarak
   minimal 16 unit antar panel, dan hitung tingginya dari jumlah barisnya
   (≈ 22 unit per baris + 40 untuk judul). Panel yang tingginya ditebak akan

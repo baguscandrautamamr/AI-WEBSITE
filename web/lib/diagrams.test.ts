@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitDiagrams } from "./diagrams";
+import { drawableSvg, splitDiagrams, svgSize } from "./diagrams";
 
 const svg = '<svg viewBox="0 0 100 60"><rect x="10" y="10" width="20" height="20"/></svg>';
 
@@ -103,5 +103,75 @@ describe("splitDiagrams", () => {
 
     expect(segments.map((s) => s.kind)).toEqual(["text", "svg"]);
     expect(segments[1].value).toBe(partial);
+  });
+
+  /**
+   * Pagar pembuka blok kode tidak boleh tertinggal di teks selama gambarnya
+   * ditulis.
+   *
+   * Kalau ia tertinggal, markdown melihat blok kode yang tidak pernah ditutup
+   * dan menggambar kotak abu-abu kosong selebar gelembung — di tempat gambarnya
+   * akan muncul, selama seluruh waktu gambar itu ditulis. Yang terlihat: sebuah
+   * kotak kosong dan tulisan "sedang menggambar" di bawahnya.
+   */
+  it("does not leave the opening fence behind while the diagram is still arriving", () => {
+    const segments = splitDiagrams(
+      'Berikut diagramnya:\n\n```svg\n<svg viewBox="0 0 800 500"><rect x="10"'
+    );
+
+    expect(segments.map((s) => s.kind)).toEqual(["text", "svg"]);
+    expect(segments[0].value).not.toContain("```");
+    expect(segments[0].value.trim()).toBe("Berikut diagramnya:");
+  });
+
+  it("drops a fence that is the only thing before the diagram", () => {
+    const segments = splitDiagrams('```svg\n<svg viewBox="0 0 800 500"><g');
+
+    expect(segments.map((s) => s.kind)).toEqual(["svg"]);
+  });
+});
+
+describe("drawableSvg — gambar yang masih ditulis", () => {
+  // Ini yang mengubah satu menit "sedang menggambar" jadi gambar yang tumbuh.
+  // Diagram berdimensi memakan beberapa ribu token, dan tidak ada cara membuat
+  // model menulisnya lebih cepat — yang bisa diubah adalah apakah orangnya
+  // menonton sesuatu terjadi atau menonton sebuah kalimat.
+  it("memotong tag yang belum selesai, lalu menutup gambarnya", () => {
+    expect(drawableSvg('<svg viewBox="0 0 10 10"><rect x="1" y="1"/><line x1="2')).toBe(
+      '<svg viewBox="0 0 10 10"><rect x="1" y="1"/></svg>'
+    );
+  });
+
+  it("gambar yang baru punya tag pembuka jadi kotak kosong seukurannya", () => {
+    // Bukan kesia-siaan: kotak itulah yang memesan tempat, jadi isinya nanti
+    // tidak mendorong percakapan di bawahnya.
+    expect(drawableSvg('<svg viewBox="0 0 800 500">')).toBe('<svg viewBox="0 0 800 500"></svg>');
+  });
+
+  it("tidak menambah penutup kedua pada gambar yang sudah utuh", () => {
+    const whole = '<svg viewBox="0 0 10 10"><rect/></svg>';
+    expect(drawableSvg(whole)).toBe(whole);
+  });
+
+  it("belum ada satu tag pun: tidak ada yang bisa digambar", () => {
+    expect(drawableSvg('<svg viewBox="0 0 10')).toBe("");
+    expect(drawableSvg("")).toBe("");
+  });
+});
+
+describe("svgSize", () => {
+  it("membaca viewBox", () => {
+    expect(svgSize('<svg viewBox="0 0 1000 640">')).toEqual({ width: 1000, height: 640 });
+  });
+
+  it("viewBox dengan koma dan spasi berlebih tetap terbaca", () => {
+    expect(svgSize('<svg viewBox=" 0, 0, 800, 500 ">')).toEqual({ width: 800, height: 500 });
+  });
+
+  it("tanpa viewBox: perbandingan mendatar, bentuk yang diminta prompt", () => {
+    // Dipakai untuk memesan tempat sebelum viewBox-nya terbaca, jadi tebakan
+    // yang sedikit salah jauh lebih baik daripada nol.
+    expect(svgSize("<svg>")).toEqual({ width: 1000, height: 700 });
+    expect(svgSize('<svg viewBox="0 0 0 0">')).toEqual({ width: 1000, height: 700 });
   });
 });

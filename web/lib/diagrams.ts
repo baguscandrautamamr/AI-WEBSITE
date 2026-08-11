@@ -33,6 +33,18 @@ const SVG_BLOCK = /(?:```[\w-]*[ \t]*\r?\n)?(<svg[\s>][\s\S]*?<\/svg>)[ \t]*\r?\
 /** Pembungkus tool-call yang tidak pernah kami minta. */
 const TOOL_CALL = /\[TOOL_CALL\][\s\S]*?(?:\[\/TOOL_CALL\]|$)/gi;
 
+/**
+ * Pagar blok kode yang menggantung, karena gambarnya belum selesai ditulis.
+ *
+ * `SVG_BLOCK` memakan pagar pembuka bersama gambarnya — tapi hanya untuk gambar
+ * yang sudah punya `</svg>`. Selama masih mengalir, yang ada baru "```svg\n"
+ * diikuti gambar yang belum utuh, dan pagar itu tertinggal di potongan teks
+ * sebelumnya. Markdown lalu melihat blok kode yang tidak pernah ditutup dan
+ * menggambarnya sebagai kotak abu-abu kosong selebar gelembung — persis di
+ * tempat gambarnya akan muncul, selama seluruh waktu gambar itu ditulis.
+ */
+const DANGLING_FENCE = /```[\w-]*[ \t]*\r?\n?$/;
+
 /** Sisa tanda baca setelah gambarnya diangkat: `" }}`, `",`, `}]`. */
 const PUNCTUATION_ONLY = /^[\s"'`{}[\]:,\\()]*$/;
 
@@ -103,7 +115,7 @@ function scan(source: string, into: Segment[]) {
   // apa-apa.
   const opening = rest.search(/<svg[^>]*>/i);
   if (opening >= 0) {
-    const before = rest.slice(0, opening);
+    const before = rest.slice(0, opening).replace(DANGLING_FENCE, "");
     if (!isScaffolding(before)) into.push({ kind: "text", value: before });
     into.push({ kind: "svg", value: unescape(rest.slice(opening)) });
     return;
@@ -147,4 +159,48 @@ export function splitDiagrams(text: string): Segment[] {
     merged.push({ ...segment });
     return merged;
   }, []);
+}
+
+/**
+ * Ukuran gambar menurut viewBox-nya.
+ *
+ * Dipakai dua kali dan untuk dua hal yang berbeda: menentukan tinggi PNG saat
+ * gambarnya disimpan, dan memesan tempat di halaman selagi gambarnya masih
+ * ditulis. Yang belum menyebutkan viewBox dijawab dengan perbandingan mendatar —
+ * bentuk yang diminta prompt, jadi tempat yang dipesan tidak akan jauh salah.
+ */
+export function svgSize(svg: string): { width: number; height: number } {
+  const match = svg.match(
+    /viewBox\s*=\s*["']\s*([-\d.]+)[\s,]+([-\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i
+  );
+  if (!match) return { width: 1000, height: 700 };
+
+  const width = Number(match[3]);
+  const height = Number(match[4]);
+  return width > 0 && height > 0 ? { width, height } : { width: 1000, height: 700 };
+}
+
+/**
+ * Gambar setengah jadi, dibuat sah supaya bisa langsung digambar.
+ *
+ * Ada supaya sebuah diagram terlihat TUMBUH alih-alih menghilang di balik
+ * tulisan "sedang menggambar" selama satu menit penuh. Diagram berdimensi
+ * memakan beberapa ribu token untuk ditulis, dan tidak ada cara membuat model
+ * menulisnya lebih cepat — yang bisa diubah adalah apakah orangnya menonton
+ * sesuatu terjadi atau menonton sebuah kalimat.
+ *
+ * Dipotong pada `>` terakhir, bukan di tempat alirannya berhenti: `<rect x="10`
+ * adalah tag yang belum selesai, dan tag yang belum selesai membuat parser
+ * menelan apa pun sesudahnya. Yang dipotong di batas tag selalu berupa
+ * elemen-elemen utuh, ditambah satu tag penutup di ujungnya.
+ *
+ * Grup yang belum ditutup tidak perlu diurus — parser HTML menutup sendiri apa
+ * yang tertinggal terbuka.
+ */
+export function drawableSvg(source: string): string {
+  const end = source.lastIndexOf(">");
+  if (end === -1) return "";
+
+  const head = source.slice(0, end + 1);
+  return /<\/svg\s*>\s*$/i.test(head) ? head : `${head}</svg>`;
 }
