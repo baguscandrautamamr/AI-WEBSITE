@@ -262,7 +262,8 @@
     "queueFailed": "Could not run the import",
     "note": "The result is a picture of the table, not a schedule that reads the model — Revit cannot show free-form Excel columns as a schedule. To change it, edit the spreadsheet and import again.",
     "targetScheduleView": "Schedules/Quantities (a real schedule)",
-    "targetScheduleViewHint": "A real schedule in the project browser — filterable, sortable, and it follows the model as it changes. The two above only DRAW the table. Needs an add-in that supports it; if it doesn't, the command comes back as an error rather than quietly becoming a drafting view."
+    "targetScheduleViewHint": "A real schedule in the project browser — filterable, sortable, and it follows the model as it changes. The two above only DRAW the table. Needs an add-in that supports it; if it doesn't, the command comes back as an error rather than quietly becoming a drafting view.",
+    "noteSchedule": "The sheet's first row becomes the column headings. Every row under it becomes one Generic Model element in the model — the only way a spreadsheet row can appear in a Revit schedule — so the result says how many. Re-importing the same table replaces its rows rather than doubling them."
   },
   "import": {
     "title": "Import into Revit",
