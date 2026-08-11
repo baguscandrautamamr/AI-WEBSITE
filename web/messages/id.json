@@ -5,7 +5,8 @@
     "exportImport": "Export",
     "history": "Riwayat",
     "admin": "Admin",
-    "import": "Import"
+    "import": "Import",
+    "inspect": "Baca Model"
   },
   "electrical": {
     "title": "Revit Command Center"
@@ -77,7 +78,25 @@
     "replaced_rows": "Baris lama diganti",
     "view": "View",
     "target": "Masuk ke",
-    "source_sheet": "Sheet Excel"
+    "source_sheet": "Sheet Excel",
+    "categories": "Kategori",
+    "parameters": "Parameter",
+    "totals": "Jumlah",
+    "groups": "Kelompok",
+    "shown": "Ditampilkan",
+    "built_in": "Nama Revit",
+    "scope": "Berlaku pada",
+    "storage": "Jenis data",
+    "unit": "Satuan",
+    "sample": "Contoh",
+    "sum": "Jumlah",
+    "counted": "Terhitung",
+    "missing": "Tanpa nilai",
+    "parameter": "Parameter",
+    "value": "Nilai",
+    "total": "Total",
+    "level": "Lantai",
+    "type": "Tipe"
   },
   "admin": {
     "title": "Akses Proyek",
@@ -296,5 +315,8 @@
     "notFound": "Telegram tidak menemukan chat dengan nomor itu. Periksa lagi angkanya.",
     "unreachable": "Telegram tidak bisa dihubungi dari server. Coba lagi sebentar lagi.",
     "failed": "Gagal menyimpan pengaturan pemberitahuan."
+  },
+  "inspect": {
+    "title": "Baca Model"
   }
 }

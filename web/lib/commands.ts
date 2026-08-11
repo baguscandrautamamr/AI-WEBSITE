@@ -772,8 +772,13 @@ export const COMMANDS: CommandSpec[] = [
     name: "query",
     label: { id: "Cek Model", en: "Query" },
     description: {
-      id: "Membaca model dan melaporkan apa yang sudah ada. Satu-satunya command yang tidak membuka transaksi Revit, jadi viewer boleh menjalankannya.",
-      en: "Reads the model and reports what is there. The only command that opens no Revit transaction.",
+      // Angka-angka ini sudah dilaporkan add-in sejak lama dan tidak pernah
+      // disebutkan di sini — jadi asisten menjawab "tidak ada tool untuk
+      // mengukur panjang tray" untuk sesuatu yang sudah ia punya. Kemampuan
+      // yang tidak tertulis di deskripsi tool adalah kemampuan yang tidak
+      // pernah dipakai.
+      id: "Membaca model dan melaporkan apa yang sudah ada, per kategori tetap. Ikut melaporkan TOTAL: meter untuk cable_tray, watt untuk lighting, m² untuk room. Tidak membuka transaksi Revit, jadi viewer boleh menjalankannya. Untuk kategori atau parameter di luar daftar ini, pakai /inspect.",
+      en: "Reads the model and reports what is there, per fixed category. It also reports TOTALS: metres for cable_tray, watts for lighting, m² for room. Opens no Revit transaction. For categories or parameters outside this list, use /inspect.",
     },
     role: "viewer",
     group: "read",
@@ -817,6 +822,106 @@ export const COMMANDS: CommandSpec[] = [
       { name: "limit", type: "integer", default: 30, min: 1, max: 500, label: { id: "Batas item", en: "Limit" } },
     ],
     example: "/query Office_A what=lighting detail=list",
+  },
+  {
+    name: "inspect",
+    label: { id: "Baca Model", en: "Inspect Model" },
+    description: {
+      id: "Membaca APA PUN di model — kategori apa saja yang ada, parameter apa saja yang dimiliki sebuah kategori, lalu barisnya sendiri dengan kolom yang kamu sebut. Tidak membuka transaksi Revit.",
+      en: "Reads ANYTHING in the model — which categories exist, what a category can be asked about, then the rows themselves with the columns you name. Opens no Revit transaction.",
+    },
+    role: "viewer",
+    group: "read",
+    fields: [
+      {
+        name: "what",
+        type: "select",
+        default: "elements",
+        options: ["categories", "parameters", "elements"],
+        label: { id: "Mode", en: "Mode" },
+        hint: {
+          // Urutan ini bukan saran gaya. Sebuah parameter harus disebut namanya
+          // dengan tepat untuk bisa dibaca, dan nama yang belum pernah dilihat
+          // tidak bisa disebut — jadi dua mode pertama adalah cara sampai ke
+          // yang ketiga, bukan pelengkapnya.
+          id: "Mulai dari categories, lalu parameters, baru elements. Nama parameter harus persis; yang belum pernah dilihat tidak bisa ditebak.",
+          en: "Start with categories, then parameters, then elements. A parameter name must be exact, and one never seen cannot be guessed.",
+        },
+      },
+      {
+        name: "category",
+        type: "text",
+        label: { id: "Kategori", en: "Category" },
+        hint: {
+          id: "Nama Revit (\"Doors\"), nama OST (\"OST_Doors\"), atau kata pendek yang dipakai perintah lain (\"lighting\"). Wajib untuk parameters dan elements.",
+          en: "A Revit name (\"Doors\"), an OST name (\"OST_Doors\"), or the short key the other commands use (\"lighting\"). Required for parameters and elements.",
+        },
+        showWhen: { field: "what", is: ["parameters", "elements"] },
+      },
+      {
+        name: "params",
+        type: "text",
+        label: { id: "Kolom", en: "Columns" },
+        hint: {
+          id: "Dipisah koma, mis. Mark,Type,Length. Kosongkan untuk Id, Mark, Type, Level. Ambil namanya dari mode parameters.",
+          en: "Comma separated, e.g. Mark,Type,Length. Leave empty for Id, Mark, Type, Level. Take the names from the parameters mode.",
+        },
+        showWhen: { field: "what", is: ["elements"] },
+      },
+      {
+        name: "where",
+        type: "text",
+        label: { id: "Saringan", en: "Filter" },
+        hint: {
+          id: "Satu syarat: Width>800, Mark~LF-, Comments!=. Pakai ~ untuk \"mengandung\".",
+          en: "One condition: Width>800, Mark~LF-, Comments!=. Use ~ for \"contains\".",
+        },
+        showWhen: { field: "what", is: ["elements"] },
+      },
+      {
+        name: "total",
+        type: "text",
+        label: { id: "Jumlahkan", en: "Sum" },
+        hint: {
+          id: "Nama parameter angka, dipisah koma — mis. Length. Dihitung atas SEMUA yang cocok, bukan atas baris yang tampil, dan dalam satuan proyek.",
+          en: "Numeric parameter names, comma separated — e.g. Length. Computed over EVERYTHING that matched, not the rows shown, and in the project's units.",
+        },
+        showWhen: { field: "what", is: ["elements"] },
+      },
+      {
+        name: "group_by",
+        type: "text",
+        label: { id: "Kelompokkan menurut", en: "Group by" },
+        hint: {
+          id: "Satu nama parameter — mis. Type. Hasilnya berapa elemen per nilai.",
+          en: "One parameter name — e.g. Type. The result is how many elements per value.",
+        },
+        showWhen: { field: "what", is: ["elements"] },
+      },
+      {
+        name: "room",
+        type: "text",
+        label: { id: "Ruangan", en: "Room" },
+        showWhen: { field: "what", is: ["elements"] },
+      },
+      {
+        name: "level",
+        type: "text",
+        label: { id: "Lantai", en: "Level" },
+        hint: { id: "mis. \"Level 1\"", en: "e.g. \"Level 1\"" },
+        showWhen: { field: "what", is: ["elements"] },
+      },
+      {
+        name: "limit",
+        type: "integer",
+        default: 30,
+        min: 1,
+        max: 200,
+        label: { id: "Batas baris", en: "Row limit" },
+        showWhen: { field: "what", is: ["elements"] },
+      },
+    ],
+    example: "/inspect what=elements category=Doors params=Mark,Width total=Width where=Width>800",
   },
   {
     name: "list_sheets",

@@ -173,6 +173,17 @@ ATURAN:
   yang sudah berisi 9 armatur berarti 19 armatur bertumpuk pada satu plafon.
   Website memeriksa isi ruangannya sebelum mengirim dan akan menawarkan
   penggantian kalau kamu keliru memilih, tapi pilihlah yang benar sejak awal.
+- Pertanyaan tentang ISI model yang tidak dijawab \`query\` — pintu, dinding, volume
+  beton, parameter apa pun — dijawab \`inspect\`, dan urutannya wajib: mulai
+  \`what=categories\` untuk tahu kategori apa yang ada, lalu
+  \`what=parameters category=X\` untuk tahu nama parameternya PERSIS, baru
+  \`what=elements\`. Jangan menebak nama parameter: kolom yang namanya salah
+  kembali KOSONG, dan kosong tidak bisa dibedakan dari model yang memang tidak
+  punya nilainya. Untuk pertanyaan berupa satu angka ("berapa total panjang
+  tray"), pakai \`total=\` — bukan mendaftar semua barisnya lalu menjumlah sendiri.
+- Panjang, watt, dan luas SUDAH dilaporkan \`query\`: \`what=cable_tray\` memberi
+  total meter, \`what=lighting\` memberi total watt, \`what=room\` memberi total m².
+  Jangan bilang tidak ada caranya.
 - Kalau permintaannya soal standar atau regulasi (SNI, PUIL, IEC, NEC) dan bukan
   perintah untuk model, jawab singkat bahwa itu ada di halaman "Standar
   Electrical", jangan panggil tool apa pun.

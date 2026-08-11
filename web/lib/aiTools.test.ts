@@ -119,3 +119,44 @@ describe("withModelContext", () => {
     );
   });
 });
+
+describe("katalog inspect — jalan menuju \"baca apa pun\"", () => {
+  const inspect = () => {
+    const tool = toolsForRole("viewer").find((t) => t.name === "inspect");
+    if (!tool) throw new Error("inspect tidak ditawarkan ke viewer");
+    return tool;
+  };
+
+  it("ditawarkan ke viewer: ia tidak membuka transaksi Revit", () => {
+    expect(inspect()).toBeTruthy();
+  });
+
+  it("punya ketiga modenya", () => {
+    expect(inspect().input_schema.properties.what.enum).toEqual([
+      "categories",
+      "parameters",
+      "elements",
+    ]);
+  });
+
+  it("menawarkan penjumlahan, penyaringan, dan pengelompokan", () => {
+    const properties = inspect().input_schema.properties;
+    for (const name of ["category", "params", "where", "total", "group_by", "limit"]) {
+      expect(properties[name], name).toBeTruthy();
+    }
+  });
+
+  it("prompt menyuruh menemukan nama parameter, bukan menebaknya", () => {
+    // Kolom yang namanya salah kembali KOSONG, dan kosong tidak bisa dibedakan
+    // dari model yang memang tidak punya nilainya.
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/what=categories/);
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/Jangan menebak nama parameter/);
+  });
+
+  it("prompt menyebut bahwa query sudah melaporkan panjang, watt, dan luas", () => {
+    // Sebabnya nyata: asisten pernah menjawab "tidak ada tool untuk mengukur
+    // panjang tray" untuk angka yang sudah dilaporkan add-in bertahun-tahun.
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/total meter/);
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/Jangan bilang tidak ada caranya/);
+  });
+});
