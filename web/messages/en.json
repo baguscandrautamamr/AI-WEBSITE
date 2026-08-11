@@ -199,7 +199,10 @@
     "cancel": "Cancel this command",
     "cancelFailed": "Could not cancel the command",
     "crossroadDryRun": "\"Dry run\" is checked, and the modify command has no dry run — so re-laying out from here would really change the model. Clear the checkbox first if that is what you want.",
-    "familyUnknown": "This name is not in the model's family list. The add-in will not complain — it falls back to its own default, and the mistake only shows up in the drawing."
+    "familyUnknown": "This name is not in the model's family list. The add-in will not complain — it falls back to its own default, and the mistake only shows up in the drawing.",
+    "crossroadSkip": "Skip this room",
+    "crossroadStop": "Stop the rest",
+    "crossroadApplyRest": "Use this answer for the remaining rooms too"
   },
   "chat": {
     "placeholder": "e.g. place 6 lights in Meeting 1 at 3 m",
@@ -218,7 +221,11 @@
     "chooseGuessed": "(the one I filled in, “{name}”, is not in the model)",
     "chooseDefault": "Let the add-in pick",
     "chosen": "Using: {name}",
-    "openForm": "Edit in the form"
+    "openForm": "Edit in the form",
+    "batchTitle": "— one command per room ({n} rooms):",
+    "batchProgress": "{sent}/{n} queued…",
+    "batchDone": "{sent}/{n} queued in Revit. Each command's result appears below.",
+    "batchSkipped": "{n} skipped"
   },
   "importExcel": {
     "title": "Import Excel",

@@ -69,6 +69,15 @@ interface RoomContents {
 }
 
 /**
+ * Jawaban atas "ruangan ini sudah berisi".
+ *
+ * `skip` dan `cancel` hanya berbeda saat perintahnya bagian dari satu
+ * pengiriman ke banyak ruangan: yang pertama melewati ruangan ini, yang kedua
+ * menghentikan sisanya.
+ */
+type CrossroadChoice = "modify" | "add" | "skip" | "cancel";
+
+/**
  * Pilihan yang harus diambil orangnya sebelum perintahnya berangkat: ruangannya
  * ternyata sudah berisi.
  */
@@ -87,6 +96,8 @@ interface Crossroads {
    * benar-benar berubah — kebalikan persis dari yang diminta orangnya.
    */
   modifyBlocked: null | "count" | "dryRun";
+  /** Bagian dari satu pengiriman ke banyak ruangan. */
+  batch?: boolean;
 }
 
 /** Jawaban /model_info: file yang sedang dibuka Revit dan setup di dalamnya. */
@@ -160,9 +171,19 @@ export default function CommandRunner({
   const [roomContents, setRoomContents] = useState<Record<string, RoomContents>>({});
   const [checkingRoom, setCheckingRoom] = useState(false);
 
-  /** Menunggu orangnya memilih: tata ulang, tambah di atasnya, atau batal. */
+  /** Menunggu orangnya memilih: tata ulang, tambah di atasnya, lewati, atau batal. */
   const [crossroads, setCrossroads] = useState<Crossroads | null>(null);
-  const crossroadsChoice = useRef<((choice: "modify" | "add" | "cancel") => void) | null>(null);
+  const crossroadsChoice = useRef<((choice: CrossroadChoice) => void) | null>(null);
+
+  /**
+   * Jawaban yang dipakai untuk sisa ruangan dalam satu pengiriman berkelompok.
+   *
+   * Lima ruangan yang tiga di antaranya sudah berisi berarti tiga pertanyaan
+   * yang sama berturut-turut, dan tiga pertanyaan identik adalah tiga kali
+   * menekan tombol tanpa membacanya. Dijawab sekali, berlaku untuk sisanya.
+   */
+  const batchAnswer = useRef<CrossroadChoice | null>(null);
+  const batchStopped = useRef(false);
 
   /** Kotak formulir, untuk dibawa ke depan mata saat sebuah command dipilih. */
   const formBox = useRef<HTMLDivElement>(null);
@@ -365,7 +386,10 @@ export default function CommandRunner({
   );
 
   /** Menunggu orangnya memutuskan apa yang harus terjadi pada ruangan yang sudah berisi. */
-  function askCrossroads(info: Crossroads): Promise<"modify" | "add" | "cancel"> {
+  function askCrossroads(info: Crossroads): Promise<CrossroadChoice> {
+    // Sudah dijawab untuk seluruh sisa pengiriman berkelompok.
+    if (info.batch && batchAnswer.current) return Promise.resolve(batchAnswer.current);
+
     return new Promise((resolve) => {
       crossroadsChoice.current = resolve;
       setCrossroads(info);
@@ -375,7 +399,10 @@ export default function CommandRunner({
     });
   }
 
-  function answerCrossroads(choice: "modify" | "add" | "cancel") {
+  function answerCrossroads(choice: CrossroadChoice, applyToRest = false) {
+    if (applyToRest && choice !== "cancel") batchAnswer.current = choice;
+    if (choice === "cancel") batchStopped.current = true;
+
     const resolve = crossroadsChoice.current;
     crossroadsChoice.current = null;
     setCrossroads(null);
@@ -392,7 +419,7 @@ export default function CommandRunner({
    * salah satunya adalah pemeriksaan yang bisa dilewati dengan mengetik kalimat.
    */
   const dispatch = useCallback(
-    async (spec: CommandSpec, vals: Record<string, unknown>) => {
+    async (spec: CommandSpec, vals: Record<string, unknown>, batch = false) => {
       let name = spec.name;
       let payload = vals;
 
@@ -413,9 +440,9 @@ export default function CommandRunner({
               ? ("count" as const)
               : null;
 
-          const choice = await askCrossroads({ room, category, found, modifyBlocked });
+          const choice = await askCrossroads({ room, category, found, modifyBlocked, batch });
 
-          if (choice === "cancel") return null;
+          if (choice === "cancel" || choice === "skip") return null;
           if (choice === "modify") {
             name = "modify_devices";
             payload = modifyValues;
@@ -743,6 +770,61 @@ export default function CommandRunner({
   }
 
   /**
+   * Mengirim satu perintah per ruangan, berurutan.
+   *
+   * Berurutan, bukan serentak: tiap ruangan yang sudah berisi memunculkan
+   * pertanyaannya sendiri, dan lima pertanyaan yang datang bersamaan tidak bisa
+   * dijawab satu-satu. Yang gagal disebut namanya lalu dilewati — empat ruangan
+   * yang benar tidak boleh batal karena satu ruangan yang namanya salah eja.
+   */
+  async function runBatch(
+    spec: CommandSpec,
+    items: { room: string; values: Record<string, unknown> }[],
+    note: string
+  ) {
+    batchAnswer.current = null;
+    batchStopped.current = false;
+
+    const bubble = addChat({
+      role: "batch",
+      text: note,
+      command: spec.name,
+      rooms: items.map((i) => i.room),
+      sent: 0,
+      skipped: 0,
+      failures: [],
+      done: false,
+    });
+
+    if (spec.confirm && !window.confirm(t("command.confirm"))) {
+      patchChat(bubble, { done: true });
+      return;
+    }
+
+    let sent = 0;
+    let skipped = 0;
+    const failures: string[] = [];
+
+    for (const item of items) {
+      if (batchStopped.current) break;
+
+      try {
+        const queued = await dispatch(spec, item.values, true);
+        if (queued) sent++;
+        else skipped++;
+      } catch (err) {
+        const withIssues = err as Error & { issues?: string[] };
+        failures.push(`${item.room}: ${withIssues.issues?.join(" ") ?? withIssues.message}`);
+      }
+
+      patchChat(bubble, { sent, skipped, failures: [...failures] });
+    }
+
+    patchChat(bubble, { sent, skipped, failures, done: true });
+    batchAnswer.current = null;
+  }
+
+  /**
    * Jawaban atas "family mana yang dipakai".
    *
    * `null` berarti biarkan add-in yang memilih — pilihan yang sah, dan sekarang
@@ -837,6 +919,13 @@ export default function CommandRunner({
       }
 
       const spec = COMMANDS_BY_NAME[body.command];
+
+      // Satu permintaan, satu perintah per ruangan.
+      if (body.kind === "batch" && spec) {
+        await runBatch(spec, body.items ?? [], body.note ?? "");
+        return;
+      }
+
       const incomplete = Boolean(body.issues?.length);
 
       const bubble = addChat({
@@ -1408,9 +1497,14 @@ function Crossroad({
   onAnswer,
 }: {
   info: Crossroads;
-  onAnswer: (choice: "modify" | "add" | "cancel") => void;
+  onAnswer: (choice: CrossroadChoice, applyToRest?: boolean) => void;
 }) {
   const { t } = useI18n();
+
+  // Berlaku untuk ruangan berikutnya juga. Lima ruangan yang tiga di antaranya
+  // sudah berisi berarti tiga pertanyaan identik berturut-turut — dan tiga
+  // pertanyaan identik adalah tiga kali menekan tombol tanpa membacanya.
+  const [applyToRest, setApplyToRest] = useState(false);
 
   return (
     <div className="space-y-2 rounded-xl border border-amber-400/50 bg-amber-400/10 p-3 text-sm">
@@ -1429,25 +1523,49 @@ function Crossroad({
       )}
       <div className="flex flex-wrap gap-2">
         {!info.modifyBlocked && (
-          <button type="button" onClick={() => onAnswer("modify")} className="btn-accent text-sm">
+          <button
+            type="button"
+            onClick={() => onAnswer("modify", applyToRest)}
+            className="btn-accent text-sm"
+          >
             {t("command.crossroadModify")}
           </button>
         )}
         <button
           type="button"
-          onClick={() => onAnswer("add")}
+          onClick={() => onAnswer("add", applyToRest)}
           className="glass-input px-3 py-1.5 text-sm"
         >
           {t("command.crossroadAdd")}
         </button>
+        {info.batch && (
+          <button
+            type="button"
+            onClick={() => onAnswer("skip", applyToRest)}
+            className="glass-input px-3 py-1.5 text-sm"
+          >
+            {t("command.crossroadSkip")}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => onAnswer("cancel")}
           className="glass-input px-3 py-1.5 text-sm"
         >
-          {t("command.crossroadCancel")}
+          {info.batch ? t("command.crossroadStop") : t("command.crossroadCancel")}
         </button>
       </div>
+
+      {info.batch && (
+        <label className="flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={applyToRest}
+            onChange={(e) => setApplyToRest(e.target.checked)}
+          />
+          {t("command.crossroadApplyRest")}
+        </label>
+      )}
     </div>
   );
 }

@@ -158,6 +158,12 @@ ATURAN:
   persis sepuluh. Grid yang kamu karang sendiri bisa memuat lebih banyak titik
   daripada jumlahnya dan meninggalkan lubang di deret terakhir. Isi \`grid\` hanya
   kalau orangnya sendiri yang menyebut bentuknya ("2x5", "dua baris lima kolom").
+- "Semua ruangan" dikerjakan, bukan ditanyakan balik satu per satu: isi argumen
+  \`room\` dengan \`*\` dan sistem yang menyalinnya jadi SATU PERINTAH PER RUANGAN,
+  memakai daftar ruangan model yang ada di bawah. Untuk sebagian ruangan saja,
+  tulis namanya dipisah koma — mis. \`room="MEETING 1, MEETING 2"\`. Berlaku untuk
+  kedelapan perintah perangkat. Jangan memanggil tool berkali-kali untuk ini, dan
+  jangan meminta orangnya menyebut ruangannya satu-satu.
 - Saklar berdiri 300 mm dari tepi daun pintu — itu standarnya, dan add-in sudah
   memakainya sendiri. Isi \`door_offset\` HANYA kalau orangnya menyebut jarak lain
   ("saklar 500 mm dari pintu"); jangan mengisinya dengan 300 untuk menegaskan

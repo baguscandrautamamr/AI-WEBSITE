@@ -55,6 +55,25 @@ export type ChatBody =
       choices: string[];
       /** Sudah dijawab; tombolnya tinggal jejak. */
       answered?: string;
+    }
+  /**
+   * Satu permintaan, satu perintah per ruangan.
+   *
+   * "Kasih saklar di semua ruangan" dulu berakhir sebagai daftar ruangan dan
+   * pertanyaan balik — lalu satu perintah, dan empat ruangan sisanya harus
+   * diminta lagi dengan kalimat yang sama. Add-in memang mengerjakan satu
+   * ruangan per perintah; yang tidak perlu dikerjakan orang adalah menyalinnya
+   * lima kali.
+   */
+  | {
+      role: "batch";
+      text: string;
+      command: string;
+      rooms: string[];
+      sent: number;
+      skipped: number;
+      failures: string[];
+      done: boolean;
     };
 
 export type ChatEntry = ChatBody & { id: number };
@@ -134,6 +153,38 @@ export default function CommandChat({
                     <p className="text-xs text-amber-600 dark:text-amber-400">
                       {t("chat.nothingSent")}
                     </p>
+                  )}
+                </div>
+              );
+            }
+
+            if (e.role === "batch") {
+              return (
+                <div key={e.id} className="glass-input max-w-[92%] space-y-2 rounded-2xl text-sm">
+                  {e.text && <Markdown>{e.text}</Markdown>}
+                  <p className="text-xs">
+                    <code>/{e.command}</code>{" "}
+                    {t("chat.batchTitle").replace("{n}", String(e.rooms.length))}
+                  </p>
+                  <ul className="flex flex-wrap gap-1 text-xs opacity-75">
+                    {e.rooms.map((room) => (
+                      <li key={room} className="rounded-md bg-black/5 px-1.5 py-0.5 dark:bg-white/10">
+                        {room}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-xs opacity-60">
+                    {t(e.done ? "chat.batchDone" : "chat.batchProgress")
+                      .replace("{sent}", String(e.sent))
+                      .replace("{n}", String(e.rooms.length))}
+                    {e.skipped > 0 && ` · ${t("chat.batchSkipped").replace("{n}", String(e.skipped))}`}
+                  </p>
+                  {e.failures.length > 0 && (
+                    <ul className="list-disc space-y-0.5 pl-5 text-xs text-red-500">
+                      {e.failures.map((f) => (
+                        <li key={f}>{f}</li>
+                      ))}
+                    </ul>
                   )}
                 </div>
               );

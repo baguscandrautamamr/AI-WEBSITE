@@ -103,8 +103,8 @@ const room = (labelId: string, labelEn: string): CommandField => ({
     // model MEP yang ruangannya dibuat sebagai Space dulu terbaca seolah tidak
     // punya ruangan sama sekali, dan tidak ada apa pun di form ini yang
     // memberi tahu bahwa itulah sebabnya.
-    id: "Tulis persis seperti di gambar, termasuk nomornya — mis. \"meeting 1\". Room maupun Space MEP sama-sama bisa.",
-    en: "Type it exactly as on the drawing, including its number — e.g. \"meeting 1\". Either a Room or an MEP Space works.",
+    id: "Tulis persis seperti di gambar, termasuk nomornya — mis. \"meeting 1\". Room maupun Space MEP sama-sama bisa. Isi `*` untuk SEMUA ruangan di model, atau beberapa nama dipisah koma; masing-masing jadi perintahnya sendiri.",
+    en: "Type it exactly as on the drawing, including its number — e.g. \"meeting 1\". Either a Room or an MEP Space works. Use `*` for EVERY room in the model, or several names separated by commas; each becomes its own command.",
   },
 });
 

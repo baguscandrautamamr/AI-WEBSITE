@@ -8,6 +8,7 @@ import { ELECTRICAL_SYSTEM_PROMPT, mentionsCommand, toolsForRole, withModelConte
 import { COMMANDS_BY_NAME, canRun } from "@/lib/commands";
 import { CommandValidationError, buildPayload } from "@/lib/queue";
 import { resolveFamilies } from "@/lib/familyChoice";
+import { expandRooms } from "@/lib/roomList";
 
 export const runtime = "nodejs";
 
@@ -186,6 +187,42 @@ export async function POST(req: Request) {
         values: resolved.values,
         note: text || null,
         ...resolved.question,
+      });
+    }
+
+    // "Semua ruangan" dimekarkan jadi satu perintah per ruangan.
+    //
+    // Add-in mengerjakan satu ruangan per perintah, jadi yang tersisa cuma
+    // pertanyaan siapa yang menyalinnya lima kali. Dimekarkan di sini, bukan
+    // dengan meminta model memanggil tool lima kali: model yang diminta begitu
+    // akan memanggilnya empat kali pada percobaan yang lain, dan tidak ada yang
+    // menyadarinya kecuali dari gambar yang kurang satu ruangan.
+    const roomField = spec.positional?.name;
+    const rooms = roomField
+      ? expandRooms(resolved.values[roomField], body.context?.rooms ?? [])
+      : null;
+
+    if (rooms) {
+      if (rooms.length === 0) {
+        return NextResponse.json({
+          kind: "reply",
+          text:
+            text ||
+            "Daftar ruangan belum terbaca dari Revit, jadi \"semua ruangan\" belum bisa saya jabarkan. Buka Revit dengan add-in berjalan, atau sebutkan nama ruangannya.",
+        });
+      }
+
+      const items = rooms.map((room) => {
+        const values = { ...resolved.values, [roomField as string]: room };
+        return { room, values, commandText: buildPayload(spec, values).commandText };
+      });
+
+      return NextResponse.json({
+        kind: "batch",
+        command: spec.name,
+        items,
+        confirm: Boolean(spec.confirm),
+        note: text || null,
       });
     }
 

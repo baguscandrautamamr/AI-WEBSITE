@@ -199,7 +199,10 @@
     "cancel": "Batalkan perintah ini",
     "cancelFailed": "Gagal membatalkan perintah",
     "crossroadDryRun": "\"Uji coba saja\" sedang dicentang, dan perintah modifikasi tidak punya uji coba — jadi menata ulang dari sini akan benar-benar mengubah model. Hilangkan centangnya dulu kalau memang mau menata ulang.",
-    "familyUnknown": "Nama ini tidak ada di daftar family model. Add-in tidak akan mengeluh — ia memakai family bawaannya, dan yang salah baru terlihat di gambar."
+    "familyUnknown": "Nama ini tidak ada di daftar family model. Add-in tidak akan mengeluh — ia memakai family bawaannya, dan yang salah baru terlihat di gambar.",
+    "crossroadSkip": "Lewati ruangan ini",
+    "crossroadStop": "Hentikan sisanya",
+    "crossroadApplyRest": "Pakai jawaban ini untuk ruangan berikutnya juga"
   },
   "chat": {
     "placeholder": "mis. pasang 6 lampu di Meeting 1 tinggi 3 meter",
@@ -218,7 +221,11 @@
     "chooseGuessed": "(yang saya isi tadi, “{name}”, tidak ada di model)",
     "chooseDefault": "Biarkan add-in yang pilih",
     "chosen": "Dipakai: {name}",
-    "openForm": "Ubah di formulir"
+    "openForm": "Ubah di formulir",
+    "batchTitle": "— satu perintah untuk tiap ruangan ({n} ruangan):",
+    "batchProgress": "{sent}/{n} masuk antrean…",
+    "batchDone": "{sent}/{n} masuk antrean Revit. Hasil tiap perintah muncul di bawah.",
+    "batchSkipped": "{n} dilewati"
   },
   "importExcel": {
     "title": "Import Excel",
