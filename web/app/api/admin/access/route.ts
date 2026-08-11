@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { guardArea, isAccessClass } from "@/lib/access";
 
 export const runtime = "nodejs";
 
@@ -34,6 +35,16 @@ async function requireAdmin() {
     return { error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
   }
 
+  // Kelas akun sebelum peran proyek.
+  //
+  // Keduanya perlu, dan urutannya penting untuk pesan yang dibaca orangnya:
+  // sebuah akun bisa berkelas standard_only DAN masih memegang baris admin dari
+  // sebelum kelasnya dipersempit. Diperiksa dengan urutan terbalik, ia lolos.
+  const gate = await guardArea(supabase, user.id, "grant");
+  if (!gate.ok) {
+    return { error: NextResponse.json({ error: gate.reason }, { status: 403 }) };
+  }
+
   const projectIds = await adminProjectIds(supabase);
   if (projectIds.length === 0) {
     return {
@@ -65,11 +76,21 @@ async function requireUser() {
     return { error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
   }
 
-  return { userId: user.id, projectIds: await adminProjectIds(supabase) };
+  // MELIHAT halaman ini boleh untuk kelas apa pun — termasuk standard_only, yang
+  // memang diminta bisa melihat daftar anggota tanpa bisa mengubahnya. Yang
+  // dijaga adalah MEMBERI, dan itu dinyatakan di sini sebagai satu boolean supaya
+  // UI tidak menampilkan tombol yang pasti ditolak.
+  const gate = await guardArea(supabase, user.id, "grant");
+
+  return {
+    userId: user.id,
+    projectIds: await adminProjectIds(supabase),
+    canGrant: gate.ok,
+  };
 }
 
 /** Kolom user yang boleh keluar dari route ini. Tidak lebih dari ini. */
-const USER_COLUMNS = "id, full_name, auth_provider, is_active";
+const USER_COLUMNS = "id, full_name, auth_provider, is_active, access_class";
 
 /** Jumlah hasil pencarian yang dikembalikan sekali jalan. */
 const SEARCH_LIMIT = 20;
@@ -150,6 +171,14 @@ export async function GET(req: Request) {
           .limit(SEARCH_LIMIT)
       : { data: [] };
 
+  // Dua izin yang berbeda, dinyatakan terpisah supaya UI tidak perlu menebaknya
+  // dari daftar proyek: memberi peran di sebuah proyek (admin proyek), dan
+  // mengubah kelas akun (admin global). Yang tidak boleh melakukannya tidak
+  // melihat kontrolnya — bukan melihat lalu ditolak setelah menekannya.
+  const [{ data: me }] = await Promise.all([
+    service.from("users").select("role").eq("id", guard.userId).maybeSingle(),
+  ]);
+
   return NextResponse.json({
     projects: projects ?? [],
     access: access ?? [],
@@ -157,6 +186,14 @@ export async function GET(req: Request) {
     matches: matches ?? [],
     pending: await pendingUsers(service),
     searchMinChars: SEARCH_MIN_CHARS,
+    // Hanya soal KELAS, bukan soal sudah punya proyek atau belum.
+    //
+    // Diikat ke `projectIds.length > 0`, akun berkelas penuh yang belum pernah
+    // diberi proyek akan kehilangan formulir "buat proyek baru" — satu-satunya
+    // jalan yang ia punya untuk mulai. Batas per-proyek tetap ditegakkan POST
+    // dan DELETE, yang memang tahu proyek mana yang dimaksud.
+    canGrant: guard.canGrant,
+    canSetClass: me?.role === "admin",
   });
 }
 
@@ -263,6 +300,99 @@ export async function DELETE(req: Request) {
 
   if (error) {
     console.error("[api/admin/access] revoke failed", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
+}
+
+/**
+ * Admin GLOBAL — `users.role = 'admin'`, bukan admin sebuah proyek.
+ *
+ * Pembedaan ini bukan kerapian: kelas akun berlaku untuk SELURUH akun, di semua
+ * proyek dan di halaman yang tidak punya proyek sama sekali. Kalau yang boleh
+ * mengubahnya adalah "admin di setidaknya satu proyek" — arti `requireAdmin()`
+ * di atas — maka siapa pun yang membuat satu proyek sendiri (dan pembuatnya
+ * otomatis jadi admin di situ) bisa menaikkan kelasnya sendiri jadi penuh. Itu
+ * membuat seluruh pembatasan ini tidak berarti apa-apa.
+ *
+ * Dibaca dengan service role: `users_self_read` hanya mengembalikan baris
+ * sendiri, dan yang ditanyakan di sini memang baris sendiri — tapi kolom `role`
+ * global tidak boleh bergantung pada policy yang bisa berubah.
+ */
+async function requireGlobalAdmin() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: NextResponse.json({ error: "unauthorized" }, { status: 401 }) };
+  }
+
+  const { data } = await createServiceClient()
+    .from("users")
+    .select("role, is_active")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (data?.role !== "admin" || data?.is_active === false) {
+    return {
+      error: NextResponse.json(
+        { error: "hanya admin global yang boleh mengubah kelas akun" },
+        { status: 403 }
+      ),
+    };
+  }
+
+  return { userId: user.id };
+}
+
+/**
+ * PATCH — mengubah kelas akun seseorang.
+ *
+ * Terpisah dari POST, yang memberi PERAN pada satu proyek, karena keduanya
+ * menjawab pertanyaan yang berbeda dan salah satunya berlaku global. Digabung
+ * dalam satu endpoint, keduanya akan terbaca seperti hal yang sama — dan itu
+ * persis kekeliruan yang membuat "standard_only" terdengar seperti peran proyek.
+ */
+export async function PATCH(req: Request) {
+  const guard = await requireGlobalAdmin();
+  if ("error" in guard) return guard.error;
+
+  let body: { userId?: string; accessClass?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "body harus JSON" }, { status: 400 });
+  }
+
+  const { userId, accessClass } = body;
+
+  if (!userId || !isAccessClass(accessClass)) {
+    return NextResponse.json(
+      { error: "`userId` wajib, dan `accessClass` harus full, standard_only, atau no_standard" },
+      { status: 400 }
+    );
+  }
+
+  // Menurunkan kelas diri sendiri adalah cara mengunci diri keluar dari satu-
+  // satunya halaman tempat kelas bisa diubah kembali. Sama dengan alasan
+  // seorang admin tidak boleh mencabut aksesnya sendiri di DELETE di atas.
+  if (userId === guard.userId && accessClass !== "full") {
+    return NextResponse.json(
+      { error: "tidak bisa mempersempit kelas akunmu sendiri" },
+      { status: 400 }
+    );
+  }
+
+  const { error } = await createServiceClient()
+    .from("users")
+    .update({ access_class: accessClass, updated_at: new Date().toISOString() })
+    .eq("id", userId);
+
+  if (error) {
+    console.error("[api/admin/access] set access_class failed", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

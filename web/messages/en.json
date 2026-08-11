@@ -158,7 +158,16 @@
     "creating": "Creating…",
     "created": "Project created with code",
     "createFailed": "Could not create the project",
-    "createNote": "You become admin of the project you create. System admins are given full access too, so it is visible without being asked for."
+    "createNote": "You become admin of the project you create. System admins are given full access too, so it is visible without being asked for.",
+    "classTitle": "Account class — which pages this account may open. Different from its role on a project.",
+    "classFailed": "Could not change the account class",
+    "viewOnly": "Your account class may view this list but not grant access. Only full-access accounts can grant.",
+    "class": {
+      "full": "Full access",
+      "standard_only": "Standards only",
+      "no_standard": "Full, without Standards"
+    },
+    "notAdminViewOnly": "Your account class covers the Standards & Regulations page only, so there is no project to manage here. If that looks wrong, ask an admin to change your account class."
   },
   "auth": {
     "login": "Sign in",
@@ -358,5 +367,11 @@
   },
   "inspect": {
     "title": "Inspect Model"
+  },
+  "access": {
+    "deniedTitle": "This page is not part of your account",
+    "standardOnly": "Your account class covers the Standards & Regulations page only. Pages that touch the Revit model are not available. If that looks wrong, ask an admin to change your account class.",
+    "noStandard": "Your account class covers everything except the Standards & Regulations page. If that looks wrong, ask an admin to change your account class.",
+    "goHome": "Go to a page you can open"
   }
 }

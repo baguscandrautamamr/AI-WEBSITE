@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { guardArea } from "@/lib/access";
 import { rateLimit, tooManyRequests } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
@@ -62,6 +63,13 @@ export async function POST(req: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  // Membuat proyek adalah bentuk lain dari memberi akses: barisnya di
+  // user_project_access ditulis di bawah, dengan peran admin, untuk pembuatnya
+  // sendiri. Kelas yang tidak boleh memberi akses karena itu tidak boleh membuat
+  // proyek — kalau boleh, ia cukup membuat satu proyek untuk jadi admin.
+  const gate = await guardArea(supabase, user.id, "grant");
+  if (!gate.ok) return NextResponse.json({ error: gate.reason }, { status: 403 });
 
   const limit = rateLimit(`project:${user.id}`, PROJECTS_PER_HOUR, 60 * 60 * 1000);
   if (!limit.ok) return tooManyRequests(limit);

@@ -9,8 +9,9 @@ import { createClient } from "@/lib/supabase/client";
 import { APP_NAME } from "@/lib/brand";
 import BrandMark from "@/app/BrandMark";
 import type { Role } from "@/lib/commands";
+import { areaOfPath, canOpen, type AccessClass } from "@/lib/access";
 
-export default function DashboardNav({ role }: { role: Role }) {
+export default function DashboardNav({ role, access }: { role: Role; access: AccessClass }) {
   const { t, locale, setLocale } = useI18n();
   const { theme, setTheme } = useTheme();
   const pathname = usePathname();
@@ -85,6 +86,15 @@ export default function DashboardNav({ role }: { role: Role }) {
 
       {items
         .filter((i) => i.roles.includes(role))
+        // Kelas akun menyaring setelah peran, dan keduanya perlu: peran
+        // menentukan apa yang boleh dilakukan pada model, kelas menentukan
+        // halaman mana yang ada bagi akun ini. Tautan yang disaring di sini
+        // hanya soal tidak menawarkan jalan menuju penolakan — yang menjaga
+        // adalah AccessGuard dan pemeriksaan di setiap route.
+        .filter((i) => {
+          const area = areaOfPath(i.href);
+          return !area || canOpen(access, area);
+        })
         .map((item) => (
           <Link
             key={item.href}

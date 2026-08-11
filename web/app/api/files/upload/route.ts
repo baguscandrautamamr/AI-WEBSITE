@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { roleForProject } from "@/lib/access";
+import { guardArea, roleForProject } from "@/lib/access";
 import { rateLimit, tooManyRequests } from "@/lib/rateLimit";
 import { uploadBuffer } from "@/lib/cloudinary";
 import { COMMANDS_BY_NAME, canRun } from "@/lib/commands";
@@ -80,6 +80,13 @@ export async function POST(req: Request) {
   // Diperiksa terhadap spesifikasi command yang akan memakai file ini, bukan
   // terhadap peran yang ditulis di sini — kalau import_excel suatu saat naik
   // jadi khusus admin, syarat unggahnya ikut naik dengan sendirinya.
+  // Kelas akun lebih dulu, sebelum peran proyek: akun yang kelasnya tidak
+  // mencakup Revit tidak boleh sampai ke pertanyaan "peran apa dia di proyek
+  // ini", karena jawabannya bisa saja "editor" — kelas dan peran adalah dua
+  // pagar yang berdiri sendiri.
+  const gate = await guardArea(supabase, user.id, "revit");
+  if (!gate.ok) return NextResponse.json({ error: gate.reason }, { status: 403 });
+
   const role = await roleForProject(supabase, user.id, projectId);
   const spec = COMMANDS_BY_NAME["import_excel"];
   if (!role || !spec || !canRun(spec, role)) {
