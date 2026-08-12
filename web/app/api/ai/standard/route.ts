@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { rateLimit, tooManyRequests } from "@/lib/rateLimit";
 import { anthropic, MODEL } from "@/lib/anthropic";
 import { guardArea } from "@/lib/access";
-import { redoReason, withoutDiagrams } from "@/lib/history";
+import { fitHistory, redoReason, scrubLeaks } from "@/lib/history";
 
 export const runtime = "nodejs";
 
@@ -79,15 +79,13 @@ Aturan SVG:
 - Jangan menggambar bingkai dekoratif mengelilingi seluruh gambar. Ia tidak
   menambah keterangan apa pun, dan ia justru bagian yang paling sering tidak
   bertemu dengan isinya.
-- BATAS UKURAN, dan ini bagian dari benar-tidaknya gambar itu. SVG-nya ditulis
-  huruf demi huruf sementara pembacanya menunggu di depan layar — jadi setiap
-  elemen yang tidak perlu adalah detik tambahan yang ia habiskan menunggu, dan
-  gambar yang datang setelah satu menit sudah kalah oleh gambar yang datang
-  setelah dua puluh detik. Sekitar 70 elemen gambar, tidak lebih. Kalau isinya
-  tidak cukup, KURANGI bagiannya — jangan perkecil hurufnya, jangan dirapatkan.
-- Markup-nya ringkas: tanpa komentar <!-- -->, tanpa id dan class, tanpa
-  indentasi bertingkat, dan tanpa atribut yang hanya mengulang nilai bawaan.
-  Ini bukan soal gaya — tiap karakter itu ditulis satu per satu dan ditunggu.
+- TIDAK ADA BATAS ELEMEN, dan jangan menahan diri demi ukuran. Gambar yang baik
+  jauh lebih berharga daripada gambar yang pendek: pakai elemen sebanyak yang
+  memang diperlukan supaya gambarnya lengkap, terbaca, dan benar. Yang membatasi
+  bukan jumlahnya, melainkan apakah setiap elemen menerangkan sesuatu.
+- Yang tetap dibuang: yang tidak menerangkan apa-apa. Tanpa komentar <!-- -->,
+  tanpa id dan class, tanpa hiasan yang cuma mengisi ruang. Bukan demi ringkas —
+  melainkan karena gambar teknik yang penuh hal tak berarti lebih sulit dibaca.
 - JANGAN menyalin ke dalam gambar apa yang sudah kamu tulis di teks jawaban, dan
   jangan menulis paragraf di dalam gambar. Gambar untuk yang berbentuk, teks
   untuk yang berupa kalimat. Untuk permintaan gambar, teks jawabannya cukup
@@ -104,9 +102,12 @@ Aturan SVG:
   menuliskannya di atas garisnya.
 - Label yang panjang dipendekkan atau dipecah jadi dua <text> bertingkat, bukan
   dibiarkan melebar menembus elemen di sebelahnya.
-- Sedikit dan jelas mengalahkan banyak dan padat. Delapan bagian yang terpisah
-  rapi lebih berguna daripada dua puluh lima yang berdesakan. Kalau ruang tidak
-  cukup, KURANGI ISINYA — jangan perkecil hurufnya dan jangan dirapatkan.
+- Kalau ruang tidak cukup, LEBARKAN viewBox-nya — jangan perkecil hurufnya dan
+  jangan dirapatkan. Kanvas tidak ada harganya; huruf 9 px dan garis yang
+  berdesakan ada harganya, dan yang membayar pembacanya.
+- Gambar yang baik punya susunan: judul di kiri atas, isi utamanya di tengah,
+  keterangan di tempat yang tetap. Tebal-tipis garis dipakai untuk membedakan
+  yang utama dari yang penunjang, bukan seragam semua.
 - font-size minimal 12 (pada viewBox setinggi ~500). Huruf yang lebih kecil
   tidak terbaca di HP.
 - Pakai stroke dan fill dengan warna eksplisit yang terbaca di atas putih. Jangan
@@ -150,7 +151,9 @@ Aturannya:
   text. Tanpa <g>, tanpa <svg>, semuanya dalam SATU baris.
 - Nama yang panjang dipendekkan sendiri oleh halaman ini, tapi yang pendek tetap
   lebih terbaca: "NEMA L6-20R", bukan "NEMA L6-20R twist-lock 250 V".
-- Paling banyak 16 kartu. Lebih dari itu buang yang paling jarang dipakai.
+- Paling banyak 16 kartu — batas tata letaknya, bukan batas hemat.
+- Simbolnya digambar sungguhan, bukan kotak kosong berisi singkatan. Bentuk yang
+  bisa dikenali sekilas itu seluruh gunanya kartu ini ada.
 - Jangan menulis judul/catatan yang mengulang kalimat yang sudah kamu tulis di
   luar blok.
 
@@ -187,16 +190,20 @@ jangan menyisipkan diagram atas inisiatif sendiri.`;
 const MAX_TURNS = 8;
 
 /**
- * Riwayat sebagai konteks model: teks asisten tanpa diagramnya.
+ * Riwayat sebagai konteks model — utuh, diagram dan semuanya.
  *
- * Pertanyaan user tidak disentuh — ia tidak pernah memuat SVG, dan memangkasnya
- * hanya akan menghilangkan apa yang sebenarnya ditanyakan.
+ * Dulu diagramnya dibuang di sini demi menghemat token. Itu dicabut: tagihannya
+ * dihitung per permintaan, bukan per token, jadi tidak ada yang dihemat — dan
+ * penanda yang ditinggalkannya justru dua kali membuat model berhenti
+ * menggambar, karena riwayat dibaca sebagai contoh jawabannya sendiri.
+ *
+ * Yang tersisa cuma menyapu sisa penanda lama dari jawaban yang telanjur
+ * tersimpan, dan sebuah batas ukuran sebagai jaring pengaman.
  */
 function asContext(turns: Turn[]) {
-  return turns.map((t) => ({
-    role: t.role,
-    content: t.role === "assistant" ? withoutDiagrams(t.text) : t.text,
-  }));
+  return fitHistory(turns.map((t) => ({ ...t, text: scrubLeaks(t.text) })))
+    .filter((t) => t.text.length > 0)
+    .map((t) => ({ role: t.role, content: t.text }));
 }
 
 interface Turn {
@@ -291,10 +298,12 @@ export async function POST(req: Request) {
 
         const response = anthropic.messages.stream({
           model: MODEL,
-          // Naik dari 4096 sejak diagram diizinkan: satu SVG berdimensi bisa
-          // menghabiskan ribuan token sendiri, dan jawaban yang terpotong di
-          // tengah tag menghasilkan gambar rusak, bukan gambar pendek.
-          max_tokens: 8192,
+          // Ruangnya dilonggarkan, bukan dihemat: tagihan dihitung per
+          // permintaan, jadi batas yang ketat tidak membeli apa pun dan hanya
+          // memotong gambar di tengah tag — yang menghasilkan gambar RUSAK,
+          // bukan gambar pendek. Gambar berdimensi yang lengkap memang memakan
+          // ribuan token sendiri, dan sekarang ia boleh.
+          max_tokens: 32_000,
           system: SYSTEM_PROMPT,
           messages,
         });
