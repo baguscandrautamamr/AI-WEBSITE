@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { drawableSvg, splitDiagrams, svgSize } from "./diagrams";
+import { drawableSvg, splitDiagrams, svgSize, tightViewBox } from "./diagrams";
 
 const svg = '<svg viewBox="0 0 100 60"><rect x="10" y="10" width="20" height="20"/></svg>';
 
@@ -173,5 +173,40 @@ describe("svgSize", () => {
     // yang sedikit salah jauh lebih baik daripada nol.
     expect(svgSize("<svg>")).toEqual({ width: 1000, height: 700 });
     expect(svgSize('<svg viewBox="0 0 0 0">')).toEqual({ width: 1000, height: 700 });
+  });
+});
+
+describe("tightViewBox — ruang kosong yang tidak diminta siapa pun", () => {
+  // Model menyatakan viewBox SEBELUM menggambar, jadi angkanya adalah ruang yang
+  // ia rencanakan. Ketika gambarnya selesai lebih kecil, sisanya tetap ada — dan
+  // yang terlihat adalah gambar yang menggantung di kiri dengan garis tepi
+  // berserakan di kanan.
+  it("merapatkan gambar yang cuma mengisi separuh ruangnya", () => {
+    const next = tightViewBox("0 0 1000 640", { x: 0, y: 0, width: 500, height: 300 });
+    expect(next).toBe("-10 -10 520 320");
+  });
+
+  it("membiarkan gambar yang sudah mengisi ruangnya", () => {
+    // Merapatkan yang sudah rapat cuma menggeser semuanya satu-dua piksel
+    // setiap render, dan pergeseran yang tidak memperbaiki apa pun tetap
+    // sebuah pergeseran.
+    expect(tightViewBox("0 0 1000 640", { x: 0, y: 0, width: 980, height: 630 })).toBeNull();
+  });
+
+  it("isi yang tidak dimulai dari nol ikut digeser", () => {
+    expect(tightViewBox("0 0 1000 1000", { x: 200, y: 100, width: 300, height: 200 })).toBe(
+      "194 94 312 212"
+    );
+  });
+
+  it("gambar tanpa viewBox tetap diberi satu", () => {
+    expect(tightViewBox(null, { x: 0, y: 0, width: 100, height: 50 })).toBe("-2 -2 104 54");
+  });
+
+  it("isi yang tidak punya ukuran tidak diapa-apakan", () => {
+    // getBBox() pada gambar yang belum tergambar mengembalikan nol, dan viewBox
+    // selebar nol adalah gambar yang hilang sama sekali.
+    expect(tightViewBox("0 0 10 10", { x: 0, y: 0, width: 0, height: 0 })).toBeNull();
+    expect(tightViewBox("0 0 10 10", { x: 0, y: 0, width: 5, height: 0 })).toBeNull();
   });
 });

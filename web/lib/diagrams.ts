@@ -204,3 +204,59 @@ export function drawableSvg(source: string): string {
   const head = source.slice(0, end + 1);
   return /<\/svg\s*>\s*$/i.test(head) ? head : `${head}</svg>`;
 }
+
+/** Sisa ruang yang masih dianggap wajar sebelum viewBox-nya dirapatkan. */
+const SNUG = 0.92;
+
+/** Margin di sekeliling isi, sebagai pecahan dari sisi terpanjangnya. */
+const MARGIN = 0.02;
+
+/**
+ * viewBox yang dirapatkan ke isi gambarnya, atau null kalau memang sudah rapat.
+ *
+ * Model menyatakan viewBox sebelum ia menggambar apa pun, jadi angkanya adalah
+ * ruang yang ia RENCANAKAN — bukan yang akhirnya ia pakai. Ketika gambarnya
+ * selesai lebih kecil dari rencananya, sisanya tetap ada sebagai ruang kosong,
+ * dan yang terlihat adalah gambar yang menggantung di kiri dengan garis-garis
+ * tepi berserakan di kanan.
+ *
+ * Ukurannya diambil dari `getBBox()` — kotak sesungguhnya dari apa yang benar-
+ * benar tergambar — jadi ini perbaikan yang tidak bergantung pada model menuruti
+ * aturan apa pun.
+ *
+ * Hanya kalau selisihnya berarti. Merapatkan gambar yang sudah mengisi ruangnya
+ * cuma menggeser semuanya satu-dua piksel setiap kali dirender, dan pergeseran
+ * yang tidak memperbaiki apa-apa tetap sebuah pergeseran.
+ */
+export function tightViewBox(
+  current: string | null,
+  content: { x: number; y: number; width: number; height: number }
+): string | null {
+  if (!(content.width > 0 && content.height > 0)) return null;
+
+  const declared = (current ?? "")
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number)
+    .filter((n) => Number.isFinite(n));
+
+  // Sudah rapat: isinya mengisi hampir seluruh ruang yang dinyatakan.
+  if (declared.length === 4 && declared[2] > 0 && declared[3] > 0) {
+    const fills = content.width / declared[2] >= SNUG && content.height / declared[3] >= SNUG;
+    if (fills) return null;
+  }
+
+  // Margin dihitung dari sisi terpanjang, bukan per sumbu: dihitung per sumbu,
+  // gambar yang lebar dan pendek mendapat margin atas-bawah setipis rambut
+  // sementara kiri-kanannya lega.
+  const pad = Math.max(content.width, content.height) * MARGIN;
+
+  const round = (n: number) => Math.round(n * 100) / 100;
+
+  return [
+    round(content.x - pad),
+    round(content.y - pad),
+    round(content.width + pad * 2),
+    round(content.height + pad * 2),
+  ].join(" ");
+}

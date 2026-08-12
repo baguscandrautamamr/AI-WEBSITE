@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { splitDiagrams } from "@/lib/diagrams";
+import { matchesQuery } from "@/lib/search";
 import { useTypewriter } from "@/lib/useTypewriter";
 import Markdown from "../Markdown";
 import SvgBlock from "../SvgBlock";
@@ -69,6 +70,15 @@ export default function StandardPage() {
   const { t } = useI18n();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
+  /**
+   * Apa yang sedang dicari di dalam utas ini.
+   *
+   * Terpisah dari kotak pertanyaan di bawah, dan sengaja: yang satu mengirim
+   * sesuatu ke model, yang satu lagi tidak mengirim apa-apa. Digabung jadi satu
+   * kotak — "ketik untuk bertanya atau mencari" — keduanya jadi menakutkan untuk
+   * ditekan Enter.
+   */
+  const [find, setFind] = useState("");
   const [loading, setLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -264,6 +274,15 @@ export default function StandardPage() {
     }
   }
 
+  // Yang tampil saat sedang mencari. Nomor aslinya dibawa serta supaya kunci
+  // React tetap menunjuk giliran yang sama — tanpa itu, mengetik satu huruf
+  // membuat React memakai ulang gelembung untuk isi yang berbeda.
+  const shown = messages
+    .map((m, index) => ({ m, index }))
+    .filter(({ m }) => matchesQuery(m.content, find));
+
+  const searching = find.trim().length > 0;
+
   return (
     // Selebar dan setinggi area yang tersedia. Jawaban standar sering memuat
     // tabel dan daftar bertingkat, dan kolom sempit membuat tiap barisnya
@@ -291,11 +310,42 @@ export default function StandardPage() {
         )}
       </div>
 
+      {/* Pencarian di dalam utas.
+          Hanya muncul kalau memang ada yang bisa dicari — sebuah kolom cari di
+          atas percakapan kosong cuma menambah satu hal untuk diabaikan. */}
+      {messages.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="search"
+            className="glass-input min-w-[12rem] flex-1"
+            placeholder={t("standard.findPlaceholder")}
+            value={find}
+            onChange={(e) => setFind(e.target.value)}
+          />
+          {searching && (
+            <span className="text-xs text-text-secondary">
+              {shown.length > 0
+                ? t("standard.findCount").replace("{n}", String(shown.length))
+                : t("standard.findNone")}
+            </span>
+          )}
+          {searching && (
+            <button
+              type="button"
+              onClick={() => setFind("")}
+              className="text-xs text-accent underline"
+            >
+              {t("standard.findClear")}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* relative: tombol "turun ke terbaru" mengapung di atas daftar ini, dan
           harus ikut daftarnya — bukan halamannya. */}
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div ref={list} onScroll={onListScroll} className="flex-1 space-y-2 overflow-auto">
-          {messages.map((m, i) => (
+          {shown.map(({ m, index: i }) => (
             <div
               key={i}
               className={`rounded-2xl px-3 py-2 text-sm ${
