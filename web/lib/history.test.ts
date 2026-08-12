@@ -1,49 +1,66 @@
 import { describe, expect, it } from "vitest";
-import { promisedButMissing, redoReason, REDACTED, strayScript, withoutDiagrams } from "./history";
+import { fitHistory, promisedButMissing, redoReason, scrubLeaks, strayScript } from "./history";
 
 const svg = '<svg viewBox="0 0 100 60"><rect x="10" y="10" width="20" height="20"/></svg>';
 
-describe("withoutDiagrams — hemat token tanpa mengajari model hal yang salah", () => {
-  it("membuang gambar berpagar, mentah, dan yang terbungkus tool-call", () => {
-    expect(withoutDiagrams(`Ini:\n\`\`\`svg\n${svg}\n\`\`\``)).toBe(`Ini:\n${REDACTED}`);
-    expect(withoutDiagrams(`Ini:\n${svg}`)).toBe(`Ini:\n${REDACTED}`);
-    expect(withoutDiagrams(`[TOOL_CALL] {"svg": "${svg}"} [/TOOL_CALL]`)).toBe(REDACTED);
-  });
-
-  it("membuang blok kartu juga", () => {
-    // Dua belas baris berisi markup simbol adalah ribuan token yang ditagih
-    // ulang di setiap pertanyaan berikutnya.
-    const block = "```cards\njudul: X\nA | a | b | <circle r=\"3\"/>\n```";
-    expect(withoutDiagrams(`Ini:\n${block}\n\nSelesai.`)).toBe(`Ini:\n${REDACTED}\n\nSelesai.`);
-  });
-
-  it("teks di sekeliling gambarnya tidak ikut hilang", () => {
-    const kept = withoutDiagrams(`Sebelum.\n${svg}\nSesudah.`);
-    expect(kept).toContain("Sebelum.");
-    expect(kept).toContain("Sesudah.");
-  });
-
+describe("scrubLeaks — sisa penanda buatan kami sendiri", () => {
   /**
-   * Ini inti bug-nya, dan alasan berkas ini punya tes sendiri.
+   * Ini akar dari dua bug berturut-turut.
    *
-   * Riwayat dikirim ulang sebagai giliran ASISTEN — contoh jawaban yang pernah
-   * ditulis model sendiri. Penanda "[diagram]" di sana terbaca sebagai "begini
-   * caraku menjawab permintaan gambar", dan permintaan berikutnya dijawab
-   * dengan judul lalu tulisan [diagram], tanpa gambar apa pun.
+   * Riwayat dikirim ulang sebagai giliran ASISTEN — contoh jawaban yang seolah
+   * pernah ditulis model sendiri. Mula-mula penandanya "[diagram]", dan model
+   * menjawab permintaan gambar dengan menulis [diagram]. Penandanya diganti
+   * kalimat panjang yang "tidak mungkin ditiru", dan kalimat itu pun muncul di
+   * layar kata demi kata, di bawah judul yang menjanjikan gambar.
+   *
+   * Sekarang tidak ada yang disisipkan sama sekali. Yang ini menyapu sisa yang
+   * telanjur tersimpan di jawaban lama.
    */
-  it("penanda penggantinya tidak berbentuk sesuatu yang masuk akal ditiru", () => {
-    const redacted = withoutDiagrams(`Diagram Satu Garis\n${svg}`);
+  it("membuang kalimat catatan sistem yang telanjur tersalin", () => {
+    const stored =
+      "Diagram Instalasi Penangkal Petir di Gondola\n\n" +
+      "(catatan sistem: gambar pada jawaban ini sudah tampil di layar pengguna dan " +
+      "dihilangkan dari riwayat untuk menghemat token)";
 
-    expect(redacted).not.toMatch(/\[diagram\]/i);
-    expect(promisedButMissing(redacted)).toBe(false);
-    // Panjang dan berupa kalimat: bukan penanda ringkas yang bisa disalin
-    // sebagai jawaban.
-    expect(REDACTED.length).toBeGreaterThan(40);
+    expect(scrubLeaks(stored)).toBe("Diagram Instalasi Penangkal Petir di Gondola");
   });
 
-  it("pertanyaan yang menyebut svg sebagai kata biasa tidak disentuh", () => {
-    const text = "Formatnya svg atau png?";
-    expect(withoutDiagrams(text)).toBe(text);
+  it("membuang penanda [diagram] yang berdiri sendiri", () => {
+    expect(scrubLeaks("Judulnya\n\n[diagram]\n")).toBe("Judulnya");
+  });
+
+  it("jawaban yang wajar tidak disentuh", () => {
+    const answer = "PUIL 2011 pasal 4.3 mensyaratkan tahanan pembumian <= 5 Ohm.";
+    expect(scrubLeaks(answer)).toBe(answer);
+  });
+
+  it("gambar di dalam riwayat DIPERTAHANKAN", () => {
+    // Inti perubahannya: tagihan dihitung per permintaan, bukan per token, jadi
+    // membuang gambar dari riwayat tidak pernah menghemat apa pun — dan
+    // penanda yang ditinggalkannya dua kali membuat model berhenti menggambar.
+    const answer = 'Ini gambarnya:\n<svg viewBox="0 0 100 60"><rect/></svg>';
+    expect(scrubLeaks(answer)).toBe(answer);
+  });
+});
+
+describe("fitHistory — jaring pengaman, bukan penghematan", () => {
+  it("riwayat wajar tidak disentuh sama sekali", () => {
+    const turns = [{ text: "a" }, { text: "b" }, { text: "c" }];
+    expect(fitHistory(turns)).toEqual(turns);
+  });
+
+  it("yang benar-benar raksasa kehilangan giliran PALING LAMA, utuh", () => {
+    // Dibuang per giliran, bukan dipotong isinya: memotong isi berarti menaruh
+    // penanda di tempatnya, dan penanda di riwayat persis yang baru dicabut.
+    const turns = [
+      { text: "x".repeat(150_000) },
+      { text: "y".repeat(150_000) },
+      { text: "z" },
+    ];
+    const kept = fitHistory(turns);
+
+    expect(kept).toHaveLength(2);
+    expect(kept[0].text[0]).toBe("y");
   });
 });
 
@@ -110,6 +127,17 @@ describe("strayScript — kata asing yang nyelonong ke tengah kalimat", () => {
 
 describe("redoReason — apa yang dikirim balik ke model", () => {
   const ID = "gambarkan instalasi transformer";
+
+  it("kalimat catatan sistem yang tersalin ke jawaban ditangkap", () => {
+    // Jaring terakhir. Sumbernya sudah dicabut dan sisanya disapu saat riwayat
+    // dibaca, jadi kalau ini sampai menangkap sesuatu, log-nya yang memberi
+    // tahu — bukan pengguna yang menemukannya di layar.
+    const reason = redoReason(
+      "Diagram Penangkal Petir\n\n(catatan sistem: gambar pada jawaban ini sudah tampil)",
+      ID
+    )!;
+    expect(reason).toContain("catatan sistem");
+  });
 
   it("gambar yang cuma dijanjikan diprioritaskan", () => {
     const reason = redoReason("## Diagram Satu Garis\n\n[diagram]", ID)!;
