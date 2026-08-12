@@ -12,6 +12,15 @@ import SvgBlock from "../SvgBlock";
 interface Msg {
   role: "user" | "assistant";
   content: string;
+  /**
+   * Kenapa jawaban ini ditulis ulang, kalau memang ditulis ulang.
+   *
+   * Ada karena tanpa ini yang terlihat adalah jawaban selesai ditulis, hilang,
+   * lalu ditulis lagi hampir sama — dan pengguna tidak punya cara menebak apa
+   * yang terjadi. Satu baris keterangan mengubah "aplikasinya rusak" menjadi
+   * "ada yang diperbaiki".
+   */
+  notice?: string;
 }
 
 /**
@@ -263,7 +272,7 @@ export default function StandardPage() {
 
       const consume = (line: string) => {
         if (!line.trim()) return;
-        let chunk: { t?: string; e?: string; reset?: boolean };
+        let chunk: { t?: string; e?: string; reset?: boolean; why?: string };
         try {
           chunk = JSON.parse(line);
         } catch {
@@ -281,7 +290,9 @@ export default function StandardPage() {
         // tersambung di belakang jawaban pertama yang gagal, dan pengguna
         // membaca judul yang sama dua kali dengan penanda kosong di tengahnya.
         if (chunk.reset) {
-          setMessages((prev) => prev.map((m, i) => (i === index ? { ...m, content: "" } : m)));
+          setMessages((prev) =>
+            prev.map((m, i) => (i === index ? { ...m, content: "", notice: chunk.why } : m))
+          );
           return;
         }
 
@@ -415,11 +426,22 @@ export default function StandardPage() {
               /* Hanya gelembung TERAKHIR yang diketik, dan hanya selagi mengalir.
                  Jawaban lama sudah selesai; mengetiknya ulang setiap render
                  akan membuat percakapan kemarin bergerak sendiri. */
-              <Answer
-                text={m.content}
-                typing={loading && i === messages.length - 1}
-                highlight={terms}
-              />
+              <>
+                {/* Kenapa gelembung ini ditulis dua kali. Tanpa baris ini, yang
+                    terlihat adalah jawaban selesai lalu hilang lalu kembali
+                    hampir sama — dan itu terbaca sebagai aplikasi yang rusak,
+                    bukan sebagai sesuatu yang baru saja diperbaiki. */}
+                {m.notice && (
+                  <p className="mb-2 border-l-2 border-amber-400 pl-2 text-xs opacity-60">
+                    {m.notice}
+                  </p>
+                )}
+                <Answer
+                  text={m.content}
+                  typing={loading && i === messages.length - 1}
+                  highlight={terms}
+                />
+              </>
             )}
             </div>
           ))}

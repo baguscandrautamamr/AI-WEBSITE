@@ -71,7 +71,28 @@ describe("promisedButMissing — janji gambar yang tidak ditepati", () => {
       true
     );
     expect(promisedButMissing("[gambar: denah panel]")).toBe(true);
-    expect(promisedButMissing("Berikut [Diagram SLD] untuk trafo.")).toBe(true);
+  });
+
+  /**
+   * Ini yang membuat jawaban ditulis dua kali di layar.
+   *
+   * Versi pertama pemeriksaan ini mencari penanda DI MANA PUN, dan empat dari
+   * lima jawaban biasa ikut ditulis ulang — termasuk jawaban yang menyebut
+   * aturannya sendiri, karena sistem prompt memuat kata "[diagram]" secara
+   * harfiah dan model mengutipnya kembali. Yang terlihat pengguna: jawaban
+   * selesai, hilang, lalu kembali hampir sama.
+   */
+  it("penanda di TENGAH kalimat bukan kegagalan", () => {
+    expect(promisedButMissing("Seperti pada [Gambar 1], jaraknya 1,5 m.")).toBe(false);
+    expect(promisedButMissing("Berikut [Diagram SLD] untuk trafo.")).toBe(false);
+    expect(promisedButMissing("Bagian: [Diagram Satu Garis], [Tabel Beban].")).toBe(false);
+    expect(
+      promisedButMissing("Saya tidak pernah menulis penanda [diagram] tanpa gambarnya.")
+    ).toBe(false);
+  });
+
+  it("tautan markdown bukan penanda", () => {
+    expect(promisedButMissing("[gambar teknis](https://contoh.id/a.png)")).toBe(false);
   });
 
   it("jawaban yang benar-benar memuat gambar bukan kegagalan", () => {
@@ -132,22 +153,32 @@ describe("redoReason — apa yang dikirim balik ke model", () => {
     // Jaring terakhir. Sumbernya sudah dicabut dan sisanya disapu saat riwayat
     // dibaca, jadi kalau ini sampai menangkap sesuatu, log-nya yang memberi
     // tahu — bukan pengguna yang menemukannya di layar.
-    const reason = redoReason(
+    const redo = redoReason(
       "Diagram Penangkal Petir\n\n(catatan sistem: gambar pada jawaban ini sudah tampil)",
       ID
     )!;
-    expect(reason).toContain("catatan sistem");
+    expect(redo.instruction).toContain("catatan sistem");
+    expect(redo.notice).toContain("catatan internal");
   });
 
   it("gambar yang cuma dijanjikan diprioritaskan", () => {
-    const reason = redoReason("## Diagram Satu Garis\n\n[diagram]", ID)!;
-    expect(reason).toContain("[diagram]");
+    const redo = redoReason("## Diagram Satu Garis\n\n[diagram]", ID)!;
+    expect(redo.instruction).toContain("[diagram]");
   });
 
   it("kata asing menyebut aksaranya, supaya model tahu apa yang dicari", () => {
-    const reason = redoReason("Hitung количество braid-nya.", ID)!;
-    expect(reason).toContain("Sirilik");
-    expect(reason).toContain("huruf Latin");
+    const redo = redoReason("Hitung количество braid-nya.", ID)!;
+    expect(redo.instruction).toContain("Sirilik");
+    expect(redo.instruction).toContain("huruf Latin");
+    // Pengguna diberi tahu juga, dengan kalimat pendek — bukan dibiarkan
+    // menebak kenapa jawabannya ditulis dua kali.
+    expect(redo.notice).toContain("Sirilik");
+  });
+
+  it("satu huruf asing saja tidak cukup untuk menulis ulang", () => {
+    // Menulis ulang seluruh jawaban karena satu karakter berarti pengguna
+    // menonton jawabannya dihapus tanpa alasan yang bisa ia lihat.
+    expect(redoReason("Ukuran tray 100 mm 一 sesuai SNI.", ID)).toBeNull();
   });
 
   it("jawaban yang baik tidak diulang", () => {

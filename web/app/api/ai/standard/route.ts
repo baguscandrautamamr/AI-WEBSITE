@@ -337,17 +337,17 @@ export async function POST(req: Request) {
         // bukan lemparan dadu yang sama.
         const redo = redoReason(reply, question);
         if (redo) {
-          console.warn("[api/ai/standard] jawaban ditulis ulang:", redo.slice(0, 60));
+          console.warn("[api/ai/standard] jawaban ditulis ulang:", redo.notice);
 
           // Yang sudah telanjur tampil di layar dibuang dulu; kalau tidak, hasil
           // percobaan kedua tersambung di belakang jawaban yang gagal itu.
-          send({ reset: true });
+          send({ reset: true, why: redo.notice });
 
           reply = await ask([
             ...history,
             { role: "user", content: question },
             { role: "assistant", content: reply },
-            { role: "user", content: redo },
+            { role: "user", content: redo.instruction },
           ]);
         }
       } catch (err) {
