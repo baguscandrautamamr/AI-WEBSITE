@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { promisedButMissing, REDACTED, withoutDiagrams } from "./history";
+import { promisedButMissing, redoReason, REDACTED, strayScript, withoutDiagrams } from "./history";
 
 const svg = '<svg viewBox="0 0 100 60"><rect x="10" y="10" width="20" height="20"/></svg>';
 
@@ -68,5 +68,64 @@ describe("promisedButMissing — janji gambar yang tidak ditepati", () => {
     expect(promisedButMissing("PUIL 2011 pasal 4.3: tahanan pembumian ≤ 5 Ω.")).toBe(false);
     // Rujukan berkurung siku itu wajar dalam jawaban standar dan bukan penanda.
     expect(promisedButMissing("Lihat [IEC 60364-4-41] untuk proteksi sentuh.")).toBe(false);
+  });
+});
+
+describe("strayScript — kata asing yang nyelonong ke tengah kalimat", () => {
+  const ID = "berapa ukuran bonding braid untuk gondola?";
+
+  it("menangkap yang benar-benar dilaporkan pengguna", () => {
+    expect(
+      strayScript("Mau saya bantu hitung количество flexible bonding braid?", ID)
+    ).toBe("Sirilik");
+    expect(strayScript("普通铜编织带 | 25 mm² | Alternatif", ID)).toBe("Mandarin");
+  });
+
+  it("LAMBANG SATUAN bukan kata asing", () => {
+    // Yunani sengaja tidak diperiksa: Ω, μ, φ, dan Δ ada di hampir setiap
+    // jawaban kelistrikan yang benar. Menandainya berarti menulis ulang
+    // jawaban yang paling tepat, berkali-kali.
+    expect(strayScript("Tahanan pembumian ≤ 5 Ω, kapasitor 40 μF, cos φ 0,85.", ID)).toBeNull();
+    expect(strayScript("Jatuh tegangan ΔV maksimum 5%.", ID)).toBeNull();
+  });
+
+  it("huruf beraksen pada nama merek dan standar dibiarkan", () => {
+    expect(strayScript("Schneider Electric, Legrand Céliane, Häfele.", ID)).toBeNull();
+  });
+
+  it("kalau yang bertanya memakai aksara itu, jawabannya bukan kesalahan", () => {
+    // Yang salah cuma aksara yang muncul entah dari mana.
+    expect(strayScript("количество braid: 4", "сколько количество braid?")).toBeNull();
+  });
+
+  it("jawaban Indonesia biasa tidak pernah ditandai", () => {
+    expect(
+      strayScript(
+        "PUIL 2011 pasal 3.20: luas penampang minimum penghantar bonding 6 mm².",
+        ID
+      )
+    ).toBeNull();
+  });
+});
+
+describe("redoReason — apa yang dikirim balik ke model", () => {
+  const ID = "gambarkan instalasi transformer";
+
+  it("gambar yang cuma dijanjikan diprioritaskan", () => {
+    const reason = redoReason("## Diagram Satu Garis\n\n[diagram]", ID)!;
+    expect(reason).toContain("[diagram]");
+  });
+
+  it("kata asing menyebut aksaranya, supaya model tahu apa yang dicari", () => {
+    const reason = redoReason("Hitung количество braid-nya.", ID)!;
+    expect(reason).toContain("Sirilik");
+    expect(reason).toContain("huruf Latin");
+  });
+
+  it("jawaban yang baik tidak diulang", () => {
+    // Mengulang jawaban yang sudah benar berarti menggandakan waktu tunggu
+    // dan biayanya tanpa memperbaiki apa pun.
+    expect(redoReason("Pakai 50 mm² untuk aplikasi bergerak.", ID)).toBeNull();
+    expect(redoReason('Ini gambarnya:\n<svg viewBox="0 0 10 10"></svg>', ID)).toBeNull();
   });
 });
