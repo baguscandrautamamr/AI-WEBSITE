@@ -263,7 +263,7 @@ export default function StandardPage() {
 
       const consume = (line: string) => {
         if (!line.trim()) return;
-        let chunk: { t?: string; e?: string };
+        let chunk: { t?: string; e?: string; reset?: boolean };
         try {
           chunk = JSON.parse(line);
         } catch {
@@ -274,6 +274,17 @@ export default function StandardPage() {
           setError(chunk.e);
           return;
         }
+
+        // Percobaan pertama gagal menggambar dan sedang diulang.
+        //
+        // Yang sudah tampil dihapus, bukan ditambahi: tanpa ini, jawaban kedua
+        // tersambung di belakang jawaban pertama yang gagal, dan pengguna
+        // membaca judul yang sama dua kali dengan penanda kosong di tengahnya.
+        if (chunk.reset) {
+          setMessages((prev) => prev.map((m, i) => (i === index ? { ...m, content: "" } : m)));
+          return;
+        }
+
         if (!chunk.t) return;
 
         setMessages((prev) =>
