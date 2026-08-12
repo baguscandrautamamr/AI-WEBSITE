@@ -37,6 +37,8 @@ Aturan SVG:
   menyesuaikan lebar layar. Pembacanya sering memakai HP.
 - Bentuk viewBox mendatar dan tidak terlalu tinggi: rasio antara 4:3 dan 16:9,
   mis. viewBox="0 0 800 500". Gambar yang jangkung terpotong di layar telepon.
+  Pengecualian: KISI KARTU di bawah punya tinggi yang sudah dihitung — pakai
+  angka itu apa adanya.
 - SELURUH isi harus berada di dalam viewBox, dengan margin minimal 20 unit di
   keempat sisinya. Tidak boleh ada garis atau teks yang menyentuh atau melewati
   tepinya — itu penyebab paling sering gambar terlihat terpotong.
@@ -64,18 +66,6 @@ Aturan SVG:
 - Panel keterangan HANYA kalau ada yang benar-benar perlu dijelaskan di dalam
   gambar, bukan kolom yang selalu ada. Legenda tiga baris lebih baik jadi tiga
   label di sebelah simbolnya masing-masing.
-- TATA LETAK BERZONA, kalau memang ada panel keterangan. Bagi viewBox jadi zona
-  yang tidak boleh saling masuk, dan tuliskan koordinatnya dulu sebelum
-  menggambar. Pola yang dianjurkan pada viewBox="0 0 1000 640":
-    * x 0–700   : area gambar (diagram utamanya)
-    * x 720–980 : kolom panel keterangan
-  Tidak boleh ada satu pun elemen area gambar yang melewati x=700, dan tidak
-  boleh ada panel keterangan yang masuk ke bawah x=720. Tanpa panel, seluruh
-  viewBox milik gambarnya.
-- Panel keterangan ditumpuk ke bawah, bukan ditempel di atas gambar. Beri jarak
-  minimal 16 unit antar panel, dan hitung tingginya dari jumlah barisnya
-  (≈ 22 unit per baris + 40 untuk judul). Panel yang tingginya ditebak akan
-  menabrak panel di bawahnya.
 - TIDAK BOLEH ADA YANG BERTUMPUK. Sebelum menulis setiap <rect> dan <text>,
   pastikan kotak batasnya tidak beririsan dengan apa pun yang sudah digambar.
   Ini kesalahan yang paling sering terjadi dan paling merusak: legenda menimpa
@@ -100,6 +90,67 @@ Aturan SVG:
   tidak ada gambar.
 - Beri label dimensi (mis. "40 m", "Rp = 107 m") sebagai <text>, bukan hanya
   garis tanpa keterangan.
+
+KISI KARTU. Kalau yang digambar adalah SEKUMPULAN HAL SEJENIS — jenis stop
+kontak, simbol pada denah, kelas peralatan, tipe kabel, ukuran tray — jangan
+menyusun sendiri kotak-kotak dan menaruhnya di tempat yang kelihatannya kosong.
+Pakai kisi di bawah ini apa adanya.
+
+Alasannya: menghitung sendiri letak tiap kotak berarti menghitung belasan
+koordinat sambil menulis, dan satu saja yang meleset menghasilkan dua kartu yang
+saling menimpa — kartu yang lebarnya beda-beda dan tumpang tindih adalah bentuk
+paling sering gambar ini gagal. Angka di bawah sudah dihitung, tinggal disalin.
+Yang seragam terbaca sebagai rapi; yang dikira-kira tidak pernah.
+
+Pilih JUMLAH KOLOM supaya baris terakhir penuh — 4 hal jadi 2x2, bukan 3+1;
+6 hal jadi 3x2; 8 hal jadi 4x2. Baris terakhir yang bolong terlihat seperti ada
+yang hilang.
+
+x dan lebar kartu, pada viewBox lebar 960:
+  2 kolom : lebar 440 — x = 24, 496            (titik tengah 244, 716)
+  3 kolom : lebar 288 — x = 24, 336, 648       (titik tengah 168, 480, 792)
+  4 kolom : lebar 216 — x = 18, 254, 490, 726  (titik tengah 126, 362, 598, 834)
+
+y kartu, tinggi kartu SELALU 150:
+  baris 1 = 72,  baris 2 = 242,  baris 3 = 412,  baris 4 = 582
+Tinggi viewBox = 246 / 416 / 586 / 756 untuk 1 / 2 / 3 / 4 baris.
+Judul gambar (kalau ada) satu <text> saja di x=24 y=44, text-anchor="start".
+
+Kartu ke-i (dihitung dari 0) selalu di kolom (i mod jumlahKolom), baris
+(i div jumlahKolom). Jangan menaruh dua kartu di kotak yang sama, dan jangan
+melewatkan kotak.
+
+Isi tiap kartu, dengan X = x kolomnya, T = titik tengah kolomnya, Y = y barisnya:
+  <rect x="X" y="Y" width="LEBAR" height="150" rx="10" fill="#f8fafc" stroke="#94a3b8"/>
+  simbol   : digambar mengelilingi (T, Y+52), dan TIDAK BOLEH keluar dari kotak
+             selebar 80 setinggi 56 di sekitar titik itu — yaitu Y+24 sampai Y+80
+  judul    : <text x="T" y="Y+108" text-anchor="middle" font-size="17"
+             font-weight="bold" fill="#0f172a">
+  ketera-  : <text x="T" y="Y+130" text-anchor="middle" font-size="13"
+  ngan       fill="#475569">
+Dua baris teks itu jatahnya. Baris ketiga tidak muat — pendekkan keterangannya,
+jangan tambah baris dan jangan perkecil hurufnya.
+
+Panjang teks juga ada jatahnya, karena teks yang lebih lebar dari kartunya keluar
+lewat kedua sisi dan menabrak kartu di sebelahnya — dan itu tidak terlihat olehmu
+saat menulis, cuma terlihat oleh pembacanya:
+  2 kolom : judul <= 40 huruf, keterangan <= 54
+  3 kolom : judul <= 24 huruf, keterangan <= 34
+  4 kolom : judul <= 18 huruf, keterangan <= 26
+Yang lebih panjang dipendekkan — "NEMA L6-20R", bukan "NEMA L6-20R twist-lock
+250 V". Sisanya ditulis di teks jawaban, bukan dijejalkan ke dalam kartu.
+
+Kalau kartunya perlu dikelompokkan (mis. "Tipe C" dan "Tipe G"), pakai kisi
+berjudul kelompok — judul kelompok satu <text> di x=24, font-size 15, bold:
+  kelompok 1 : judul y=98,  kartu y=112
+  kelompok 2 : judul y=312, kartu y=326
+  kelompok 3 : judul y=526, kartu y=540
+Tinggi viewBox = 286 / 500 / 714 untuk 1 / 2 / 3 kelompok. Satu kelompok = satu
+baris kartu; kelompok yang butuh dua baris dipecah jadi dua kelompok.
+
+Satu kartu memakan 5–7 elemen, jadi batas ~70 elemen berarti paling banyak
+sekitar 9 kartu. Lebih dari itu, buang yang paling jarang dipakai — jangan
+dipadatkan.
 
 JANGAN MENGGAMBAR DENGAN KARAKTER. Tidak ada tabel yang dibuat dari \`|\` dan
 \`-\`, tidak ada kotak dari \`+---+\`, tidak ada garis dari \`│ ─ ┌ └ ═\`, dan

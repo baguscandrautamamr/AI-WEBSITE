@@ -193,6 +193,29 @@ describe("tightViewBox — ruang kosong yang tidak diminta siapa pun", () => {
     expect(tightViewBox("0 0 1000 640", { x: 0, y: 0, width: 980, height: 630 })).toBeNull();
   });
 
+  it("melebarkan gambar yang justru MELUBER dari ruangnya", () => {
+    // Kasus sebaliknya, dan yang paling merusak: kartu di kolom terakhir digambar
+    // melewati tepi kanan viewBox. Menurut hitungan "sudah mengisi", ia lebih
+    // dari mengisi — dan kalau berhenti di situ, yang di luar kotak dipotong
+    // browser dan hilang. Yang terlihat: kartu paling kanan terpangkas separuh.
+    expect(tightViewBox("0 0 960 586", { x: 0, y: 0, width: 1010, height: 586 })).toBe(
+      "-20.2 -20.2 1050.4 626.4"
+    );
+  });
+
+  it("melebarkan gambar yang keluar lewat sisi kiri atau atas", () => {
+    expect(tightViewBox("0 0 960 586", { x: -30, y: 0, width: 990, height: 586 })).toBe(
+      "-49.8 -19.8 1029.6 625.6"
+    );
+  });
+
+  it("goresan tepi yang setengahnya di luar kotak bukan meluber", () => {
+    // stroke-width 2 pada rect yang menyentuh tepi menaruh 1 unit di luar
+    // viewBox. Menggambar ulang untuk itu berarti setiap gambar yang rapat
+    // bergeser sedikit setiap kali dirender.
+    expect(tightViewBox("0 0 1000 640", { x: -0.5, y: 0, width: 981, height: 630 })).toBeNull();
+  });
+
   it("isi yang tidak dimulai dari nol ikut digeser", () => {
     expect(tightViewBox("0 0 1000 1000", { x: 200, y: 100, width: 300, height: 200 })).toBe(
       "194 94 312 212"
