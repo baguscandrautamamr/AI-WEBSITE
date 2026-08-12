@@ -205,6 +205,44 @@ export function drawableSvg(source: string): string {
   return /<\/svg\s*>\s*$/i.test(head) ? head : `${head}</svg>`;
 }
 
+/** Bagian dari viewBox yang harus ditutupi sebuah kotak sebelum ia disebut bingkai. */
+const FRAME = 0.95;
+
+/**
+ * Bingkai dekoratif yang mengelilingi seluruh gambar, dibuang.
+ *
+ * Prompt sudah melarangnya dan model tetap menggambarnya — sebuah kotak
+ * seukuran viewBox dengan garis tepi tebal berwarna. Ia tidak menerangkan apa
+ * pun, dan justru jadi hal paling menyita perhatian di seluruh gambar ketika
+ * warnanya meleset: yang dilihat pertama kali bukan diagramnya, melainkan garis
+ * kuning selebar layar.
+ *
+ * Yang dicari sempit dan disengaja begitu: kotak TANPA isi warna yang menutupi
+ * hampir seluruh viewBox. Kotak berwarna seukuran itu adalah latar belakang —
+ * ia menopang gambarnya, bukan mengurungnya — dan membuangnya akan merusak
+ * gambar yang justru dirancang dengan benar.
+ */
+export function stripFrame(svg: string): string {
+  const { width, height } = svgSize(svg);
+
+  return svg.replace(/<rect\b[^>]*?\/?>(?:\s*<\/rect\s*>)?/gi, (tag) => {
+    const fill = tag.match(/\bfill\s*=\s*["']([^"']*)["']/i)?.[1]?.trim().toLowerCase();
+    // Tanpa atribut fill, sebuah <rect> terisi HITAM — itu latar, bukan bingkai.
+    if (fill !== "none" && fill !== "transparent") return tag;
+    if (!/\bstroke\s*=/i.test(tag)) return tag;
+
+    const size = (name: string) =>
+      Number(tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([-\\d.]+)`, "i"))?.[1]);
+
+    const boxWidth = size("width");
+    const boxHeight = size("height");
+    if (!(boxWidth > 0 && boxHeight > 0)) return tag;
+
+    const covers = boxWidth >= width * FRAME && boxHeight >= height * FRAME;
+    return covers ? "" : tag;
+  });
+}
+
 /** Sisa ruang yang masih dianggap wajar sebelum viewBox-nya dirapatkan. */
 const SNUG = 0.92;
 

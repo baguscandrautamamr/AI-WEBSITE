@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import DOMPurify from "dompurify";
 import { useI18n } from "@/lib/i18n";
-import { drawableSvg, svgSize, tightViewBox } from "@/lib/diagrams";
+import { drawableSvg, stripFrame, svgSize, tightViewBox } from "@/lib/diagrams";
 
 /** Lebar hasil PNG. Cukup untuk ditempel ke laporan tanpa terlihat pecah. */
 const PNG_WIDTH = 2000;
@@ -76,7 +76,10 @@ export default function SvgBlock({ source }: { source: string }) {
     const markup = drawableSvg(upTo);
     if (!markup) return null;
 
-    return DOMPurify.sanitize(markup, {
+    // Bingkai dibuang SEBELUM disaring dan sebelum viewBox-nya dirapatkan:
+    // kotak seukuran seluruh gambar juga yang menentukan hasil getBBox(), jadi
+    // membiarkannya berarti merapatkan gambar ke bingkainya, bukan ke isinya.
+    return DOMPurify.sanitize(stripFrame(markup), {
       USE_PROFILES: { svg: true, svgFilters: true },
       // Tidak ada alasan sebuah diagram menarik sesuatu dari luar, dan setiap
       // URL di dalamnya adalah permintaan yang memberi tahu pemiliknya siapa

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { drawableSvg, splitDiagrams, svgSize, tightViewBox } from "./diagrams";
+import { drawableSvg, splitDiagrams, stripFrame, svgSize, tightViewBox } from "./diagrams";
 
 const svg = '<svg viewBox="0 0 100 60"><rect x="10" y="10" width="20" height="20"/></svg>';
 
@@ -173,6 +173,38 @@ describe("svgSize", () => {
     // yang sedikit salah jauh lebih baik daripada nol.
     expect(svgSize("<svg>")).toEqual({ width: 1000, height: 700 });
     expect(svgSize('<svg viewBox="0 0 0 0">')).toEqual({ width: 1000, height: 700 });
+  });
+});
+
+describe("stripFrame — bingkai yang tidak menerangkan apa pun", () => {
+  const wrap = (inner: string) => `<svg viewBox="0 0 960 586">${inner}</svg>`;
+
+  it("membuang kotak berbingkai seukuran seluruh gambar", () => {
+    const frame = '<rect x="8" y="8" width="944" height="570" fill="none" stroke="#facc15" stroke-width="4"/>';
+    const card = '<rect x="24" y="72" width="288" height="150" fill="#f8fafc" stroke="#cbd5e1"/>';
+
+    expect(stripFrame(wrap(frame + card))).toBe(wrap(card));
+  });
+
+  it("kotak berwarna seukuran gambar itu LATAR, bukan bingkai", () => {
+    // Membuangnya merusak gambar yang justru dirancang dengan benar.
+    const background = '<rect x="0" y="0" width="960" height="586" fill="#ffffff" stroke="#e2e8f0"/>';
+    expect(stripFrame(wrap(background))).toBe(wrap(background));
+  });
+
+  it("kotak besar tanpa garis tepi bukan bingkai", () => {
+    const panel = '<rect x="0" y="0" width="960" height="586" fill="none"/>';
+    expect(stripFrame(wrap(panel))).toBe(wrap(panel));
+  });
+
+  it("kotak yang cuma sebagian tidak disentuh", () => {
+    const half = '<rect x="0" y="0" width="480" height="586" fill="none" stroke="#000"/>';
+    expect(stripFrame(wrap(half))).toBe(wrap(half));
+  });
+
+  it("bentuk <rect></rect> ikut terbawa penutupnya", () => {
+    const frame = '<rect x="0" y="0" width="960" height="586" fill="none" stroke="#000"></rect>';
+    expect(stripFrame(wrap(frame))).toBe(wrap(""));
   });
 });
 
