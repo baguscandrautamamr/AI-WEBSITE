@@ -121,26 +121,30 @@ export function promisedButMissing(reply: string): boolean {
  * Latin diperluas juga tidak: é, ü, ñ muncul wajar pada nama merek dan nama
  * standar.
  */
+const SCRIPTS: { name: string; chars: string }[] = [
+  { name: "Sirilik", chars: "Ѐ-ӿ" },
+  { name: "Ibrani", chars: "֐-׿" },
+  { name: "Arab", chars: "؀-ۿ" },
+  { name: "Devanagari", chars: "ऀ-ॿ" },
+  { name: "Thai", chars: "฀-๿" },
+  { name: "Hangul", chars: "ᄀ-ᇿ가-힯" },
+  { name: "Jepang", chars: "぀-ヿ" },
+  { name: "Mandarin", chars: "㐀-䶿一-鿿" },
+];
+
 /**
  * DUA huruf berurutan, bukan satu.
  *
  * Satu karakter tunggal terlalu mudah muncul tanpa maksud — sebuah tanda baca
  * lebar yang tersalin dari sumber lain, satu simbol di dalam atribut SVG — dan
- * menulis ulang seluruh jawaban karena satu karakter berarti pengguna menonton
- * jawabannya dihapus dan ditulis lagi tanpa alasan yang ia bisa lihat. Kata yang
- * benar-benar tergelincir selalu lebih panjang dari satu huruf: `количество`
- * sepuluh, `普通铜编织带` enam.
+ * mengusik seluruh jawaban karena satu karakter berarti pengguna melihat
+ * jawabannya diubah tanpa alasan yang ia bisa lihat. Kata yang benar-benar
+ * tergelincir selalu lebih panjang dari satu huruf: `количество` sepuluh,
+ * `普通铜编织带` enam.
  */
-const SCRIPTS: { name: string; range: RegExp }[] = [
-  { name: "Sirilik", range: /[Ѐ-ӿ]{2}/ },
-  { name: "Ibrani", range: /[֐-׿]{2}/ },
-  { name: "Arab", range: /[؀-ۿ]{2}/ },
-  { name: "Devanagari", range: /[ऀ-ॿ]{2}/ },
-  { name: "Thai", range: /[฀-๿]{2}/ },
-  { name: "Hangul", range: /[ᄀ-ᇿ가-힯]{2}/ },
-  { name: "Jepang", range: /[぀-ヿ]{2}/ },
-  { name: "Mandarin", range: /[㐀-䶿一-鿿]{2}/ },
-];
+function pair(chars: string) {
+  return new RegExp(`[${chars}]{2}`);
+}
 
 /**
  * Kata beraksara asing yang nyelonong ke tengah jawaban.
@@ -158,9 +162,79 @@ const SCRIPTS: { name: string; range: RegExp }[] = [
  */
 export function strayScript(reply: string, question: string): string | null {
   for (const script of SCRIPTS) {
-    if (script.range.test(reply) && !script.range.test(question)) return script.name;
+    const two = pair(script.chars);
+    if (two.test(reply) && !two.test(question)) return script.name;
   }
   return null;
+}
+
+/** Paling banyak sekian kata yang diminta padanannya sekali jalan. */
+const MAX_STRAY_WORDS = 8;
+
+/**
+ * Kata-kata asing itu sendiri, bukan cuma nama aksaranya.
+ *
+ * Ada supaya yang diperbaiki hanya KATANYA. Menulis ulang seluruh jawaban demi
+ * satu kata berarti pengguna menonton jawaban yang sudah selesai dihapus dan
+ * ditulis lagi hampir sama — dan itu yang ia laporkan sebagai bug, dua kali.
+ * Dengan daftar kata ini, jawabannya tetap yang pertama; hanya kata yang tidak
+ * terbaca yang diganti di tempatnya.
+ *
+ * Setelah aksaranya terbukti tergelincir, potongan satu huruf pun ikut diambil:
+ * ambang dua huruf ada untuk memutuskan APAKAH ada yang salah, bukan untuk
+ * memilih mana yang dibersihkan.
+ */
+export function strayWords(
+  reply: string,
+  question: string
+): { script: string; words: string[] } | null {
+  const script = strayScript(reply, question);
+  if (!script) return null;
+
+  const found = SCRIPTS.find((entry) => entry.name === script);
+  if (!found) return null;
+
+  const runs = reply.match(new RegExp(`[${found.chars}]+`, "g")) ?? [];
+  const words = [...new Set(runs)].slice(0, MAX_STRAY_WORDS);
+
+  return words.length > 0 ? { script, words } : null;
+}
+
+/**
+ * Padanan yang dikirim model, sebagai daftar pasangan pengganti.
+ *
+ * Bentuk yang diminta `asli => padanan`, satu per baris. Yang tidak berbentuk
+ * itu dilewati — ini keluaran model, dan satu baris yang aneh tidak boleh
+ * membuat seluruh perbaikan gagal.
+ *
+ * Padanan yang MASIH beraksara sama ditolak. Model yang sedang tergelincir bisa
+ * menjawab dengan kata asing kedua, dan mengganti kata yang tidak terbaca dengan
+ * kata lain yang juga tidak terbaca hanya memindahkan masalahnya.
+ */
+export function parseFixes(text: string, words: string[]): [string, string][] {
+  const wanted = new Set(words);
+  const fixes: [string, string][] = [];
+
+  for (const line of text.split(/\r?\n/)) {
+    const at = line.indexOf("=>");
+    if (at === -1) continue;
+
+    const from = line.slice(0, at).trim().replace(/^[-*\d.\s]+/, "");
+    const to = line.slice(at + 2).trim().replace(/^["'`]|["'`]$/g, "");
+
+    if (!wanted.has(from) || !to || to === from) continue;
+    if (SCRIPTS.some((script) => pair(script.chars).test(to))) continue;
+    if (to.length > from.length * 8 + 40) continue;
+
+    fixes.push([from, to]);
+  }
+
+  return fixes;
+}
+
+/** Mengganti kata-kata itu di dalam jawaban, apa adanya. */
+export function applyFixes(reply: string, fixes: [string, string][]): string {
+  return fixes.reduce((text, [from, to]) => text.split(from).join(to), reply);
 }
 
 /**
@@ -207,17 +281,12 @@ export function redoReason(reply: string, question: string): Redo | null {
     };
   }
 
-  const script = strayScript(reply, question);
-  if (script) {
-    return {
-      instruction:
-        `Jawabanmu menyisipkan kata beraksara ${script} di tengah kalimat, dan pembacanya ` +
-        "tidak bisa membacanya. Tulis ulang jawabannya secara utuh dalam bahasa yang sama " +
-        "dengan pertanyaannya, seluruhnya dengan huruf Latin. Istilah teknis Inggris boleh " +
-        "dipertahankan; kata dari bahasa lain tidak.",
-      notice: `Jawaban pertama menyisipkan kata beraksara ${script}, jadi ditulis ulang.`,
-    };
-  }
-
+  // Kata beraksara asing TIDAK di sini, dan itu perubahan yang disengaja.
+  //
+  // Dulu ia ikut memicu tulis-ulang seluruh jawaban, dan yang terlihat pengguna
+  // adalah jawaban selesai ditulis, hilang, lalu kembali hampir sama — dilaporkan
+  // dua kali sebagai bug, dan wajar. Satu kata yang salah tidak sepadan dengan
+  // membuang jawaban yang sisanya sudah benar. Sekarang kata itu ditambal di
+  // tempatnya; lihat strayWords dan parseFixes.
   return null;
 }
