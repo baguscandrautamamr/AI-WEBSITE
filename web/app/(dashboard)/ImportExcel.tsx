@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { useProjects } from "@/lib/useProjects";
 import { canRun, COMMANDS_BY_NAME } from "@/lib/commands";
+import ResultView from "./ResultView";
 
 type Phase = "idle" | "uploading" | "queued" | "done" | "failed";
 
@@ -45,6 +46,10 @@ export default function ImportExcel() {
     try {
       const form = new FormData();
       form.append("file", file);
+      // Proyeknya ikut dikirim: route unggah memeriksa peran di proyek ini
+      // sebelum menerima apa pun, jadi file yang tidak boleh diimpor ditolak
+      // sebelum naik, bukan setelah.
+      form.append("projectId", active);
 
       const uploaded = await fetch("/api/files/upload", { method: "POST", body: form });
       const uploadBody = await uploaded.json();
@@ -97,7 +102,7 @@ export default function ImportExcel() {
   const busy = phase === "uploading" || phase === "queued";
 
   return (
-    <div className="glass-panel max-w-4xl space-y-4 p-6">
+    <div className="glass-panel max-w-4xl space-y-4 p-4 sm:p-6">
       <div>
         <h2 className="font-medium">{t("importExcel.title")}</h2>
         <p className="text-sm opacity-70">{t("importExcel.subtitle")}</p>
@@ -134,7 +139,15 @@ export default function ImportExcel() {
           // Nilainya dikosongkan supaya memilih file yang sama dua kali tetap
           // memicu onChange.
           e.target.value = "";
-          if (file) run(file);
+          if (!file) return;
+          // Galat dari percobaan sebelumnya dihapus di sini, bukan hanya di
+          // dalam run(): kotak file kembali berbunyi "tidak ada file yang
+          // dipilih" sementara pesan merah lama masih terpampang, dan itu
+          // terbaca sebagai galat tentang file yang baru saja dipilih.
+          setPhase("idle");
+          setMessage(null);
+          setResult(null);
+          run(file);
         }}
       />
 
@@ -151,9 +164,9 @@ export default function ImportExcel() {
           <p className="text-sm text-emerald-600">
             {dryRun ? t("importExcel.doneDry") : t("importExcel.done")}
           </p>
-          <pre className="glass-input max-h-64 overflow-auto text-xs">
-            {JSON.stringify(result, null, 2)}
-          </pre>
+          <div className="glass-input max-h-64 overflow-auto text-xs">
+            <ResultView value={result} />
+          </div>
         </div>
       )}
 

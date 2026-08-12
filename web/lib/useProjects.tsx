@@ -1,6 +1,13 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Role } from "@/lib/commands";
 
@@ -15,6 +22,8 @@ interface ProjectsState {
   projects: ProjectAccess[];
   loading: boolean;
   error: string | null;
+  /** Membaca ulang daftarnya — dipanggil setelah sebuah proyek dibuat. */
+  refresh: () => Promise<void>;
 }
 
 const ProjectsContext = createContext<ProjectsState | null>(null);
@@ -33,49 +42,48 @@ const ProjectsContext = createContext<ProjectsState | null>(null);
  * klik menu.
  */
 export function ProjectsProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<ProjectsState>({
-    projects: [],
-    loading: true,
-    error: null,
-  });
+  const [projects, setProjects] = useState<ProjectAccess[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const refresh = useCallback(async () => {
     const supabase = createClient();
-    let cancelled = false;
 
-    (async () => {
-      const { data, error } = await supabase
-        .from("user_project_access")
-        .select("role, project_id, projects(code, name)")
-        .returns<
-          { role: Role; project_id: string; projects: { code: string; name: string } | null }[]
-        >();
+    const { data, error: readError } = await supabase
+      .from("user_project_access")
+      .select("role, project_id, projects(code, name)")
+      .returns<
+        { role: Role; project_id: string; projects: { code: string; name: string } | null }[]
+      >();
 
-      if (cancelled) return;
+    if (readError) {
+      setProjects([]);
+      setError(readError.message);
+      setLoading(false);
+      return;
+    }
 
-      if (error) {
-        setState({ projects: [], loading: false, error: error.message });
-        return;
-      }
-
-      setState({
-        projects: (data ?? []).map((r) => ({
-          projectId: r.project_id,
-          code: r.projects?.code ?? r.project_id.slice(0, 8),
-          name: r.projects?.name ?? r.projects?.code ?? "—",
-          role: r.role,
-        })),
-        loading: false,
-        error: null,
-      });
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    setProjects(
+      (data ?? []).map((r) => ({
+        projectId: r.project_id,
+        code: r.projects?.code ?? r.project_id.slice(0, 8),
+        name: r.projects?.name ?? r.projects?.code ?? "—",
+        role: r.role,
+      }))
+    );
+    setError(null);
+    setLoading(false);
   }, []);
 
-  return <ProjectsContext.Provider value={state}>{children}</ProjectsContext.Provider>;
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return (
+    <ProjectsContext.Provider value={{ projects, loading, error, refresh }}>
+      {children}
+    </ProjectsContext.Provider>
+  );
 }
 
 export function useProjects(): ProjectsState {

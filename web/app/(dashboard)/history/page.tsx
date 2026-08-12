@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useI18n } from "@/lib/i18n";
+import ResultView from "../ResultView";
+import TelegramLink from "./TelegramLink";
 
 type QueueStatus = "pending" | "processing" | "completed" | "failed" | "cancelled";
 
@@ -90,16 +92,25 @@ export default function HistoryPage() {
 
   if (loading) return <p className="opacity-60">{t("common.loading")}</p>;
   if (error) return <p className="text-sm text-red-500">{error}</p>;
-  if (rows.length === 0) return <p className="text-text-secondary">{t("history.empty")}</p>;
 
   return (
-    <div className="glass-panel max-w-3xl p-6 space-y-4">
+    <div className="glass-panel max-w-3xl space-y-4 p-4 sm:p-6">
       <div>
         <h1 className="text-lg font-medium">{t("history.title")}</h1>
         <p className="text-sm text-text-secondary">{t("history.subtitle")}</p>
       </div>
 
-      <div className="space-y-2">
+      {/* Di atas daftarnya, dan ditampilkan juga saat riwayatnya masih kosong —
+          justru akun yang belum pernah mengirim apa pun yang paling untung
+          menautkannya sekarang, sebelum perintah pertamanya berjalan. */}
+      <TelegramLink />
+
+      {rows.length === 0 && <p className="text-text-secondary">{t("history.empty")}</p>}
+
+      {/* Lima puluh baris riwayat, masing-masing bisa punya rincian yang
+          dibuka — digulir di dalam kotaknya sendiri, supaya judul halaman dan
+          keterangannya tetap terlihat. */}
+      <div className="max-h-[70vh] space-y-2 overflow-y-auto pr-1">
         {rows.map((r) => {
           const links = fileLinks(r.result_json);
           const failed = r.status === "failed" || r.status === "cancelled";
@@ -139,6 +150,20 @@ export default function HistoryPage() {
                     </a>
                   ))}
                 </div>
+              )}
+
+              {/* Rinciannya dilipat: yang dicari orang di halaman ini biasanya
+                  tautan unduhannya, dan 50 hasil yang terbuka semua membuat
+                  daftar ini tidak bisa dibaca. */}
+              {r.status === "completed" && r.result_json != null && (
+                <details className="text-xs">
+                  <summary className="cursor-pointer opacity-60 hover:opacity-100">
+                    {t("history.details")}
+                  </summary>
+                  <div className="mt-2 max-h-72 overflow-auto">
+                    <ResultView value={r.result_json} />
+                  </div>
+                </details>
               )}
             </div>
           );

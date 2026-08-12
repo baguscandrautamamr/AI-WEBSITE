@@ -1,28 +1,13 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { CommandValidationError, enqueueCommand } from "@/lib/queue";
-import type { Role } from "@/lib/commands";
+import { guardArea, roleForProject } from "@/lib/access";
 
 export const runtime = "nodejs";
 
-/** Peran user pada satu proyek, dibaca dari user_project_access. */
-async function roleForProject(
-  supabase: ReturnType<typeof createClient>,
-  userId: string,
-  projectId: string
-): Promise<Role | null> {
-  const { data } = await supabase
-    .from("user_project_access")
-    .select("role")
-    .eq("user_id", userId)
-    .eq("project_id", projectId)
-    .maybeSingle();
-  return (data?.role as Role) ?? null;
-}
-
 // POST — kirim satu command ke antrian yang dipolling add-in Revit.
 export async function POST(req: Request) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -41,6 +26,13 @@ export async function POST(req: Request) {
 
   // Peran dibaca per proyek: seseorang bisa editor di satu proyek dan viewer di
   // proyek lain, persis seperti aturan peran di bot.
+  // Kelas akun lebih dulu, sebelum peran proyek: akun yang kelasnya tidak
+  // mencakup Revit tidak boleh sampai ke pertanyaan "peran apa dia di proyek
+  // ini", karena jawabannya bisa saja "editor" — kelas dan peran adalah dua
+  // pagar yang berdiri sendiri.
+  const gate = await guardArea(supabase, user.id, "revit");
+  if (!gate.ok) return NextResponse.json({ error: gate.reason }, { status: 403 });
+
   const role = await roleForProject(supabase, user.id, projectId);
   if (!role) {
     return NextResponse.json(
@@ -70,13 +62,20 @@ export async function POST(req: Request) {
 
 // GET ?id=<uuid> — status satu command; dipakai UI untuk menunggu hasil.
 export async function GET(req: Request) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const id = new URL(req.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "parameter `id` wajib" }, { status: 400 });
+
+  // Hasil sebuah perintah Revit adalah isi model, jadi ia ikut kelas "revit" —
+  // bukan hanya pengirimannya. Kelas dan peran proyek berdiri sendiri: sebuah
+  // akun bisa berkelas standard_only DAN masih punya baris editor dari sebelum
+  // kelasnya dipersempit, jadi RLS saja tidak menutupnya.
+  const gate = await guardArea(supabase, user.id, "revit");
+  if (!gate.ok) return NextResponse.json({ error: gate.reason }, { status: 403 });
 
   // RLS membatasi baris ke proyek yang boleh diakses user, jadi tidak perlu
   // filter pemilik lagi di sini.
@@ -90,4 +89,76 @@ export async function GET(req: Request) {
   if (!data) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   return NextResponse.json(data);
+}
+
+/**
+ * PATCH ?id=<uuid> — membatalkan perintah sendiri yang masih menunggu.
+ *
+ * Sebuah baris `pending` yang tidak pernah diambil add-in — Revit tertutup,
+ * add-in belum dipasang, atau perintahnya memang salah kirim — tidak punya jalan
+ * keluar apa pun dari website sebelum ini. Ia tetap di depan antrean, dan begitu
+ * Revit dibuka ia langsung dijalankan: perintah dari sejam lalu, ke model yang
+ * sudah berubah, tanpa ada yang memintanya lagi.
+ *
+ * Hanya milik sendiri, dan hanya yang masih `pending`. Yang sudah `processing`
+ * berarti Revit sedang mengerjakannya — membatalkannya di database tidak
+ * menghentikan apa pun di sana, hanya membuat statusnya berbohong.
+ */
+export async function PATCH(req: Request) {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const id = new URL(req.url).searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "parameter `id` wajib" }, { status: 400 });
+
+  // Hasil sebuah perintah Revit adalah isi model, jadi ia ikut kelas "revit" —
+  // bukan hanya pengirimannya. Kelas dan peran proyek berdiri sendiri: sebuah
+  // akun bisa berkelas standard_only DAN masih punya baris editor dari sebelum
+  // kelasnya dipersempit, jadi RLS saja tidak menutupnya.
+  const gate = await guardArea(supabase, user.id, "revit");
+  if (!gate.ok) return NextResponse.json({ error: gate.reason }, { status: 403 });
+
+  // Dibaca dengan klien user, jadi RLS yang menentukan barisnya boleh dilihat
+  // atau tidak — bukan pemeriksaan di sini yang bisa ketinggalan.
+  const { data: row, error } = await supabase
+    .from("commands_queue")
+    .select("id, status, user_id")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  if (row.user_id !== user.id) {
+    return NextResponse.json(
+      { error: "hanya perintah yang kamu kirim sendiri yang bisa dibatalkan" },
+      { status: 403 }
+    );
+  }
+  if (row.status !== "pending") {
+    return NextResponse.json(
+      { error: `perintah ini sudah ${row.status} — tidak bisa dibatalkan lagi` },
+      { status: 409 }
+    );
+  }
+
+  // Service client untuk menulisnya: policy update pada commands_queue milik
+  // add-in (ia yang menandai processing/completed), dan tidak ada jaminan user
+  // web punya izin update di sana. Batasnya sudah ditegakkan di atas.
+  const { error: updateError } = await createServiceClient()
+    .from("commands_queue")
+    .update({ status: "cancelled", error_message: "dibatalkan dari website" })
+    .eq("id", id)
+    // Sekali lagi di WHERE, bukan hanya di pemeriksaan di atas: antara membaca
+    // dan menulis, add-in bisa mengambil barisnya.
+    .eq("status", "pending");
+
+  if (updateError) {
+    console.error("[api/commands] cancel failed", updateError);
+    return NextResponse.json({ error: "gagal membatalkan perintah" }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, id, status: "cancelled" });
 }

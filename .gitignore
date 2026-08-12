@@ -7,8 +7,8 @@ node_modules/
 web/.next/
 web/out/
 web/next-env.d.ts
-web/public/sw.js
-web/public/workbox-*.js
+# web/public/sw.js TIDAK di-ignore lagi: sejak next-pwa dilepas, file itu
+# ditulis tangan dan jadi bagian dari source, bukan keluaran build.
 
 # production build
 build/
@@ -46,3 +46,11 @@ supabase/.temp/
 # OS
 .DS_Store
 Thumbs.db
+
+# Ditulis ulang oleh `next dev` setiap kali ia jalan (lihat
+# node_modules/next/dist/server/lib/generate-agent-files.js). Isinya petunjuk
+# untuk agen AI, bukan sumber aplikasi ini — dan tanpa baris ini, satu kali
+# `npm run dev` meninggalkan dua berkas yang tidak pernah diminta siapa pun di
+# `git status`.
+web/AGENTS.md
+web/CLAUDE.md
