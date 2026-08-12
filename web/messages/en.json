@@ -26,7 +26,11 @@
     "savePng": "Save as image (PNG)",
     "saving": "Saving…",
     "jumpLatest": "↓ Jump to latest",
-    "jumpWriting": "↓ Still writing below"
+    "jumpWriting": "↓ Still writing below",
+    "findPlaceholder": "Search this conversation…",
+    "findCount": "{n} match",
+    "findNone": "Nothing matched",
+    "findClear": "clear"
   },
   "exportImport": {
     "title": "Export & Import",

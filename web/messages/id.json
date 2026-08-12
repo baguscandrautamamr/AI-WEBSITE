@@ -26,7 +26,11 @@
     "savePng": "Simpan sebagai gambar (PNG)",
     "saving": "Menyimpan…",
     "jumpLatest": "↓ Ke jawaban terbaru",
-    "jumpWriting": "↓ Sedang menulis di bawah"
+    "jumpWriting": "↓ Sedang menulis di bawah",
+    "findPlaceholder": "Cari di percakapan ini…",
+    "findCount": "{n} cocok",
+    "findNone": "Tidak ada yang cocok",
+    "findClear": "kosongkan"
   },
   "exportImport": {
     "title": "Export & Import",

@@ -40,6 +40,14 @@ Aturan SVG:
 - SELURUH isi harus berada di dalam viewBox, dengan margin minimal 20 unit di
   keempat sisinya. Tidak boleh ada garis atau teks yang menyentuh atau melewati
   tepinya — itu penyebab paling sering gambar terlihat terpotong.
+- Dan sebaliknya: isinya harus MENGISI viewBox itu. viewBox yang jauh lebih lebar
+  daripada gambarnya menyisakan ruang kosong di kanan, dan sisa garis tepi yang
+  tidak bertemu apa pun di sana terbaca sebagai gambar yang rusak. Kalau setelah
+  digambar ternyata separuh kanannya kosong, kecilkan viewBox-nya — jangan
+  ditambahi hiasan untuk mengisi.
+- Jangan menggambar bingkai dekoratif mengelilingi seluruh gambar. Ia tidak
+  menambah keterangan apa pun, dan ia justru bagian yang paling sering tidak
+  bertemu dengan isinya.
 - BATAS UKURAN, dan ini bagian dari benar-tidaknya gambar itu. SVG-nya ditulis
   huruf demi huruf sementara pembacanya menunggu di depan layar — jadi setiap
   elemen yang tidak perlu adalah detik tambahan yang ia habiskan menunggu, dan
@@ -92,6 +100,28 @@ Aturan SVG:
   tidak ada gambar.
 - Beri label dimensi (mis. "40 m", "Rp = 107 m") sebagai <text>, bukan hanya
   garis tanpa keterangan.
+
+JANGAN MENGGAMBAR DENGAN KARAKTER. Tidak ada tabel yang dibuat dari \`|\` dan
+\`-\`, tidak ada kotak dari \`+---+\`, tidak ada garis dari \`│ ─ ┌ └ ═\`, dan
+tidak ada diagram ASCII di dalam blok kode. Alasannya bukan selera:
+
+- Tabel begitu HARUS dilebarkan dengan spasi yang dihitung sendiri, dan satu
+  baris yang isinya lebih panjang dari perkiraanmu membuat seluruh sisi kanannya
+  bergerigi. Itu tidak bisa diperbaiki pembacanya, dan tidak bisa diperbaiki
+  siapa pun setelah terkirim.
+- Blok kode tidak melipat baris; yang lebih lebar dari layar harus digeser ke
+  samping. Di telepon, tabel ASCII selebar 70 karakter berarti membaca sambil
+  menggeser, baris demi baris.
+
+Yang dipakai sebagai gantinya, dan keduanya sudah dirender rapi oleh halaman ini:
+
+- data bertabel  → TABEL MARKDOWN biasa (\`| Kolom | Kolom |\` dengan baris
+  \`|---|---|\`). Lebarnya diatur browser, dan di layar sempit ia menggulir di
+  dalam kotaknya sendiri.
+- gambar/denah/skema → SVG, dengan aturan di atas.
+
+Blok kode (\`\`\`) hanya untuk hal yang memang kode atau nilai harfiah — rumus,
+nama parameter, potongan konfigurasi. Bukan untuk tata letak.
 
 Kalau pengguna tidak meminta gambar, jawab dengan teks dan tabel seperti biasa —
 jangan menyisipkan diagram atas inisiatif sendiri.`;

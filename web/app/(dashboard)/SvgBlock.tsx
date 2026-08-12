@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import DOMPurify from "dompurify";
 import { useI18n } from "@/lib/i18n";
-import { drawableSvg, svgSize } from "@/lib/diagrams";
+import { drawableSvg, svgSize, tightViewBox } from "@/lib/diagrams";
 
 /** Lebar hasil PNG. Cukup untuk ditempel ke laporan tanpa terlihat pecah. */
 const PNG_WIDTH = 2000;
@@ -87,6 +87,39 @@ export default function SvgBlock({ source }: { source: string }) {
   }, [upTo]);
 
   /**
+   * viewBox dirapatkan ke isi gambarnya, setelah gambarnya jadi.
+   *
+   * Model menyatakan viewBox sebelum menggambar apa pun, jadi angkanya adalah
+   * ruang yang ia RENCANAKAN — bukan yang akhirnya ia pakai. Selisihnya tampil
+   * sebagai ruang kosong di kanan, sering dengan sisa garis tepi yang tidak
+   * bertemu apa-apa: gambar yang menggantung di satu sisi kotaknya.
+   *
+   * Diukur dari `getBBox()`, kotak sesungguhnya dari apa yang benar-benar
+   * tergambar. Jadi ini perbaikan yang tidak bergantung pada model menuruti
+   * aturan mana pun — ia mengukur hasilnya, bukan memercayai niatnya.
+   *
+   * Atributnya diubah langsung, bukan lewat state: isinya memang ditulis dengan
+   * dangerouslySetInnerHTML, jadi React tidak menggambar ulang simpul itu sampai
+   * `clean` berubah — dan ketika ia berubah, efek ini ikut berjalan lagi.
+   */
+  const box = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!complete) return;
+
+    const svg = box.current?.querySelector("svg");
+    if (!svg) return;
+
+    try {
+      const next = tightViewBox(svg.getAttribute("viewBox"), svg.getBBox());
+      if (next) svg.setAttribute("viewBox", next);
+    } catch {
+      // getBBox() menolak pada simpul yang belum punya tata letak — mis. ketika
+      // gelembungnya sedang tersembunyi. Gambarnya tetap tampil apa adanya.
+    }
+  }, [clean, complete]);
+
+  /**
    * Tinggi kotaknya sudah ditetapkan sejak viewBox terbaca.
    *
    * Tanpa ini, kotak yang tumbuh sambil digambar mendorong seluruh percakapan ke
@@ -122,12 +155,18 @@ export default function SvgBlock({ source }: { source: string }) {
   async function downloadPng() {
     setSaving(true);
     try {
-      const { width, height } = svgSize(clean!);
+      // Diambil dari simpul yang TAMPIL, bukan dari markup aslinya: viewBox-nya
+      // sudah dirapatkan ke isi gambar setelah dirender, dan menyimpan dari
+      // markup asli menghasilkan PNG yang membawa serta ruang kosong yang baru
+      // saja dibuang dari layar.
+      const drawn = box.current?.querySelector("svg")?.outerHTML ?? clean!;
+
+      const { width, height } = svgSize(drawn);
       const scale = PNG_WIDTH / width;
 
       // Ukuran eksplisit disuntikkan: SVG dari model hanya membawa viewBox, dan
       // tanpa width/height sebagian browser meraster-nya pada 150px.
-      const sized = clean!.replace(
+      const sized = drawn.replace(
         /<svg\b/i,
         `<svg width="${Math.round(width * scale)}" height="${Math.round(height * scale)}"`
       );
@@ -180,6 +219,7 @@ export default function SvgBlock({ source }: { source: string }) {
       {/* Diagram lebar menggulir di dalam kotaknya sendiri; di HP, halaman yang
           ikut bergeser ke samping membuat seluruh tata letak terasa rusak. */}
       <div
+        ref={box}
         className="svg-diagram overflow-x-auto rounded-xl bg-white p-2 dark:bg-white/90"
         style={reserved}
         dangerouslySetInnerHTML={{ __html: clean ?? "" }}
