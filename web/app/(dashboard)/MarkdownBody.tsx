@@ -4,6 +4,7 @@ import { isValidElement, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { splitHighlights } from "@/lib/highlight";
+import { cardsSvg, looksLikeCards, parseCards } from "@/lib/cards";
 import SvgBlock from "./SvgBlock";
 
 /**
@@ -42,6 +43,25 @@ function textOf(node: ReactNode): string {
  */
 function looksLikeSvg(source: string) {
   return /^\s*<svg[\s>]/i.test(source);
+}
+
+/**
+ * Blok kartu, ditata di sini lalu digambar lewat jalan yang sama.
+ *
+ * Model mengirim isinya saja — nama, keterangan, simbol dalam kotaknya sendiri —
+ * dan seluruh penempatannya dihitung `cardsSvg`. Hasilnya SVG biasa, jadi ia
+ * tetap disaring, dirapatkan, dan bisa disimpan sebagai PNG persis seperti
+ * diagram lain: yang berpindah cuma siapa yang menghitung koordinatnya.
+ *
+ * Mengembalikan null kalau isinya belum berbentuk kartu — termasuk pada baris
+ * pertama yang baru setengah tertulis, dan blok itu tampil sebagai kode sampai
+ * baris keduanya sampai.
+ */
+function cardsFrom(source: string): string | null {
+  if (!looksLikeCards(source)) return null;
+
+  const spec = parseCards(source);
+  return spec ? cardsSvg(spec) : null;
 }
 
 /**
@@ -174,6 +194,10 @@ export default function Markdown({
           pre: ({ node, children, ...props }) => {
             const source = textOf(children);
             if (looksLikeSvg(source)) return <SvgBlock source={source} />;
+
+            const cards = cardsFrom(source);
+            if (cards) return <SvgBlock source={cards} />;
+
             return <pre {...props}>{children}</pre>;
           },
           code: ({ node, className, children, ...props }) => {
