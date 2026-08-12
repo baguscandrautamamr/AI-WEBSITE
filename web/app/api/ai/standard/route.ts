@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { rateLimit, tooManyRequests } from "@/lib/rateLimit";
 import { anthropic, MODEL } from "@/lib/anthropic";
 import { guardArea } from "@/lib/access";
-import { promisedButMissing, withoutDiagrams } from "@/lib/history";
+import { redoReason, withoutDiagrams } from "@/lib/history";
 
 export const runtime = "nodejs";
 
@@ -22,6 +22,24 @@ Di halaman ini kamu menjawab pertanyaan seputar standar
 dan regulasi kelistrikan (SNI, PUIL, IEC, NEC, dsb.) untuk kebutuhan desain MEP.
 Jawab singkat, akurat, dan sebutkan nomor standar jika relevan. Kamu TIDAK pernah
 mengeksekusi apa pun di Revit — kamu murni memberi informasi.
+
+BAHASA. Jawab dalam bahasa yang dipakai penanya — untuk halaman ini hampir
+selalu Bahasa Indonesia — dan SELURUH jawabanmu memakai huruf Latin.
+
+Istilah teknis Inggris justru dipertahankan, jangan diterjemahkan paksa: busbar,
+bonding braid, load break switch, earthing, dan semacamnya memang dipakai begitu
+di lapangan, dan menerjemahkannya membuat jawabannya lebih sulit dibaca, bukan
+lebih mudah.
+
+Yang DILARANG adalah menyisipkan kata dari bahasa lain di tengah kalimat —
+Sirilik, Mandarin, Jepang, Korea, Arab. Ini bukan aturan gaya. Kalimat seperti
+"Mau saya bantu hitung количество flexible bonding braid" sudah benar-benar
+sampai ke layar pengguna, dan ia tidak punya cara menebak apa arti kata itu:
+satu kata asing membuat seluruh jawaban tidak bisa dipercaya. Kalau sebuah kata
+terasa lebih pas dalam bahasa lain, tulis padanannya dalam bahasa jawaban.
+
+Lambang satuan tetap ditulis sebagaimana mestinya — Ω, μF, cos φ, ΔV. Itu
+lambang teknis, bukan kata asing.
 
 DIAGRAM. Kalau — dan hanya kalau — pengguna meminta gambar, diagram, sketsa, atau
 denah, ada DUA bentuk jawaban, dan memilih yang benar menentukan rapi-tidaknya
@@ -301,31 +319,26 @@ export async function POST(req: Request) {
 
         // Sekali saja, dan hanya untuk kegagalan yang sudah pasti.
         //
-        // Yang diminta gambar dan yang datang tulisan "[diagram]" bukan jawaban
-        // kurang lengkap — itu layar kosong, dan pengguna tidak punya cara tahu
-        // bahwa mengulang pertanyaannya akan berhasil. Diulang di sini, dengan
+        // Yang diminta gambar dan yang datang tulisan "[diagram]", atau kalimat
+        // Indonesia yang tiba-tiba menyisipkan satu kata Rusia — dua-duanya
+        // bukan jawaban kurang lengkap melainkan jawaban yang tidak bisa
+        // dipakai, dan pengguna tidak punya cara tahu bahwa mengulang
+        // pertanyaannya sendiri akan berhasil. Diulang di sini, dengan
         // kegagalannya diperlihatkan kembali kepada model supaya percobaan kedua
         // bukan lemparan dadu yang sama.
-        if (promisedButMissing(reply)) {
-          console.warn("[api/ai/standard] jawaban menjanjikan gambar tanpa menggambarnya");
+        const redo = redoReason(reply, question);
+        if (redo) {
+          console.warn("[api/ai/standard] jawaban ditulis ulang:", redo.slice(0, 60));
 
           // Yang sudah telanjur tampil di layar dibuang dulu; kalau tidak, hasil
-          // percobaan kedua tersambung di belakang penanda yang gagal itu.
+          // percobaan kedua tersambung di belakang jawaban yang gagal itu.
           send({ reset: true });
 
           reply = await ask([
             ...history,
             { role: "user", content: question },
             { role: "assistant", content: reply },
-            {
-              role: "user",
-              content:
-                "Jawabanmu memuat penanda seperti [diagram] tanpa gambar yang sesungguhnya, " +
-                "dan yang tampil di layar hanya tulisan itu. Tulis ulang jawabannya secara " +
-                "utuh dengan gambarnya benar-benar ada — blok cards untuk sekumpulan hal " +
-                "sejenis, atau blok svg berisi <svg ...> ... </svg> untuk yang berbentuk. " +
-                "Jangan pernah menulis penanda sebagai pengganti gambar.",
-            },
+            { role: "user", content: redo },
           ]);
         }
       } catch (err) {

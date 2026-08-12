@@ -73,3 +73,77 @@ export function promisedButMissing(reply: string): boolean {
   if (!PLACEHOLDER.test(reply)) return false;
   return !/<svg[\s>]/i.test(reply) && !/```\s*cards\b/i.test(reply);
 }
+
+/**
+ * Aksara yang tidak punya urusan apa pun dengan jawaban di halaman ini.
+ *
+ * Yunani SENGAJA tidak ada di sini, dan itu keputusan penting: Ω, μ, φ, Δ, dan
+ * λ adalah satuan dan lambang yang dipakai hampir di setiap jawaban
+ * kelistrikan. Memasukkannya berarti menandai jawaban yang paling benar sebagai
+ * paling rusak.
+ *
+ * Latin diperluas juga tidak: é, ü, ñ muncul wajar pada nama merek dan nama
+ * standar.
+ */
+const SCRIPTS: { name: string; range: RegExp }[] = [
+  { name: "Sirilik", range: /[Ѐ-ӿ]/ },
+  { name: "Ibrani", range: /[֐-׿]/ },
+  { name: "Arab", range: /[؀-ۿ]/ },
+  { name: "Devanagari", range: /[ऀ-ॿ]/ },
+  { name: "Thai", range: /[฀-๿]/ },
+  { name: "Hangul", range: /[ᄀ-ᇿ가-힯]/ },
+  { name: "Jepang", range: /[぀-ヿ]/ },
+  { name: "Mandarin", range: /[㐀-䶿一-鿿]/ },
+];
+
+/**
+ * Kata beraksara asing yang nyelonong ke tengah jawaban.
+ *
+ * Yang dilaporkan pengguna: "Mau saya bantu hitung количество flexible bonding
+ * braid", dan sebuah baris tabel berbunyi "普通铜编织带". Satu kata Rusia dan satu
+ * kata Mandarin di tengah kalimat Indonesia — bukan salah ketik, bukan istilah,
+ * melainkan model yang tergelincir ke bahasa lain untuk satu kata lalu kembali
+ * seolah tidak terjadi apa-apa. Pembacanya tidak bisa menebak apa yang
+ * dimaksud, dan seluruh jawaban jadi tidak bisa dipercaya.
+ *
+ * Dibandingkan dengan PERTANYAANNYA, bukan dengan daftar tetap. Kalau yang
+ * bertanya memang menulis dengan aksara itu, jawaban beraksara sama adalah
+ * jawaban yang benar — yang salah hanya aksara yang muncul entah dari mana.
+ */
+export function strayScript(reply: string, question: string): string | null {
+  for (const script of SCRIPTS) {
+    if (script.range.test(reply) && !script.range.test(question)) return script.name;
+  }
+  return null;
+}
+
+/**
+ * Alasan sebuah jawaban harus ditulis ulang, sebagai kalimat untuk model.
+ *
+ * Null berarti jawabannya boleh lewat. Yang dikembalikan bukan kode kesalahan
+ * melainkan kalimat yang benar-benar dikirim balik: percobaan kedua yang tidak
+ * diberi tahu apa yang salah cuma lemparan dadu yang sama.
+ */
+export function redoReason(reply: string, question: string): string | null {
+  if (promisedButMissing(reply)) {
+    return (
+      "Jawabanmu memuat penanda seperti [diagram] tanpa gambar yang sesungguhnya, " +
+      "dan yang tampil di layar hanya tulisan itu. Tulis ulang jawabannya secara " +
+      "utuh dengan gambarnya benar-benar ada — blok cards untuk sekumpulan hal " +
+      "sejenis, atau blok svg berisi <svg ...> ... </svg> untuk yang berbentuk. " +
+      "Jangan pernah menulis penanda sebagai pengganti gambar."
+    );
+  }
+
+  const script = strayScript(reply, question);
+  if (script) {
+    return (
+      `Jawabanmu menyisipkan kata beraksara ${script} di tengah kalimat, dan pembacanya ` +
+      "tidak bisa membacanya. Tulis ulang jawabannya secara utuh dalam bahasa yang sama " +
+      "dengan pertanyaannya, seluruhnya dengan huruf Latin. Istilah teknis Inggris boleh " +
+      "dipertahankan; kata dari bahasa lain tidak."
+    );
+  }
+
+  return null;
+}

@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { splitHighlights } from "@/lib/highlight";
 import { cardsSvg, looksLikeCards, parseCards } from "@/lib/cards";
+import { asciiTable } from "@/lib/asciiTable";
 import SvgBlock from "./SvgBlock";
 
 /**
@@ -197,6 +198,38 @@ export default function Markdown({
 
             const cards = cardsFrom(source);
             if (cards) return <SvgBlock source={cards} />;
+
+            // Tabel yang digambar dengan `|` dan `-`, dibaca kembali jadi tabel
+            // sungguhan. Di dalam blok kode ia tidak pernah melipat baris, jadi
+            // di telepon ia dibaca sambil menggeser — dan sisi kanannya
+            // bergerigi begitu ada satu sel yang lebih panjang dari perkiraan
+            // model. Yang datang tetap apa adanya; yang berubah cara
+            // menggambarnya.
+            const table = asciiTable(source);
+            if (table) {
+              return (
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        {table.head.map((cell, at) => (
+                          <th key={at}>{cell}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {table.rows.map((row, at) => (
+                        <tr key={at}>
+                          {row.map((cell, column) => (
+                            <td key={column}>{cell}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            }
 
             return <pre {...props}>{children}</pre>;
           },
