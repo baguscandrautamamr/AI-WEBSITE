@@ -226,3 +226,25 @@ pre {
   .dot { animation: none; opacity: 0.5; }
 }
 
+/* Kata yang sedang dicari.
+ *
+ * `mark` bawaan browser berlatar kuning pekat dengan tulisan hitam — di mode
+ * gelap itu satu blok menyala yang justru lebih sulit dibaca daripada teks
+ * sekitarnya. Warnanya di sini menyala pada latar terang, meredup pada latar
+ * gelap, dan warna hurufnya SELALU diwarisi dari teks di sekelilingnya: yang
+ * ditandai adalah kata yang sama, bukan kata lain yang kebetulan berwarna. */
+mark {
+  background: rgba(250, 204, 21, 0.55);
+  color: inherit;
+  border-radius: 3px;
+  /* Padding mendatar saja. Padding tegak menambah tinggi baris hanya pada baris
+     yang kebetulan memuat kecocokan, dan yang terlihat adalah paragraf yang
+     barisnya merenggang sendiri saat pencarian diketik. */
+  padding: 0 0.1em;
+}
+
+@media (prefers-color-scheme: dark) {
+  mark { background: rgba(250, 204, 21, 0.3); }
+}
+
+.dark mark { background: rgba(250, 204, 21, 0.3); }

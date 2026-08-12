@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { splitDiagrams } from "@/lib/diagrams";
-import { matchesQuery } from "@/lib/search";
+import { matchesQuery, searchTerms } from "@/lib/search";
+import { splitHighlights } from "@/lib/highlight";
 import { useTypewriter } from "@/lib/useTypewriter";
 import Markdown from "../Markdown";
 import SvgBlock from "../SvgBlock";
@@ -22,7 +23,16 @@ interface Msg {
  * bisa mengenali bentuk-bentuk itu; ia hanya melihat teks, dan teks itulah yang
  * ia tampilkan.
  */
-function Answer({ text, typing }: { text: string; typing: boolean }) {
+function Answer({
+  text,
+  typing,
+  highlight,
+}: {
+  text: string;
+  typing: boolean;
+  /** Kata yang sedang dicari, untuk ditandai di dalam jawabannya. */
+  highlight: string[];
+}) {
   // Ditampilkan rata, bukan bergelombang. Potongan dari API besarnya tidak
   // beraturan; apa adanya, yang terlihat bukan orang mengetik melainkan teks
   // yang menyentak — dan itu terasa seperti aplikasi yang tersendat.
@@ -37,7 +47,9 @@ function Answer({ text, typing }: { text: string; typing: boolean }) {
           // SvgBlock, yang tahu bagian mana dari markup yang sudah aman tampil.
           <SvgBlock key={index} source={segment.value} />
         ) : (
-          <Markdown key={index}>{segment.value}</Markdown>
+          <Markdown key={index} highlight={highlight}>
+            {segment.value}
+          </Markdown>
         ),
       )}
 
@@ -61,6 +73,25 @@ function Answer({ text, typing }: { text: string; typing: boolean }) {
           <i className="dot" style={{ animationDelay: "0.15s" }} />
           <i className="dot" style={{ animationDelay: "0.3s" }} />
         </span>
+      )}
+    </>
+  );
+}
+
+/**
+ * Teks polos dengan bagian yang dicari ditandai.
+ *
+ * Untuk gelembung pertanyaan, yang isinya bukan markdown melainkan apa yang
+ * diketik orangnya — termasuk baris barunya, yang dijaga `whitespace-pre-wrap`
+ * di gelembungnya.
+ */
+function Marked({ text, terms }: { text: string; terms: string[] }) {
+  if (terms.length === 0) return <>{text}</>;
+
+  return (
+    <>
+      {splitHighlights(text, terms).map((piece, index) =>
+        piece.hit ? <mark key={index}>{piece.text}</mark> : <span key={index}>{piece.text}</span>
       )}
     </>
   );
@@ -282,6 +313,7 @@ export default function StandardPage() {
     .filter(({ m }) => matchesQuery(m.content, find));
 
   const searching = find.trim().length > 0;
+  const terms = searchTerms(find);
 
   return (
     // Selebar dan setinggi area yang tersedia. Jawaban standar sering memuat
@@ -365,12 +397,18 @@ export default function StandardPage() {
               }`}
             >
               {m.role === "user" ? (
-              m.content
+              // Pertanyaan bukan markdown — ia teks apa adanya — jadi
+              // penandaannya di sini, bukan lewat perender markdown.
+              <Marked text={m.content} terms={terms} />
             ) : (
               /* Hanya gelembung TERAKHIR yang diketik, dan hanya selagi mengalir.
                  Jawaban lama sudah selesai; mengetiknya ulang setiap render
                  akan membuat percakapan kemarin bergerak sendiri. */
-              <Answer text={m.content} typing={loading && i === messages.length - 1} />
+              <Answer
+                text={m.content}
+                typing={loading && i === messages.length - 1}
+                highlight={terms}
+              />
             )}
             </div>
           ))}

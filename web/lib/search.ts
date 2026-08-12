@@ -31,7 +31,7 @@ export function searchableText(content: string): string {
  * yang menyebut keduanya walau terpisah dua paragraf — dan itu bentuk pertanyaan
  * yang sebenarnya diingat orang, bukan potongan kalimat yang persis.
  */
-function terms(query: string): string[] {
+export function searchTerms(query: string): string[] {
   return query
     .toLowerCase()
     .split(/\s+/)
@@ -41,7 +41,7 @@ function terms(query: string): string[] {
 
 /** Apakah sebuah giliran cocok dengan yang dicari. */
 export function matchesQuery(content: string, query: string): boolean {
-  const wanted = terms(query);
+  const wanted = searchTerms(query);
   if (wanted.length === 0) return true;
 
   const haystack = searchableText(content).toLowerCase();
