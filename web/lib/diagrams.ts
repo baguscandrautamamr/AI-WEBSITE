@@ -240,10 +240,30 @@ export function tightViewBox(
     .map(Number)
     .filter((n) => Number.isFinite(n));
 
-  // Sudah rapat: isinya mengisi hampir seluruh ruang yang dinyatakan.
+  // Sudah rapat: isinya mengisi hampir seluruh ruang yang dinyatakan, DAN masih
+  // berada di dalamnya.
+  //
+  // Syarat kedua itu bukan kehati-hatian yang berlebihan — ia justru kasus yang
+  // paling merusak. Gambar yang melewati viewBox-nya juga "mengisi" ruang itu
+  // sepenuhnya menurut hitungan di atas, jadi tanpa pemeriksaan ini ia dianggap
+  // sudah rapat dan dibiarkan: yang di luar kotak dipotong oleh browser dan
+  // hilang sama sekali. Kartu paling kanan yang terpangkas separuh, baris
+  // terakhir yang tidak ada — itu bentuknya di layar. Yang meluber justru harus
+  // dilebarkan, dan itu yang terjadi kalau pemeriksaannya lolos ke bawah.
   if (declared.length === 4 && declared[2] > 0 && declared[3] > 0) {
+    // Toleransi setipis satu bagian dari seribu: garis tepi yang lebarnya 2 unit
+    // menaruh setengah goresannya di luar kotak, dan itu bukan yang dimaksud
+    // "meluber".
+    const slack = Math.max(declared[2], declared[3]) / 1000;
+
+    const inside =
+      content.x >= declared[0] - slack &&
+      content.y >= declared[1] - slack &&
+      content.x + content.width <= declared[0] + declared[2] + slack &&
+      content.y + content.height <= declared[1] + declared[3] + slack;
+
     const fills = content.width / declared[2] >= SNUG && content.height / declared[3] >= SNUG;
-    if (fills) return null;
+    if (inside && fills) return null;
   }
 
   // Margin dihitung dari sisi terpanjang, bukan per sumbu: dihitung per sumbu,
