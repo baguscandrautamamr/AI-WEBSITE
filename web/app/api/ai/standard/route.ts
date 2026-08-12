@@ -3,7 +3,14 @@ import { createClient } from "@/lib/supabase/server";
 import { rateLimit, tooManyRequests } from "@/lib/rateLimit";
 import { anthropic, MODEL } from "@/lib/anthropic";
 import { guardArea } from "@/lib/access";
-import { fitHistory, redoReason, scrubLeaks } from "@/lib/history";
+import {
+  applyFixes,
+  fitHistory,
+  parseFixes,
+  redoReason,
+  scrubLeaks,
+  strayWords,
+} from "@/lib/history";
 
 export const runtime = "nodejs";
 
@@ -349,6 +356,64 @@ export async function POST(req: Request) {
             { role: "assistant", content: reply },
             { role: "user", content: redo.instruction },
           ]);
+        }
+
+        /**
+         * Kata beraksara asing DITAMBAL, bukan dijadikan alasan menulis ulang.
+         *
+         * Ini pelajaran dari laporan berulang. Menulis ulang seluruh jawaban demi
+         * satu kata berarti pengguna menonton jawaban yang sudah selesai dihapus
+         * dan ditulis lagi hampir sama — dua kali ia melaporkannya sebagai bug,
+         * dan memang begitu bentuknya di layar. Sisa jawabannya tidak salah; yang
+         * salah satu kata.
+         *
+         * Jadi yang diminta cuma padanannya, dalam satu panggilan kecil, lalu
+         * kata itu diganti di tempatnya — di layar lewat {fix}, di simpanan lewat
+         * applyFixes. Jawabannya tetap yang pertama, dan tidak ada yang ditulis
+         * dua kali.
+         */
+        const stray = strayWords(reply, question);
+        if (stray) {
+          console.warn("[api/ai/standard] kata beraksara asing:", stray.words.join(", "));
+
+          try {
+            const asked = await anthropic.messages.create({
+              model: MODEL,
+              max_tokens: 300,
+              system:
+                "Kamu penerjemah kata tunggal. Balas HANYA daftar `asli => padanan`, " +
+                "satu per baris, tanpa kalimat pembuka dan tanpa penjelasan. Padanannya " +
+                "wajib huruf Latin.",
+              messages: [
+                {
+                  role: "user",
+                  content:
+                    `Kata-kata berikut muncul di tengah jawaban berbahasa Indonesia dan tidak ` +
+                    `terbaca pembacanya. Beri padanan Bahasa Indonesia yang paling tepat untuk ` +
+                    `konteks teknik kelistrikan:\n${stray.words.join("\n")}`,
+                },
+              ],
+            });
+
+            const said = asked.content
+              .map((block) => (block.type === "text" ? block.text : ""))
+              .join("");
+
+            const fixes = parseFixes(said, stray.words);
+
+            if (fixes.length > 0) {
+              reply = applyFixes(reply, fixes);
+              send({
+                fix: fixes,
+                why: `Kata beraksara ${stray.script} pada jawaban ini diganti padanannya.`,
+              });
+            }
+          } catch (err) {
+            // Gagal menambal bukan alasan menahan jawaban yang sudah terbaca.
+            // Katanya tetap tidak terbaca, dan itu lebih baik daripada layar
+            // yang kosong.
+            console.error("[api/ai/standard] gagal mencari padanan", err);
+          }
         }
       } catch (err) {
         console.error("[api/ai/standard] gateway call failed", err);

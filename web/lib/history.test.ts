@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { fitHistory, promisedButMissing, redoReason, scrubLeaks, strayScript } from "./history";
+import {
+  applyFixes,
+  fitHistory,
+  parseFixes,
+  promisedButMissing,
+  redoReason,
+  scrubLeaks,
+  strayScript,
+  strayWords,
+} from "./history";
 
 const svg = '<svg viewBox="0 0 100 60"><rect x="10" y="10" width="20" height="20"/></svg>';
 
@@ -166,13 +175,11 @@ describe("redoReason — apa yang dikirim balik ke model", () => {
     expect(redo.instruction).toContain("[diagram]");
   });
 
-  it("kata asing menyebut aksaranya, supaya model tahu apa yang dicari", () => {
-    const redo = redoReason("Hitung количество braid-nya.", ID)!;
-    expect(redo.instruction).toContain("Sirilik");
-    expect(redo.instruction).toContain("huruf Latin");
-    // Pengguna diberi tahu juga, dengan kalimat pendek — bukan dibiarkan
-    // menebak kenapa jawabannya ditulis dua kali.
-    expect(redo.notice).toContain("Sirilik");
+  it("kata asing TIDAK lagi memicu tulis-ulang", () => {
+    // Menulis ulang seluruh jawaban demi satu kata berarti pengguna menonton
+    // jawaban yang sudah selesai dihapus dan ditulis lagi hampir sama —
+    // dilaporkan dua kali sebagai bug. Sekarang katanya ditambal di tempatnya.
+    expect(redoReason("Hitung количество braid-nya.", ID)).toBeNull();
   });
 
   it("satu huruf asing saja tidak cukup untuk menulis ulang", () => {
@@ -186,5 +193,75 @@ describe("redoReason — apa yang dikirim balik ke model", () => {
     // dan biayanya tanpa memperbaiki apa pun.
     expect(redoReason("Pakai 50 mm² untuk aplikasi bergerak.", ID)).toBeNull();
     expect(redoReason('Ini gambarnya:\n<svg viewBox="0 0 10 10"></svg>', ID)).toBeNull();
+  });
+});
+
+describe("strayWords — kata mana yang harus ditambal", () => {
+  const ID = "berapa ukuran bonding braid?";
+
+  it("mengambil katanya, bukan cuma nama aksaranya", () => {
+    const stray = strayWords("Mau saya bantu hitung количество braid?", ID)!;
+
+    expect(stray.script).toBe("Sirilik");
+    expect(stray.words).toEqual(["количество"]);
+  });
+
+  it("beberapa kata sekaligus, tanpa kembar", () => {
+    const stray = strayWords("普通铜编织带 dan 普通铜编织带 lalu 接地", ID)!;
+    expect(stray.words).toEqual(["普通铜编织带", "接地"]);
+  });
+
+  it("jawaban bersih tidak punya kata yang perlu ditambal", () => {
+    expect(strayWords("Tahanan pembumian ≤ 5 Ω, cos φ 0,85.", ID)).toBeNull();
+  });
+});
+
+describe("parseFixes — padanan yang dikirim model", () => {
+  const words = ["количество", "接地"];
+
+  it("membaca daftar `asli => padanan`", () => {
+    expect(parseFixes("количество => jumlah\n接地 => pembumian", words)).toEqual([
+      ["количество", "jumlah"],
+      ["接地", "pembumian"],
+    ]);
+  });
+
+  it("penomoran dan tanda kutip dimaafkan", () => {
+    expect(parseFixes('1. количество => "jumlah"', words)).toEqual([["количество", "jumlah"]]);
+  });
+
+  it("padanan yang MASIH beraksara asing ditolak", () => {
+    // Mengganti kata yang tidak terbaca dengan kata lain yang juga tidak
+    // terbaca hanya memindahkan masalahnya.
+    expect(parseFixes("количество => 数量", words)).toEqual([]);
+  });
+
+  it("kata yang tidak diminta diabaikan", () => {
+    expect(parseFixes("braid => kawat pilin", words)).toEqual([]);
+  });
+
+  it("kalimat pembuka dan baris kosong tidak merusak apa pun", () => {
+    expect(parseFixes("Berikut padanannya:\n\nколичество => jumlah\n", words)).toEqual([
+      ["количество", "jumlah"],
+    ]);
+  });
+
+  it("padanan yang jelas kepanjangan ditolak", () => {
+    // Model yang tergelincir bisa menjawab dengan paragraf, dan menyisipkan
+    // paragraf ke tengah kalimat lebih buruk daripada satu kata asing.
+    const essay = "=> " + "kata ".repeat(60);
+    expect(parseFixes(`количество ${essay}`, words)).toEqual([]);
+  });
+});
+
+describe("applyFixes", () => {
+  it("mengganti setiap kemunculannya", () => {
+    expect(
+      applyFixes("hitung количество lalu количество lagi", [["количество", "jumlah"]])
+    ).toBe("hitung jumlah lalu jumlah lagi");
+  });
+
+  it("tanpa padanan, jawabannya tidak disentuh", () => {
+    expect(applyFixes("apa adanya", [])).toBe("apa adanya");
   });
 });

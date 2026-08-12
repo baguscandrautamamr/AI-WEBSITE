@@ -272,7 +272,13 @@ export default function StandardPage() {
 
       const consume = (line: string) => {
         if (!line.trim()) return;
-        let chunk: { t?: string; e?: string; reset?: boolean; why?: string };
+        let chunk: {
+          t?: string;
+          e?: string;
+          reset?: boolean;
+          why?: string;
+          fix?: [string, string][];
+        };
         try {
           chunk = JSON.parse(line);
         } catch {
@@ -292,6 +298,34 @@ export default function StandardPage() {
         if (chunk.reset) {
           setMessages((prev) =>
             prev.map((m, i) => (i === index ? { ...m, content: "", notice: chunk.why } : m))
+          );
+          return;
+        }
+
+        /**
+         * Satu-dua kata diganti di tempatnya, tanpa menghapus jawabannya.
+         *
+         * Ini yang menggantikan tulis-ulang untuk kasus kata beraksara asing.
+         * Sisa jawabannya tidak salah, jadi tidak ada alasan membuangnya — dan
+         * jawaban yang selesai lalu hilang lalu kembali hampir sama adalah hal
+         * yang dua kali dilaporkan sebagai bug.
+         */
+        if (chunk.fix) {
+          const fixes = chunk.fix;
+          const why = chunk.why;
+          setMessages((prev) =>
+            prev.map((m, i) =>
+              i === index
+                ? {
+                    ...m,
+                    content: fixes.reduce(
+                      (text, [from, to]) => text.split(from).join(to),
+                      m.content
+                    ),
+                    notice: why,
+                  }
+                : m
+            )
           );
           return;
         }
