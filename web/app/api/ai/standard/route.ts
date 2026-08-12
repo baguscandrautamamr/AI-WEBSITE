@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { rateLimit, tooManyRequests } from "@/lib/rateLimit";
 import { anthropic, MODEL } from "@/lib/anthropic";
 import { guardArea } from "@/lib/access";
+import { promisedButMissing, withoutDiagrams } from "@/lib/history";
 
 export const runtime = "nodejs";
 
@@ -30,6 +31,13 @@ hasilnya:
 - sesuatu yang BERBENTUK, yang bagian-bagiannya punya hubungan ruang (denah,
   potongan, diagram satu garis, skema pembumian) → satu blok kode berbahasa
   \`svg\` berisi SVG yang utuh (diawali <svg ...> dan diakhiri </svg>).
+
+JANGAN PERNAH menulis penanda sebagai pengganti gambar — bukan [diagram], bukan
+[gambar], bukan [image], bukan "(diagram menyusul)". Tidak ada yang mengisi
+penanda itu di belakangmu: yang tampil di layar pengguna persis huruf-huruf itu,
+di bawah judul yang menjanjikan sebuah gambar, dan tidak ada apa-apa lagi. Kalau
+kamu memutuskan menggambar, gambarnya harus benar-benar ada di jawaban yang sama.
+Kalau tidak jadi menggambar, jangan menyebut ada gambar.
 
 Kamu TIDAK punya tool apa pun. Jangan menulis [TOOL_CALL], nama fungsi, atau
 objek JSON seperti {"name": ..., "input": ...} — semua itu akan tampil sebagai
@@ -161,38 +169,6 @@ jangan menyisipkan diagram atas inisiatif sendiri.`;
 const MAX_TURNS = 8;
 
 /**
- * Diagram dibuang dari apa yang DIKIRIM ke model — bukan dari apa yang disimpan.
- *
- * Riwayat dikirim ulang sebagai input pada setiap pertanyaan berikutnya, jadi
- * satu SVG dua ribu token yang lahir di pertanyaan pertama akan ditagih lagi di
- * pertanyaan kedua, ketiga, keempat, sampai ia terdorong keluar dari delapan
- * giliran terakhir. Dibiarkan begitu, beberapa diagram melipatgandakan biaya
- * input setiap permintaan selama percakapan berjalan.
- *
- * Penting: ini dipakai saat MENYUSUN pesan untuk model, bukan saat menyimpan.
- * Sebelumnya penandanya ditulis ke `standards_threads`, dan karena tabel itulah
- * yang dibaca ulang saat halaman dibuka, setiap diagram berubah jadi tulisan
- * "[diagram]" begitu aplikasi dimuat lagi. Gambarnya hilang, dan yang paling
- * sering melihat akibatnya justru yang memakai aplikasi di HP — di situ halaman
- * memang dimuat dari awal.
- *
- * Yang disimpan tetap utuh; yang dihemat tetap dihemat.
- */
-function withoutDiagrams(text: string) {
-  // Dikenali dari isinya, bukan dari pagar ```svg.
-  //
-  // Pagar itu yang DIMINTA prompt, bukan yang selalu datang: diagram juga
-  // sampai sebagai markup mentah dan sebagai isi pembungkus tool-call. Selama
-  // penyaring ini hanya mengenal satu bentuk, bentuk yang lain lolos — dan
-  // seluruh penghematan yang jadi alasan fungsi ini ada pun ikut lolos, tanpa
-  // gejala apa pun selain tagihan input yang membengkak.
-  return text
-    .replace(/\[TOOL_CALL\][\s\S]*?(?:\[\/TOOL_CALL\]|$)/gi, "[diagram]")
-    .replace(/```[\w-]*\s*<svg[\s>][\s\S]*?(?:```|$)/gi, "[diagram]")
-    .replace(/<svg[\s>][\s\S]*?(?:<\/svg>|$)/gi, "[diagram]");
-}
-
-/**
  * Riwayat sebagai konteks model: teks asisten tanpa diagramnya.
  *
  * Pertanyaan user tidak disentuh — ia tidak pernah memuat SVG, dan memangkasnya
@@ -291,7 +267,10 @@ export async function POST(req: Request) {
 
       let reply = "";
 
-      try {
+      /** Satu panggilan, dialirkan potongan demi potongan sambil dikumpulkan. */
+      async function ask(messages: { role: "user" | "assistant"; content: string }[]) {
+        let text = "";
+
         const response = anthropic.messages.stream({
           model: MODEL,
           // Naik dari 4096 sejak diagram diizinkan: satu SVG berdimensi bisa
@@ -299,10 +278,7 @@ export async function POST(req: Request) {
           // tengah tag menghasilkan gambar rusak, bukan gambar pendek.
           max_tokens: 8192,
           system: SYSTEM_PROMPT,
-          messages: [
-            ...asContext(previous),
-            { role: "user" as const, content: question },
-          ],
+          messages,
         });
 
         for await (const event of response) {
@@ -311,9 +287,46 @@ export async function POST(req: Request) {
             event.delta.type === "text_delta" &&
             event.delta.text
           ) {
-            reply += event.delta.text;
+            text += event.delta.text;
             send({ t: event.delta.text });
           }
+        }
+
+        return text;
+      }
+
+      try {
+        const history = asContext(previous);
+        reply = await ask([...history, { role: "user", content: question }]);
+
+        // Sekali saja, dan hanya untuk kegagalan yang sudah pasti.
+        //
+        // Yang diminta gambar dan yang datang tulisan "[diagram]" bukan jawaban
+        // kurang lengkap — itu layar kosong, dan pengguna tidak punya cara tahu
+        // bahwa mengulang pertanyaannya akan berhasil. Diulang di sini, dengan
+        // kegagalannya diperlihatkan kembali kepada model supaya percobaan kedua
+        // bukan lemparan dadu yang sama.
+        if (promisedButMissing(reply)) {
+          console.warn("[api/ai/standard] jawaban menjanjikan gambar tanpa menggambarnya");
+
+          // Yang sudah telanjur tampil di layar dibuang dulu; kalau tidak, hasil
+          // percobaan kedua tersambung di belakang penanda yang gagal itu.
+          send({ reset: true });
+
+          reply = await ask([
+            ...history,
+            { role: "user", content: question },
+            { role: "assistant", content: reply },
+            {
+              role: "user",
+              content:
+                "Jawabanmu memuat penanda seperti [diagram] tanpa gambar yang sesungguhnya, " +
+                "dan yang tampil di layar hanya tulisan itu. Tulis ulang jawabannya secara " +
+                "utuh dengan gambarnya benar-benar ada — blok cards untuk sekumpulan hal " +
+                "sejenis, atau blok svg berisi <svg ...> ... </svg> untuk yang berbentuk. " +
+                "Jangan pernah menulis penanda sebagai pengganti gambar.",
+            },
+          ]);
         }
       } catch (err) {
         console.error("[api/ai/standard] gateway call failed", err);
