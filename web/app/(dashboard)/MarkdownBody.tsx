@@ -3,6 +3,7 @@
 import { isValidElement, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { splitHighlights } from "@/lib/highlight";
 import SvgBlock from "./SvgBlock";
 
 /**
@@ -43,11 +44,110 @@ function looksLikeSvg(source: string) {
   return /^\s*<svg[\s>]/i.test(source);
 }
 
-export default function Markdown({ children }: { children: string }) {
+/**
+ * Satu simpul hast — pohon HTML yang dipakai react-markdown sebelum ia jadi
+ * elemen React. Yang dibutuhkan di sini hanya dua bentuknya.
+ */
+interface HastText {
+  type: "text";
+  value: string;
+}
+
+interface HastParent {
+  type: string;
+  tagName?: string;
+  properties?: Record<string, unknown>;
+  children?: HastNode[];
+}
+
+type HastNode = HastText | HastParent;
+
+/**
+ * Penjaga tipe, bukan sekadar `node.type === "text"`.
+ *
+ * `HastParent.type` bertipe string, jadi ia mencakup "text" juga — pemeriksaan
+ * biasa tidak mempersempit apa pun, dan `value` tetap terbaca `unknown`.
+ */
+function isText(node: HastNode): node is HastText {
+  return node.type === "text" && typeof (node as HastText).value === "string";
+}
+
+/**
+ * Menandai kata yang sedang dicari, sebagai <mark>.
+ *
+ * Dikerjakan pada POHON, bukan pada teks markdown-nya dan bukan pada DOM yang
+ * sudah jadi. Ketiganya menghasilkan tampilan yang sama dan hanya satu yang
+ * benar:
+ *
+ *   - menyisipkan <mark> ke teks markdown sebelum diurai berarti menyuntikkan
+ *     HTML dari string, dan pintu itu tidak bisa dibuka sedikit saja
+ *   - membungkus simpul teks di DOM setelah React menggambarnya berarti mengubah
+ *     pohon yang bukan milik kita; render berikutnya menemukan simpul yang tidak
+ *     ia kenali dan bisa gagal saat mencoba menggantinya
+ *
+ * Di sini, <mark> lahir sebagai elemen di pohon — persis seperti elemen lain
+ * yang dibuat markdown-nya sendiri — jadi React tidak pernah tahu ada yang
+ * istimewa.
+ */
+function rehypeMark(terms: string[]) {
+  return function transform(tree: HastNode) {
+    if (terms.length === 0) return;
+    walk(tree);
+  };
+
+  function walk(node: HastNode) {
+    const children = (node as { children?: HastNode[] }).children;
+    if (!Array.isArray(children)) return;
+
+    const out: HastNode[] = [];
+
+    for (const child of children) {
+      if (!isText(child)) {
+        walk(child);
+        out.push(child);
+        continue;
+      }
+
+      const pieces = splitHighlights(child.value, terms);
+
+      // Tidak ada yang cocok: simpulnya diteruskan apa adanya, bukan disusun
+      // ulang jadi simpul baru yang isinya sama.
+      if (pieces.length === 1 && !pieces[0].hit) {
+        out.push(child);
+        continue;
+      }
+
+      for (const piece of pieces) {
+        out.push(
+          piece.hit
+            ? {
+                type: "element",
+                tagName: "mark",
+                properties: {},
+                children: [{ type: "text", value: piece.text }],
+              }
+            : { type: "text", value: piece.text }
+        );
+      }
+    }
+
+    (node as { children?: HastNode[] }).children = out;
+  }
+}
+
+export default function Markdown({
+  children,
+  highlight = [],
+}: {
+  children: string;
+  /** Kata yang sedang dicari, untuk ditandai di dalam jawabannya. */
+  highlight?: string[];
+}) {
   return (
     <div className="prose-chat">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={highlight.length ? [[rehypeMark, highlight]] : []}
         components={{
           // Tabel lebar menggeser tabelnya sendiri, bukan seluruh halaman.
           table: ({ node, ...props }) => (

@@ -22,6 +22,13 @@ const MarkdownBody = dynamic(() => import("./MarkdownBody"), {
   loading: () => null,
 });
 
-export default function Markdown({ children }: { children: string }) {
-  return <MarkdownBody>{children}</MarkdownBody>;
+export default function Markdown({
+  children,
+  highlight,
+}: {
+  children: string;
+  /** Kata yang sedang dicari, untuk ditandai di dalam jawabannya. */
+  highlight?: string[];
+}) {
+  return <MarkdownBody highlight={highlight}>{children}</MarkdownBody>;
 }
