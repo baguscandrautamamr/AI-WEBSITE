@@ -32,6 +32,12 @@
     "findPrev": "Previous match (Shift+Enter)",
     "findNext": "Next match (Enter)",
     "sending": "Sending…",
+    "attach": "Attach an image",
+    "imageMax": "At most {n} images per question",
+    "imageType": "Only JPG, PNG, WebP, or GIF images",
+    "imageTooBig": "That image is too large — try a smaller resolution",
+    "imageUnreadable": "Could not read the image \"{name}\"",
+    "imageRemove": "Remove this image",
     "findNone": "Nothing matched",
     "findClear": "clear"
   },
