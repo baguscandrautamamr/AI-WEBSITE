@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { COMMANDS_BY_NAME } from "@/lib/commands";
 import Markdown from "./Markdown";
+import ChatInput from "./ChatInput";
 import ResultView from "./ResultView";
 
 /**
@@ -265,19 +266,17 @@ export default function CommandChat({
         </div>
       )}
 
-      <div className="flex gap-2">
-        <input
-          className="glass-input flex-1"
-          placeholder={t("chat.placeholder")}
-          value={input}
-          disabled={disabled}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-        />
-        <button onClick={submit} disabled={busy || disabled} className="btn-accent">
+      <ChatInput
+        value={input}
+        onChange={setInput}
+        onSubmit={submit}
+        placeholder={t("chat.placeholder")}
+        disabled={disabled}
+      >
+        <button onClick={submit} disabled={busy || disabled} className="btn-accent shrink-0">
           {busy ? t("chat.sending") : t("chat.send")}
         </button>
-      </div>
+      </ChatInput>
     </div>
   );
 }

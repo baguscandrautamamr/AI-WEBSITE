@@ -6,6 +6,7 @@ import { splitDiagrams } from "@/lib/diagrams";
 import { matchesQuery, searchTerms } from "@/lib/search";
 import { splitHighlights } from "@/lib/highlight";
 import { useTypewriter } from "@/lib/useTypewriter";
+import ChatInput from "../ChatInput";
 import Markdown from "../Markdown";
 import SvgBlock from "../SvgBlock";
 
@@ -514,18 +515,16 @@ export default function StandardPage() {
 
       {error && <p className="text-sm text-red-500">{error}</p>}
 
-      <div className="flex gap-2">
-        <input
-          className="glass-input flex-1"
-          placeholder={t("standard.placeholder")}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && send()}
-        />
-        <button onClick={send} disabled={loading} className="btn-accent">
+      <ChatInput
+        value={input}
+        onChange={setInput}
+        onSubmit={send}
+        placeholder={t("standard.placeholder")}
+      >
+        <button onClick={send} disabled={loading} className="btn-accent shrink-0">
           {t("standard.send")}
         </button>
-      </div>
+      </ChatInput>
     </div>
   );
 }
