@@ -30,9 +30,16 @@ export function isAccessClass(value: unknown): value is AccessClass {
  *   standard — halaman Standar & Regulasi, dan route AI-nya
  *   revit    — semua yang menyentuh model: perintah, pembacaan, impor, ekspor,
  *              riwayat
- *   grant    — memberi akses ke orang lain, dan membuat proyek (yang memberi
- *              akses admin kepada pembuatnya, jadi ia bentuk lain dari hal yang
- *              sama)
+ *   grant    — memberi akses ke orang lain di proyek yang memang dia admini
+ *
+ * MEMBUAT PROYEK tidak termasuk di sini, dan itu perbaikan atas lubang yang
+ * nyata. Ia dulu ikut `grant` dengan alasan "membuat proyek adalah bentuk lain
+ * dari memberi akses" — benar, tapi kesimpulannya terbalik: kelas bawaan setiap
+ * akun baru adalah `full`, jadi siapa pun yang mendaftar dengan email lolos
+ * gerbang itu, membuat satu proyek, dan detik itu juga menjadi admin proyek
+ * dengan `granted = true` — yang membuka SELURUH aplikasi untuk orang yang belum
+ * pernah disetujui siapa pun. Sekarang syaratnya admin global; lihat
+ * `isGlobalAdmin`.
  */
 export type Area = "standard" | "revit" | "grant";
 
@@ -171,6 +178,38 @@ export const DENIED_WAITING =
   "Minta admin memasukkanmu ke sebuah proyek dulu.";
 
 /**
+ * Membuat proyek ditolak — dan alasannya disebut, bukan disamarkan.
+ *
+ * Orang yang menekannya sedang mencoba mulai bekerja, bukan menyusup. Kalimat
+ * ini harus menyebutkan apa yang harus ia lakukan berikutnya, karena tidak ada
+ * apa pun di halaman itu yang bisa ia lakukan sendiri.
+ */
+export const DENIED_CREATE_PROJECT =
+  "hanya admin sistem yang boleh membuat proyek. Minta admin membuat proyeknya " +
+  "lalu memasukkanmu ke dalamnya.";
+
+/**
+ * Boleh melihat daftar akun orang lain — nama, kelas, aktif atau tidak.
+ *
+ * Dipisahkan dari "boleh membuka halaman admin", dan itu bukan kerapian: GET
+ * `/api/admin/access` sempat mengembalikan daftar `pending` — sampai 50 akun
+ * lain beserta id dan kelasnya — kepada SIAPA PUN yang sudah login, karena
+ * penjaganya hanya menuntut sesi. Sebuah akun yang belum diberi apa pun bisa
+ * membaca direktori pengguna sistem dari halaman yang tidak menampilkan tombol
+ * apa-apa untuknya.
+ *
+ * Yang berhak adalah orang yang memang akan MENAMBAHKAN seseorang: admin di
+ * setidaknya satu proyek (dan kelasnya masih boleh memberi), atau admin global.
+ */
+export function canSeeUserDirectory(opts: {
+  globalAdmin: boolean;
+  canGrant: boolean;
+  adminProjects: number;
+}): boolean {
+  return opts.globalAdmin || (opts.canGrant && opts.adminProjects > 0);
+}
+
+/**
  * Penjaga kelas untuk sebuah route.
  *
  * Ada supaya tidak ada route yang lahir tanpa pemeriksaan ini — alasan yang sama
@@ -271,6 +310,34 @@ export async function isGlobalAdmin(
   userId: string
 ): Promise<boolean> {
   const { data } = await service
+    .from("users")
+    .select("role, is_active")
+    .eq("id", userId)
+    .maybeSingle();
+
+  const row = data as { role?: unknown; is_active?: unknown } | null;
+  return row?.role === "admin" && row?.is_active !== false;
+}
+
+/**
+ * Peran global menurut baris sendiri, dibaca dengan klien sesi.
+ *
+ * Untuk MENGGAMBAR, bukan untuk mengizinkan. Menu Admin harus tetap ada bagi
+ * admin sistem yang belum punya proyek satu pun — di pemasangan baru dialah
+ * satu-satunya yang bisa membuat proyek pertama, dan menu yang disembunyikan
+ * darinya berarti tidak ada jalan masuk sama sekali. Layout adalah Server
+ * Component tanpa service role, dan `users_self_read` memang mengembalikan
+ * baris ini.
+ *
+ * Yang MENGIZINKAN tetap `isGlobalAdmin` di route, dengan service role. Nilai
+ * di sini paling jauh bisa membuat sebuah tautan muncul; setiap tombol di
+ * baliknya diperiksa ulang di server.
+ */
+export async function selfIsGlobalAdmin(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<boolean> {
+  const { data } = await supabase
     .from("users")
     .select("role, is_active")
     .eq("id", userId)

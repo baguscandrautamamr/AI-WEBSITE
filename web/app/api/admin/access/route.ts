@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { guardArea, isAccessClass, isGlobalAdmin } from "@/lib/access";
+import { canSeeUserDirectory, guardArea, isAccessClass, isGlobalAdmin } from "@/lib/access";
 
 export const runtime = "nodejs";
 
@@ -61,10 +61,12 @@ async function requireAdmin() {
 /**
  * Sesi saja, plus proyek yang boleh dikelola — yang boleh kosong.
  *
- * Dipakai GET, bukan requireAdmin. Halaman ini juga tempat proyek dibuat, dan
- * seseorang yang belum mengelola apa pun justru yang paling butuh membukanya:
- * menolaknya dengan 403 berarti orang yang baru mendaftar tidak punya satu pun
- * jalan untuk mulai.
+ * Dipakai GET, bukan requireAdmin: seorang viewer boleh melihat siapa saja
+ * anggota proyeknya tanpa bisa mengubahnya, dan menolaknya dengan 403 berarti
+ * halaman ini kosong bahkan untuk orang yang memang ada di dalam proyek.
+ *
+ * Yang TIDAK ikut longgar adalah daftar akun orang lain — lihat
+ * `canSeeUserDirectory`.
  */
 async function requireUser() {
   const supabase = await createClient();
@@ -160,8 +162,25 @@ export async function GET(req: Request) {
     ? await service.from("users").select(USER_COLUMNS).in("id", memberIds).order("full_name")
     : { data: [] };
 
+  /**
+   * Boleh membaca akun DI LUAR proyeknya sendiri.
+   *
+   * Sampai baris ini ada, `pending` dan `matches` dikirim ke siapa pun yang
+   * sudah login: sebuah akun yang baru mendaftar, belum diberi proyek apa pun,
+   * cukup membuka halaman ini untuk menerima daftar 50 akun terbaru beserta id,
+   * nama, kelas, dan status aktifnya. Halamannya memang tidak menampilkan
+   * tombol apa pun untuknya — tapi yang bocor bukan tombolnya, melainkan
+   * jawaban JSON-nya, dan itu terbaca dengan satu `curl`.
+   */
+  const globalAdmin = await isGlobalAdmin(service, guard.userId);
+  const directory = canSeeUserDirectory({
+    globalAdmin,
+    canGrant: guard.canGrant,
+    adminProjects: guard.projectIds.length,
+  });
+
   const { data: matches } =
-    q.length >= SEARCH_MIN_CHARS
+    directory && q.length >= SEARCH_MIN_CHARS
       ? await service
           .from("users")
           .select(USER_COLUMNS)
@@ -181,22 +200,28 @@ export async function GET(req: Request) {
     access: access ?? [],
     members: members ?? [],
     matches: matches ?? [],
-    pending: await pendingUsers(service),
+    pending: directory ? await pendingUsers(service) : [],
     searchMinChars: SEARCH_MIN_CHARS,
-    // Hanya soal KELAS, bukan soal sudah punya proyek atau belum.
-    //
-    // Diikat ke `projectIds.length > 0`, akun berkelas penuh yang belum pernah
-    // diberi proyek akan kehilangan formulir "buat proyek baru" — satu-satunya
-    // jalan yang ia punya untuk mulai. Batas per-proyek tetap ditegakkan POST
-    // dan DELETE, yang memang tahu proyek mana yang dimaksud.
+    // Hanya soal KELAS: apakah akun ini boleh memberi peran sama sekali.
+    // Batas per-proyek tetap ditegakkan POST dan DELETE, yang memang tahu
+    // proyek mana yang dimaksud — di sini belum ada proyek untuk ditanyakan.
     canGrant: guard.canGrant,
+    /**
+     * Membuat proyek — wewenang yang TERPISAH dari memberi peran.
+     *
+     * Dulu formulirnya ikut `canGrant`, dan karena kelas bawaan setiap akun
+     * baru adalah 'full', formulir itu tampil untuk semua orang yang mendaftar.
+     * Menekannya menjadikan mereka admin proyek, yaitu jalan pintas mengelilingi
+     * seluruh pemberian akses di halaman ini.
+     */
+    canCreateProject: globalAdmin,
     // Barisnya sendiri tidak bisa diubah, dan UI perlu tahu baris mana itu —
     // supaya kendalinya mati sejak awal, bukan ditolak setelah ditekan.
     me: guard.userId,
     // Satu wewenang, satu nama. Ia menentukan dua hal yang keduanya berlaku
     // global — mengubah kelas akun dan menghapus akun — jadi menamainya menurut
     // salah satunya akan menyesatkan pemakai berikutnya.
-    isGlobalAdmin: await isGlobalAdmin(service, guard.userId),
+    isGlobalAdmin: globalAdmin,
   });
 }
 
