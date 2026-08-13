@@ -11,6 +11,7 @@
  * lebih dulu, tapi yang menentukan bukan halaman itu: sebuah `curl` bisa
  * mengirim apa saja, dan yang dibayar per gambar adalah kami.
  */
+import { DEFAULT_LOCALE, type Locale } from "@/lib/locale";
 
 /**
  * Yang bisa dibaca model. Bukan daftar "format gambar yang populer" —
@@ -133,12 +134,29 @@ export function checkImages(value: unknown): ImageCheck {
  * terjadi — pertanyaan berikutnya yang berbunyi "tadi yang di gambar itu
  * berapa?" akan dijawab model dengan mengaku tidak lagi melihatnya, bukan
  * dengan mengarang.
+ *
+ * Ikut berbahasa karena ia BUKAN metadata tersembunyi: baris ini tersimpan
+ * sebagai teks giliran pengguna, jadi ia terbaca lagi di gelembung pertanyaan
+ * setelah halaman dimuat ulang. Bawaannya Indonesia supaya pemanggil lama —
+ * dan pengujiannya — berjalan persis seperti sebelumnya.
  */
-export function attachmentNote(count: number): string {
+export function attachmentNote(count: number, locale: Locale = DEFAULT_LOCALE): string {
   if (count <= 0) return "";
-  return `[${count} gambar dilampirkan pada pertanyaan ini; gambarnya tidak tersimpan di riwayat]`;
+  return locale === "en"
+    ? `[${count} image(s) attached to this question; the images are not kept in history]`
+    : `[${count} gambar dilampirkan pada pertanyaan ini; gambarnya tidak tersimpan di riwayat]`;
 }
 
-/** Pertanyaan bawaan kalau yang dikirim hanya gambar, tanpa satu kata pun. */
-export const IMAGE_ONLY_QUESTION =
-  "Tolong baca gambar ini dan jelaskan apa yang terlihat, kaitkan dengan standar yang relevan.";
+/**
+ * Pertanyaan bawaan kalau yang dikirim hanya gambar, tanpa satu kata pun.
+ *
+ * Sebuah fungsi, bukan konstanta: teks ini dikirim ke model SEBAGAI pertanyaan,
+ * jadi ia menentukan bahasa jawabannya lebih kuat daripada aturan mana pun di
+ * system prompt. Gambar tanpa kata yang dikirim dari antarmuka berbahasa
+ * Inggris dulu dijawab dalam Bahasa Indonesia justru karena baris ini.
+ */
+export function imageOnlyQuestion(locale: Locale = DEFAULT_LOCALE): string {
+  return locale === "en"
+    ? "Please read this image and explain what is visible, relating it to the relevant standards."
+    : "Tolong baca gambar ini dan jelaskan apa yang terlihat, kaitkan dengan standar yang relevan.";
+}

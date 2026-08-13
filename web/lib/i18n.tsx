@@ -3,9 +3,14 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import id from "@/messages/id.json";
 import en from "@/messages/en.json";
+import { DEFAULT_LOCALE, type Locale } from "@/lib/locale";
 
-const dictionaries = { id, en } as const;
-export type Locale = keyof typeof dictionaries;
+const dictionaries: Record<Locale, unknown> = { id, en };
+
+// Diteruskan supaya yang sudah mengimpor `Locale` dari sini tidak perlu ikut
+// berpindah. Sumbernya sekarang `lib/locale`, yang bisa dibaca route handler
+// tanpa menyeret React dan kedua kamus ke bundel server.
+export type { Locale };
 
 const STORAGE_KEY = "locale";
 
@@ -13,9 +18,9 @@ type Ctx = { locale: Locale; t: (key: string) => string; setLocale: (l: Locale) 
 const I18nContext = createContext<Ctx | null>(null);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  // Render pertama selalu "id" — sama di server dan di browser, jadi tidak ada
-  // hydration mismatch. Pilihan yang tersimpan dipasang setelahnya.
-  const [locale, setLocaleState] = useState<Locale>("id");
+  // Render pertama selalu bahasa bawaan — sama di server dan di browser, jadi
+  // tidak ada hydration mismatch. Pilihan yang tersimpan dipasang setelahnya.
+  const [locale, setLocaleState] = useState<Locale>(DEFAULT_LOCALE);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
