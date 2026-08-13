@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { guardArea } from "@/lib/access";
+import { DENIED_CREATE_PROJECT, isGlobalAdmin } from "@/lib/access";
 import { rateLimit, tooManyRequests } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
@@ -44,18 +44,27 @@ async function freeCode(service: SupabaseClient, base: string) {
   return `${base}-${Date.now().toString(36).toUpperCase()}`;
 }
 
-// POST — membuat proyek baru.
+// POST — membuat proyek baru. HANYA admin global (users.role = 'admin').
 //
-// Boleh dilakukan siapa pun yang sudah login, bukan hanya admin. Sebelumnya
-// baris `projects` hanya bisa lahir dari SQL editor, yang berarti setiap proyek
-// baru menunggu orang yang punya akses database — dan sampai itu terjadi,
-// seorang engineer yang sudah punya akun tidak bisa berbuat apa pun.
+// Route ini pernah terbuka untuk siapa pun yang sudah login, dengan alasan yang
+// terdengar masuk akal: tanpa itu proyek baru hanya bisa lahir dari SQL editor.
+// Yang tidak dihitung adalah apa yang dilakukannya di baris-baris bawah — ia
+// menulis `user_project_access` dengan peran ADMIN untuk pembuatnya. Jadi
+// urutan ini terbuka bagi siapa saja yang punya alamat email:
 //
-// Pembuatnya langsung jadi admin proyek itu. Admin global (users.role = 'admin')
-// ikut diberi baris admin di proyek yang sama: RLS di seluruh sistem membaca
-// user_project_access, jadi "admin bisa melihat dan mengakses penuh" harus
-// berupa baris yang benar-benar ada, bukan pengecualian yang ditambal di
-// setiap query.
+//   daftar → login → POST /api/projects → admin proyek → `granted` → seluruh
+//   aplikasi terbuka, termasuk halaman yang menyentuh model Revit orang lain
+//
+// Kelas akun tidak menahannya, karena kelas bawaan setiap akun baru adalah
+// 'full'. Yang menahannya sekarang adalah peran global, dan peran itu tidak
+// bisa diberikan lewat aplikasi ini kepada diri sendiri: ia hanya diubah lewat
+// SQL editor (lihat supabase/README.md).
+//
+// Pembuatnya tetap jadi admin proyek itu — kalau tidak, ia baru saja membuat
+// sesuatu yang tidak bisa ia kelola. Admin global lain ikut diberi baris admin
+// di proyek yang sama: RLS di seluruh sistem membaca user_project_access, jadi
+// "admin bisa melihat dan mengakses penuh" harus berupa baris yang benar-benar
+// ada, bukan pengecualian yang ditambal di setiap query.
 export async function POST(req: Request) {
   const supabase = await createClient();
 
@@ -64,12 +73,15 @@ export async function POST(req: Request) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  // Membuat proyek adalah bentuk lain dari memberi akses: barisnya di
-  // user_project_access ditulis di bawah, dengan peran admin, untuk pembuatnya
-  // sendiri. Kelas yang tidak boleh memberi akses karena itu tidak boleh membuat
-  // proyek — kalau boleh, ia cukup membuat satu proyek untuk jadi admin.
-  const gate = await guardArea(supabase, user.id, "grant");
-  if (!gate.ok) return NextResponse.json({ error: gate.reason }, { status: 403 });
+  const service = createServiceClient();
+
+  // Service role, bukan klien sesi: yang ditanyakan adalah wewenang paling luas
+  // di sistem ini, dan jawabannya tidak boleh bergantung pada policy RLS yang
+  // bisa berubah. `isGlobalAdmin` juga memeriksa is_active, jadi akun yang sudah
+  // dinonaktifkan tidak lagi bisa membuat apa pun.
+  if (!(await isGlobalAdmin(service, user.id))) {
+    return NextResponse.json({ error: DENIED_CREATE_PROJECT }, { status: 403 });
+  }
 
   const limit = rateLimit(`project:${user.id}`, PROJECTS_PER_HOUR, 60 * 60 * 1000);
   if (!limit.ok) return tooManyRequests(limit);
@@ -91,8 +103,6 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-
-  const service = createServiceClient();
 
   const { data: project, error } = await service
     .from("projects")

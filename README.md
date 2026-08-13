@@ -36,7 +36,7 @@ form di UI dibangun otomatis dari sana.
 | `/export-import` | `list_sheets`, `print_pdf`, `export`. Boleh untuk `viewer`. |
 | `/standard` | Tanya jawab standar (SNI/PUIL/IEC). Tidak pernah menyentuh `commands_queue`. Riwayatnya di `standards_threads`, sama dengan bot Telegram. |
 | `/history` | 50 perintah terakhir milik sendiri dari `commands_queue`, beserta status dan hasilnya. |
-| `/admin/users` | Memberi/mencabut akses proyek (`user_project_access`). Hanya untuk admin proyek. |
+| `/admin/users` | Memberi/mencabut akses proyek (`user_project_access`). Anggota proyek boleh melihat; yang memberi hanya admin proyek. Membuat proyek hanya admin sistem. |
 
 ## Aturan yang menentukan gambarnya benar atau tidak
 
@@ -196,6 +196,13 @@ Halaman `/admin/users` mencari orang dengan mengetik namanya. Sebelumnya
 sekarang yang keluar hanya anggota proyek si admin, plus hasil pencarian yang
 dibatasi 20 baris dan minimal 2 huruf.
 
+Daftar akun orang lain — hasil pencarian dan daftar "menunggu akses" — hanya
+dikirim kepada orang yang memang akan menambahkan seseorang: admin di setidaknya
+satu proyek, atau admin sistem. Sebelum itu penjaganya cuma menuntut "sudah
+login", jadi akun yang belum diberi apa pun bisa membaca 50 pendaftar terakhir
+beserta id, nama, dan kelasnya — halamannya memang tidak menampilkan tombol,
+tapi yang bocor adalah jawaban JSON-nya, dan itu terbaca dengan satu `curl`.
+
 ## Environment variables (`web/.env.local`)
 
 ```
@@ -351,6 +358,17 @@ Lihat `supabase/README.md`. Ringkasnya: skema inti (0001–0007) ada di repo
 
 Akun yang baru mendaftar **sengaja tidak punya akses proyek apa pun** sampai
 seorang admin memberikannya lewat `/admin/users`.
+
+**Dua "admin", dan bedanya menentukan keamanan seluruh sistem.** Admin *proyek*
+(`user_project_access.role`) mengelola akses di satu proyek; admin *sistem*
+(`users.role = 'admin'`) boleh membuat proyek, mengubah kelas akun, dan
+menghapus akun. `users.role` tidak bisa diubah dari website mana pun — hanya
+lewat SQL editor, langkahnya di `supabase/README.md`.
+
+Membuat proyek dulu terbuka untuk setiap akun yang login, dan pembuatnya
+langsung ditulis sebagai admin proyek itu. Akibatnya berantai: daftar email →
+login → buat proyek → admin proyek → `granted` → seluruh aplikasi terbuka, tanpa
+persetujuan siapa pun. Sekarang `/api/projects` menuntut admin sistem.
 
 ## Import & file hasil export
 

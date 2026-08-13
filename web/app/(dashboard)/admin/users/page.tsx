@@ -39,6 +39,15 @@ interface AccessData {
   searchMinChars: number;
   /** Boleh memberi peran di proyek. Kelas standard_only hanya melihat. */
   canGrant: boolean;
+  /**
+   * Boleh membuat proyek — hanya admin sistem.
+   *
+   * Terpisah dari `canGrant`, dan itu inti perbaikannya: membuat proyek
+   * menjadikan pembuatnya admin di dalamnya, jadi selama formulirnya mengikuti
+   * kelas akun — yang bawaannya 'full' untuk setiap pendaftar baru — ia adalah
+   * tombol "jadikan aku admin" yang terbuka untuk siapa saja.
+   */
+  canCreateProject: boolean;
   /** Id pemanggil, supaya barisnya sendiri tidak bisa diturunkan sendiri. */
   me: string;
   /**
@@ -103,6 +112,7 @@ export default function AdminUsersPage() {
    * lain menentukan permintaannya diterima.
    */
   const [canGrant, setCanGrant] = useState(true);
+  const [canCreateProject, setCanCreateProject] = useState(false);
   const [me, setMe] = useState("");
   const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
   const [picked, setPicked] = useState<User | null>(null);
@@ -116,6 +126,7 @@ export default function AdminUsersPage() {
     setAccess(data.access);
     setMinChars(data.searchMinChars);
     setCanGrant(data.canGrant);
+    setCanCreateProject(data.canCreateProject);
     setMe(data.me);
     setIsGlobalAdmin(data.isGlobalAdmin);
     setProjectId((prev) => prev || data.projects[0]?.id || "");
@@ -138,6 +149,7 @@ export default function AdminUsersPage() {
       access: body.access ?? [],
       searchMinChars: body.searchMinChars ?? 2,
       canGrant: Boolean(body.canGrant),
+      canCreateProject: Boolean(body.canCreateProject),
       me: String(body.me ?? ""),
       isGlobalAdmin: Boolean(body.isGlobalAdmin),
     };
@@ -290,24 +302,28 @@ export default function AdminUsersPage() {
 
   if (loading) return <p className="opacity-60">{t("common.loading")}</p>;
 
-  // Belum mengelola proyek apa pun. Bukan halaman kosong: di sinilah proyek
-  // pertama dibuat, dan tanpa itu akun yang baru mendaftar tidak punya satu pun
-  // jalan untuk mulai bekerja.
+  // Belum mengelola proyek apa pun. Untuk admin sistem, di sinilah proyek
+  // pertama dibuat; untuk yang lain, halaman ini menyebutkan apa yang harus
+  // diminta — bukan menawarkan jalan pintas untuk mengelilingi permintaan itu.
   if (projects.length === 0) {
     return (
       <div className="glass-panel max-w-2xl space-y-4 p-4 sm:p-6">
         <div>
           <h1 className="text-lg font-medium">{t("admin.title")}</h1>
           <p className="text-sm text-text-secondary">
-            {canGrant ? t("admin.notAdmin") : t("admin.notAdminViewOnly")}
+            {canCreateProject
+              ? t("admin.notAdmin")
+              : canGrant
+                ? t("admin.notAdminNoProject")
+                : t("admin.notAdminViewOnly")}
           </p>
         </div>
-        {/* Membuat proyek berarti memberi diri sendiri akses admin di dalamnya,
-            jadi formulirnya ikut kelas `grant`. Ditampilkan tanpa itu, ia
-            formulir yang selalu ditolak — dan yang menekannya tidak punya cara
-            menduga sebabnya, karena "buat proyek" tidak berbunyi seperti
-            "beri akses". */}
-        {canGrant && <NewProject onCreated={load} />}
+        {/* Membuat proyek berarti memberi diri sendiri akses ADMIN di dalamnya.
+            Karena itu formulirnya mengikuti wewenang global, bukan kelas akun:
+            kelas bawaan setiap pendaftar baru adalah 'full', jadi selama ia
+            mengikuti kelas, formulir ini terbuka untuk siapa pun yang punya
+            alamat email. */}
+        {canCreateProject && <NewProject onCreated={load} />}
         {error && <p className="text-sm text-red-500">{error}</p>}
       </div>
     );
@@ -327,7 +343,7 @@ export default function AdminUsersPage() {
         <p className="text-sm text-text-secondary">{t("admin.subtitle")}</p>
       </div>
 
-      <NewProject onCreated={load} />
+      {canCreateProject && <NewProject onCreated={load} />}
 
       <label className="block space-y-1">
         <span className="text-sm">{t("command.project")}</span>
@@ -587,15 +603,16 @@ function ClassPicker({
 }
 
 /**
- * Membuat proyek baru.
+ * Membuat proyek baru — hanya untuk admin sistem.
  *
- * Terbuka untuk siapa pun yang sudah login, bukan hanya admin: sebelum ini
- * baris `projects` hanya bisa lahir dari SQL editor, jadi setiap proyek baru
- * menunggu orang yang punya akses database.
+ * Pembuatnya langsung jadi admin proyek itu; kalau tidak, ia baru saja membuat
+ * sesuatu yang tidak bisa ia kelola. Justru karena itulah formulir ini pernah
+ * jadi lubang: ia dulu tampil untuk setiap akun yang mendaftar, dan satu
+ * ketukan di situ memberi peran admin kepada orang yang belum disetujui
+ * siapa pun.
  *
- * Yang membuat langsung jadi admin proyek itu — kalau tidak, ia baru saja
- * membuat sesuatu yang tidak bisa ia pakai. Admin global ikut diberi akses
- * penuh, jadi proyek yang dibuat siapa pun tetap terlihat tanpa harus diminta.
+ * Penjaganya di server (`/api/projects` menuntut users.role = 'admin'). Yang di
+ * sini hanya menentukan formulirnya digambar atau tidak.
  */
 function NewProject({ onCreated }: { onCreated: () => Promise<void> | void }) {
   const { t } = useI18n();

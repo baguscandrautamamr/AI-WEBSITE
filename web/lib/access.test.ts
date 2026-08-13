@@ -4,6 +4,7 @@ import {
   areaOfPath,
   canOpen,
   canOpenArea,
+  canSeeUserDirectory,
   isAccessClass,
   landingFor,
   type AccessClass,
@@ -145,8 +146,9 @@ describe("canOpenArea — kelas DAN sudah diberi akses", () => {
 
   it("bagian lain tidak ikut menuntut proyek di sini", () => {
     // Halaman Revit sudah dijaga peran proyeknya masing-masing, dan `grant`
-    // memang harus tetap terbuka untuk akun berkelas penuh yang belum punya
-    // proyek — di situlah ia membuat proyek pertamanya.
+    // tetap terbuka di lapis ini karena yang menutupnya ada di route: memberi
+    // peran menuntut admin di proyek yang dimaksud, dan membuat proyek menuntut
+    // admin sistem.
     expect(canOpenArea({ access: "full", granted: false }, "revit")).toBe(true);
     expect(canOpenArea({ access: "full", granted: false }, "grant")).toBe(true);
   });
@@ -163,5 +165,37 @@ describe("canOpenArea — kelas DAN sudah diberi akses", () => {
         }
       }
     }
+  });
+});
+
+describe("canSeeUserDirectory — daftar akun orang lain", () => {
+  it("akun yang belum diberi apa pun tidak melihat siapa-siapa", () => {
+    // Kejadian yang diperbaiki: akun yang baru mendaftar membuka halaman admin
+    // dan menerima daftar 50 pendaftar terakhir beserta id dan kelasnya, karena
+    // penjaganya hanya menuntut "sudah login".
+    expect(
+      canSeeUserDirectory({ globalAdmin: false, canGrant: true, adminProjects: 0 })
+    ).toBe(false);
+  });
+
+  it("admin di sebuah proyek melihatnya — dialah yang menambahkan orang", () => {
+    expect(
+      canSeeUserDirectory({ globalAdmin: false, canGrant: true, adminProjects: 1 })
+    ).toBe(true);
+  });
+
+  it("kelas yang tidak boleh memberi tidak melihatnya, walau admin proyek", () => {
+    // Baris admin bisa tertinggal dari sebelum kelasnya dipersempit. Yang
+    // menentukan adalah apakah ia masih boleh menambahkan orang.
+    expect(
+      canSeeUserDirectory({ globalAdmin: false, canGrant: false, adminProjects: 3 })
+    ).toBe(false);
+  });
+
+  it("admin sistem melihatnya walau belum punya proyek", () => {
+    // Di pemasangan baru dialah yang membuat proyek pertama dan mengisinya.
+    expect(
+      canSeeUserDirectory({ globalAdmin: true, canGrant: false, adminProjects: 0 })
+    ).toBe(true);
   });
 });

@@ -1,6 +1,11 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { accessClassOf, DEFAULT_ACCESS_CLASS, type AccessClass } from "@/lib/access";
+import {
+  accessClassOf,
+  DEFAULT_ACCESS_CLASS,
+  selfIsGlobalAdmin,
+  type AccessClass,
+} from "@/lib/access";
 import { ProjectsProvider } from "@/lib/useProjects";
 import AccessGuard from "./AccessGuard";
 import DashboardNav from "./DashboardNav";
@@ -28,6 +33,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
    */
   let access: AccessClass = DEFAULT_ACCESS_CLASS;
 
+  /**
+   * Admin sistem (users.role = 'admin'), untuk menu — bukan untuk izin.
+   *
+   * Menu Admin hanya digambar untuk orang yang memang punya sesuatu di dalamnya:
+   * anggota sebuah proyek, atau admin sistem. Yang kedua perlu disebut terpisah
+   * karena di pemasangan baru admin sistem belum tentu punya proyek, dan dialah
+   * satu-satunya yang bisa membuat proyek pertama.
+   */
+  let globalAdmin = false;
+
   try {
     const supabase = await createClient();
     const {
@@ -42,6 +57,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         .returns<{ role: "viewer" | "editor" | "admin" }[]>();
       roles = (granted ?? []).map((a) => a.role);
       access = await accessClassOf(supabase, user.id);
+      globalAdmin = await selfIsGlobalAdmin(supabase, user.id);
     }
   } catch (err) {
     // Konfigurasi atau Supabase bermasalah. Menampilkan 500 di sini menutup
@@ -75,7 +91,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
           bersebelahan, jadi sidebar 224px memakan lebar layar telepon dan
           sisanya terdorong keluar. */}
       <div className="flex min-h-screen flex-col md:flex-row">
-        <DashboardNav role={highest} access={access} granted={granted} />
+        <DashboardNav
+          role={highest}
+          access={access}
+          granted={granted}
+          globalAdmin={globalAdmin}
+        />
 
         {/* min-w-0 adalah inti perbaikannya.
             Anak sebuah flex container punya min-width:auto, artinya ia menolak

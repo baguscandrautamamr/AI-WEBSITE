@@ -15,10 +15,17 @@ export default function DashboardNav({
   role,
   access,
   granted,
+  globalAdmin,
 }: {
   role: Role;
   access: AccessClass;
   granted: boolean;
+  /**
+   * users.role = 'admin'. Dipakai untuk satu hal saja di sini: menu Admin tetap
+   * ada bagi admin sistem yang belum punya proyek — di pemasangan baru dialah
+   * satu-satunya yang bisa membuat proyek pertama.
+   */
+  globalAdmin: boolean;
 }) {
   const { t, locale, setLocale } = useI18n();
   const { theme, setTheme } = useTheme();
@@ -56,7 +63,7 @@ export default function DashboardNav({
   // Peran mengikuti tabel di docs/COMMANDS.md: viewer boleh query, export,
   // print_pdf dan list_sheets — jadi export-import ikut terlihat untuk viewer.
   // Yang mengubah model (halaman electrical) butuh editor ke atas.
-  const items: { href: string; label: string; roles: Role[] }[] = [
+  const items: { href: string; label: string; roles: Role[]; visible?: boolean }[] = [
     { href: "/electrical", label: t("nav.electrical"), roles: ["editor", "admin"] },
     // Semua peran: tidak ada perintah di halaman itu yang membuka transaksi
     // Revit, jadi seorang viewer bisa membaca isi model tanpa bisa mengubahnya.
@@ -67,11 +74,20 @@ export default function DashboardNav({
     // melihatnya lalu ditolak setelah file terlanjur diunggah.
     { href: "/import", label: t("nav.import"), roles: ["editor", "admin"] },
     { href: "/history", label: t("nav.history"), roles: ["viewer", "editor", "admin"] },
-    // Terlihat semua peran: di sinilah proyek dibuat, dan orang yang belum
-    // punya proyek sama sekali justru yang paling perlu membukanya. Yang di
-    // dalamnya tetap dijaga — pengelolaan akses hanya muncul untuk proyek yang
-    // memang dia admini.
-    { href: "/admin/users", label: t("nav.admin"), roles: ["viewer", "editor", "admin"] },
+    // Terlihat untuk semua PERAN — seorang viewer boleh melihat siapa saja
+    // anggota proyeknya — tapi hanya kalau ia memang ada di sebuah proyek.
+    //
+    // Sebelumnya menu ini terbuka untuk siapa pun, dengan alasan "di sinilah
+    // proyek dibuat". Alasan itu hilang bersama lubangnya: proyek sekarang
+    // hanya bisa dibuat admin sistem, jadi bagi akun yang belum diberi apa pun
+    // halaman itu tidak punya satu pun kendali — sebuah menu yang membuka
+    // halaman kosong hanya membuat orang mengira ada yang rusak.
+    {
+      href: "/admin/users",
+      label: t("nav.admin"),
+      roles: ["viewer", "editor", "admin"],
+      visible: granted || globalAdmin,
+    },
   ];
 
   return (
@@ -93,6 +109,7 @@ export default function DashboardNav({
       </div>
 
       {items
+        .filter((i) => i.visible !== false)
         .filter((i) => i.roles.includes(role))
         // Kelas akun menyaring setelah peran, dan keduanya perlu: peran
         // menentukan apa yang boleh dilakukan pada model, kelas menentukan
