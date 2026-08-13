@@ -7,7 +7,14 @@ import { matchesQuery, searchTerms } from "@/lib/search";
 import { splitHighlights } from "@/lib/highlight";
 import { useTypewriter } from "@/lib/useTypewriter";
 import ChatInput from "../ChatInput";
-import { AttachButton, AttachmentStrip, type Attachment } from "./ImagePicker";
+import {
+  AttachButton,
+  AttachmentStrip,
+  imagesFromClipboard,
+  useImageIntake,
+  type Attachment,
+} from "./ImagePicker";
+import { MAX_IMAGES } from "@/lib/imageInput";
 import Markdown from "../Markdown";
 import SvgBlock from "../SvgBlock";
 
@@ -262,6 +269,44 @@ export default function StandardPage() {
     if (hitCount === 0) return;
     setHitIndex((prev) => (prev + delta + hitCount) % hitCount);
   }
+
+  /**
+   * Menempel gambar langsung dari papan klip — Snipping Tool, Print Screen,
+   * "salin gambar" dari peramban.
+   *
+   * Penyimaknya di seluruh dokumen, bukan hanya di kolom tulis. Alurnya memang
+   * begitu: orang menekan Win+Shift+S, memilih area, lalu Ctrl+V — dan di
+   * antara keduanya tidak ada yang menyuruhnya mengklik kolom tulis lebih dulu.
+   * Kalau penyimaknya menempel di kolom itu saja, tempelannya tidak terjadi dan
+   * tidak ada satu pun keterangan kenapa.
+   *
+   * Tempelan TEKS tidak pernah disentuh: `imagesFromClipboard` mengembalikan
+   * daftar kosong untuk teks, dan tanpa gambar fungsi ini langsung keluar —
+   * jadi menempel kata kunci ke kolom cari tetap bekerja seperti biasa.
+   */
+  const intake = useImageIntake(setError);
+
+  useEffect(() => {
+    async function onPaste(event: ClipboardEvent) {
+      const pasted = imagesFromClipboard(event.clipboardData);
+      if (pasted.length === 0) return;
+
+      // Sedang menunggu jawaban: tombol lampirkan pun mati saat itu, dan
+      // gambar yang diterima diam-diam sementara tombolnya mati adalah dua
+      // aturan berbeda untuk satu hal yang sama.
+      if (loading) return;
+
+      // Hanya kalau ada gambarnya. Dipanggil lebih awal, ia membatalkan
+      // tempelan teks di kolom mana pun di halaman ini.
+      event.preventDefault();
+
+      const accepted = await intake(pasted, MAX_IMAGES - attachments.length);
+      if (accepted.length > 0) setAttachments((prev) => [...prev, ...accepted]);
+    }
+
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [intake, attachments.length, loading]);
 
   /**
    * Berhenti mencari, dan kembali ke tempat percakapan ditinggalkan.

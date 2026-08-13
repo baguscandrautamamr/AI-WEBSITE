@@ -32,7 +32,7 @@
     "findPrev": "Kecocokan sebelumnya (Shift+Enter)",
     "findNext": "Kecocokan berikutnya (Enter)",
     "sending": "Mengirim…",
-    "attach": "Lampirkan gambar",
+    "attach": "Lampirkan gambar — atau tempel langsung dengan Ctrl+V",
     "imageMax": "Maksimal {n} gambar per pertanyaan",
     "imageType": "Hanya gambar JPG, PNG, WebP, atau GIF",
     "imageTooBig": "Gambar terlalu besar, coba yang resolusinya lebih kecil",
