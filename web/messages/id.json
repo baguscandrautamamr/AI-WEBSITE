@@ -28,7 +28,10 @@
     "jumpLatest": "↓ Ke jawaban terbaru",
     "jumpWriting": "↓ Sedang menulis di bawah",
     "findPlaceholder": "Cari di percakapan ini…",
-    "findCount": "{n} cocok",
+    "findPosition": "kecocokan {i} dari {n}",
+    "findPrev": "Kecocokan sebelumnya (Shift+Enter)",
+    "findNext": "Kecocokan berikutnya (Enter)",
+    "sending": "Mengirim…",
     "findNone": "Tidak ada yang cocok",
     "findClear": "kosongkan"
   },

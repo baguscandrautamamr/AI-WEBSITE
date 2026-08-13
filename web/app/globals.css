@@ -248,3 +248,21 @@ mark {
 }
 
 .dark mark { background: rgba(250, 204, 21, 0.3); }
+
+/* Kecocokan yang sedang dituju, di antara kecocokan lain.
+ *
+ * Semua penanda berwarna sama berarti "ada di sini" tanpa "yang ini" — dan
+ * begitu satu jawaban memuat kata yang sama belasan kali, tombol berikutnya
+ * memindahkan layar ke tempat yang tidak bisa dibedakan dari tempat sebelumnya.
+ * Warnanya oranye, bukan kuning yang lebih pekat: bedanya harus terbaca juga
+ * oleh mata yang sulit membedakan terang-gelap dalam satu warna. */
+mark.mark-active {
+  background: rgba(249, 115, 22, 0.6);
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.35);
+}
+
+@media (prefers-color-scheme: dark) {
+  mark.mark-active { background: rgba(249, 115, 22, 0.45); }
+}
+
+.dark mark.mark-active { background: rgba(249, 115, 22, 0.45); }

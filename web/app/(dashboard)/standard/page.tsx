@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { splitDiagrams } from "@/lib/diagrams";
 import { matchesQuery, searchTerms } from "@/lib/search";
@@ -141,6 +141,23 @@ export default function StandardPage() {
   const following = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
 
+  /**
+   * Kecocokan sebagai TITIK di dalam teks, bukan sebagai gelembung.
+   *
+   * "1 cocok" dulu berarti satu gelembung yang memuat kata itu — dan sebuah
+   * gelembung jawaban standar bisa setinggi beberapa layar. Jadi angkanya benar
+   * sementara yang dicari tetap berada di luar layar, dan orangnya tetap harus
+   * menggulir mencarinya sendiri. Yang dihitung sekarang adalah setiap <mark>
+   * yang benar-benar tergambar, dan yang sedang dituju dibawa ke tengah layar.
+   *
+   * Diambil dari DOM, bukan dihitung ulang dari teksnya: penandanya dipasang
+   * dua perender berbeda (Markdown untuk jawaban, Marked untuk pertanyaan), dan
+   * hitungan kedua yang meleset satu saja menunjuk ke tempat yang salah.
+   */
+  const marks = useRef<HTMLElement[]>([]);
+  const [hitCount, setHitCount] = useState(0);
+  const [hitIndex, setHitIndex] = useState(0);
+
   // Utas tersimpan di standards_threads, jadi percakapan kemarin masih ada
   // saat halaman dibuka lagi — termasuk yang dimulai dari Telegram.
   useEffect(() => {
@@ -193,6 +210,60 @@ export default function StandardPage() {
     setAtBottom(following.current);
   }
 
+  /**
+   * Mengumpulkan penanda yang tergambar untuk kata kunci saat ini.
+   *
+   * useLayoutEffect: DOM-nya sudah jadi tapi layar belum digambar, jadi
+   * kecocokan pertama tidak sempat terlihat "meloncat" dari posisi lama.
+   */
+  useLayoutEffect(() => {
+    // `find` dibaca langsung, bukan lewat `searching` di bawah: sebuah const
+    // yang dipakai di daftar dependensi sebelum barisnya dijalankan adalah
+    // ReferenceError, dan halaman ini tidak akan tergambar sama sekali.
+    const found =
+      find.trim().length > 0
+        ? Array.from(list.current?.querySelectorAll<HTMLElement>("mark") ?? [])
+        : [];
+    marks.current = found;
+    setHitCount(found.length);
+    setHitIndex(0);
+  }, [find, messages]);
+
+  /** Yang sedang dituju: ditandai lain dari yang lain, lalu dibawa ke layar. */
+  useLayoutEffect(() => {
+    const found = marks.current;
+    found.forEach((el, i) => el.classList.toggle("mark-active", i === hitIndex));
+
+    const target = found[hitIndex];
+    if (!target) return;
+
+    // Selama mencari, guliran tidak boleh ditarik balik ke dasar oleh efek
+    // "ikuti jawaban terbaru" — yang dilihat orangnya ada di tengah utas.
+    following.current = false;
+    setAtBottom(false);
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [hitIndex, hitCount]);
+
+  /** Kecocokan berikutnya (atau sebelumnya), berputar di ujungnya. */
+  function stepHit(delta: number) {
+    if (hitCount === 0) return;
+    setHitIndex((prev) => (prev + delta + hitCount) % hitCount);
+  }
+
+  /**
+   * Berhenti mencari, dan kembali ke tempat percakapan ditinggalkan.
+   *
+   * Mengosongkan kotak cari saja meninggalkan guliran di tengah utas lama,
+   * padahal yang dimaksud orangnya dengan "kosongkan" adalah kembali ke
+   * percakapannya — bukan tetap di baris yang tadi ia periksa.
+   */
+  function clearFind() {
+    setFind("");
+    following.current = true;
+    setAtBottom(true);
+    requestAnimationFrame(() => bottom.current?.scrollIntoView({ block: "end" }));
+  }
+
   /** Kembali mengikuti, dan turun ke jawaban terbaru. */
   function jumpToLatest() {
     following.current = true;
@@ -237,6 +308,15 @@ export default function StandardPage() {
     // baru dikirim muncul di luar layar dan halamannya tampak tidak menanggapi.
     following.current = true;
     setAtBottom(true);
+
+    // Saringan pencarian dibuka, dan itu bukan kerapian.
+    //
+    // Daftar yang tampil disaring oleh kata kunci: selama masih ada isinya,
+    // pertanyaan yang baru dikirim dan jawaban yang sedang ditulis hanya
+    // tergambar kalau kebetulan memuat kata itu. Yang terlihat orangnya adalah
+    // Enter yang tidak menghasilkan apa-apa — bukan pencarian yang menyembunyikan
+    // jawabannya.
+    if (find) setFind("");
 
     setMessages((prev) => [...prev, { role: "user", content: question }]);
     setInput("");
@@ -367,6 +447,16 @@ export default function StandardPage() {
   // membuat React memakai ulang gelembung untuk isi yang berbeda.
   const shown = messages
     .map((m, index) => ({ m, index }))
+    /**
+     * Gelembung jawaban yang masih kosong tidak digambar.
+     *
+     * Ia dibuat begitu server membalas, lalu berdiri kosong sampai potongan
+     * pertama datang — dan selama itu isinya cuma tiga titik yang berkedip.
+     * Bersama gelembung "Menyusun jawaban…" di bawahnya, yang terlihat adalah
+     * DUA penanda menunggu bertumpuk, seolah ada dua hal yang sedang terjadi.
+     * Satu penantian, satu penanda.
+     */
+    .filter(({ m }) => !(m.role === "assistant" && m.content === ""))
     .filter(({ m }) => matchesQuery(m.content, find));
 
   const searching = find.trim().length > 0;
@@ -410,18 +500,55 @@ export default function StandardPage() {
             placeholder={t("standard.findPlaceholder")}
             value={find}
             onChange={(e) => setFind(e.target.value)}
+            // Enter di kotak CARI tidak mengirim apa pun ke model — ia pindah ke
+            // kecocokan berikutnya, kebiasaan yang sama dengan Ctrl+F di mana
+            // pun. Esc berhenti mencari.
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                stepHit(e.shiftKey ? -1 : 1);
+              }
+              if (e.key === "Escape") clearFind();
+            }}
           />
           {searching && (
             <span className="text-xs text-text-secondary">
-              {shown.length > 0
-                ? t("standard.findCount").replace("{n}", String(shown.length))
+              {hitCount > 0
+                ? t("standard.findPosition")
+                    .replace("{i}", String(hitIndex + 1))
+                    .replace("{n}", String(hitCount))
                 : t("standard.findNone")}
+            </span>
+          )}
+          {/* Maju-mundur antar kecocokan. Ada karena satu gelembung jawaban bisa
+              memuat kata yang sama belasan kali, dan "yang mana" cuma bisa
+              dijawab dengan melihatnya satu per satu. */}
+          {searching && hitCount > 1 && (
+            <span className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => stepHit(-1)}
+                aria-label={t("standard.findPrev")}
+                title={t("standard.findPrev")}
+                className="glass-input px-2 py-0.5 text-xs"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                onClick={() => stepHit(1)}
+                aria-label={t("standard.findNext")}
+                title={t("standard.findNext")}
+                className="glass-input px-2 py-0.5 text-xs"
+              >
+                ↓
+              </button>
             </span>
           )}
           {searching && (
             <button
               type="button"
-              onClick={() => setFind("")}
+              onClick={clearFind}
               className="text-xs text-accent underline"
             >
               {t("standard.findClear")}
@@ -484,8 +611,15 @@ export default function StandardPage() {
               yang tumbuh sendiri sudah menunjukkan jawabannya sedang ditulis, dan
               indikator kedua di bawahnya hanya menambah kesibukan di layar.
               Bentuknya sengaja sama dengan gelembung jawaban supaya jelas di situ
-              jawabannya akan muncul. */}
-          {loading && messages[messages.length - 1]?.content === "" && (
+              jawabannya akan muncul.
+
+              Syaratnya dulu "gelembung terakhir masih kosong" — dan gelembung
+              kosong itu baru dibuat SESUDAH server menjawab. Jadi justru selama
+              penantian terpanjang, sejak Enter ditekan sampai potongan pertama
+              datang lewat gateway, tidak ada satu pun tanda bahwa ada yang
+              sedang terjadi. Sekarang ia muncul sejak pertanyaannya terkirim. */}
+          {loading && (messages[messages.length - 1]?.role === "user" ||
+            messages[messages.length - 1]?.content === "") && (
             <div className="glass-input flex max-w-[92%] items-center gap-2 rounded-2xl text-sm">
               <span className="flex gap-1" aria-hidden>
                 <i className="dot" />
@@ -522,7 +656,7 @@ export default function StandardPage() {
         placeholder={t("standard.placeholder")}
       >
         <button onClick={send} disabled={loading} className="btn-accent shrink-0">
-          {t("standard.send")}
+          {loading ? t("standard.sending") : t("standard.send")}
         </button>
       </ChatInput>
     </div>

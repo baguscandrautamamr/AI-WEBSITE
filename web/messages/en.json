@@ -28,7 +28,10 @@
     "jumpLatest": "↓ Jump to latest",
     "jumpWriting": "↓ Still writing below",
     "findPlaceholder": "Search this conversation…",
-    "findCount": "{n} match",
+    "findPosition": "match {i} of {n}",
+    "findPrev": "Previous match (Shift+Enter)",
+    "findNext": "Next match (Enter)",
+    "sending": "Sending…",
     "findNone": "Nothing matched",
     "findClear": "clear"
   },
