@@ -266,3 +266,76 @@ mark.mark-active {
 }
 
 .dark mark.mark-active { background: rgba(249, 115, 22, 0.45); }
+
+/* Tepi atas daftar percakapan yang memudar.
+ *
+ * Dipasang hanya saat masih ada isi di atasnya (kelasnya dilepas begitu
+ * gulirannya sampai di puncak). Yang diperbaiki: sebuah baris yang kebetulan
+ * berhenti persis di batas kotak terpotong separuh tingginya, dan setengah
+ * huruf yang menggantung di tepi terbaca sebagai render yang rusak — bukan
+ * sebagai "masih ada di atas".
+ *
+ * `mask-image`, bukan sebuah gradien berwarna yang ditumpuk di atasnya:
+ * panelnya kaca, latarnya berubah-ubah di balik blur, dan sebuah gradien yang
+ * harus menebak warna latar akan salah di salah satu tema. Mask memudarkan
+ * isinya sendiri, apa pun yang ada di belakangnya. */
+.fade-top {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 2rem);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 2rem);
+}
+
+/* Blok kode dengan tombol salin di pojoknya.
+ *
+ * Pembungkusnya yang `relative`, bukan <pre>-nya: <pre> yang isinya lebih lebar
+ * dari layar menggulir ke samping, dan tombol yang menempel di dalamnya ikut
+ * bergeser keluar dari pandangan persis pada blok yang paling butuh disalin. */
+.code-block {
+  position: relative;
+}
+
+.code-copy {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  border-radius: 6px;
+  border: 1px solid var(--glass-border);
+  background: var(--field-bg);
+  color: var(--text-secondary);
+  backdrop-filter: blur(6px);
+  /* Tersembunyi sampai blok itu disentuh: satu tombol di setiap blok kode,
+     terlihat sepanjang waktu, membuat jawaban yang isinya enam perhitungan
+     terlihat seperti panel kendali. */
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.code-block:hover .code-copy,
+.code-copy:focus-visible {
+  opacity: 1;
+}
+
+.code-copy:hover {
+  color: var(--text-primary);
+}
+
+/* Di layar sentuh tidak ada "disentuh" sebelum ditekan. Tombol yang menunggu
+   hover di sana berarti tombol yang tidak pernah muncul, jadi ia berdiri
+   sendiri — samar, supaya tidak ikut terbaca sebagai bagian dari isinya. */
+@media (hover: none) {
+  .code-copy { opacity: 0.65; }
+}
+
+/* Tombol ✕ bawaan peramban di dalam `input[type=search]`.
+ *
+ * Dilepas karena di baris pencarian ini sudah ada dua tombol yang tampak sama:
+ * "kosongkan" — yang membatalkan kata kuncinya DAN mengembalikan guliran ke
+ * tempat percakapan ditinggalkan — dan ✕ yang menutup pencariannya. Yang
+ * ketiga hanya mengosongkan kotaknya, tanpa keduanya, dan tiga tombol tutup
+ * bersebelahan berarti tidak satu pun dari ketiganya dibaca. */
+input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}

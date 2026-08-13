@@ -26,6 +26,7 @@ export default function ChatInput({
   // dengan papan ketik terbuka, kolom setinggi 18rem tidak menyisakan ruang
   // untuk percakapan yang sedang dijawabnya.
   maxHeight = "min(45vh, 18rem)",
+  className = "",
   children,
 }: {
   value: string;
@@ -35,6 +36,14 @@ export default function ChatInput({
   disabled?: boolean;
   /** Batas tinggi sebelum isinya mulai digulung. */
   maxHeight?: string;
+  /**
+   * Kelas tambahan untuk BARISNYA, bukan untuk kolom teks di dalamnya.
+   *
+   * Dipakai halaman Standar untuk menyejajarkan kolom tulis dengan kolom baca
+   * saat layar penuh: tanpa ini, percakapannya terpusat di tengah sementara
+   * kolom tulisnya membentang dari tepi ke tepi di bawahnya.
+   */
+  className?: string;
   /** Tombol kirim — diletakkan sejajar baris terakhir. */
   children: React.ReactNode;
 }) {
@@ -58,7 +67,7 @@ export default function ChatInput({
   return (
     // items-end: tombol kirim tetap sejajar baris terakhir saat kolomnya
     // tumbuh, bukan melar setinggi kolom.
-    <div className="flex items-end gap-2">
+    <div className={`flex items-end gap-2 ${className}`}>
       <textarea
         ref={ref}
         rows={1}

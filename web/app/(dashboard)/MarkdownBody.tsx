@@ -1,11 +1,12 @@
 "use client";
 
-import { isValidElement, type ReactNode } from "react";
+import { isValidElement, useEffect, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { splitHighlights } from "@/lib/highlight";
 import { cardsSvg, looksLikeCards, parseCards } from "@/lib/cards";
 import { asciiTable } from "@/lib/asciiTable";
+import { useI18n } from "@/lib/i18n";
 import SvgBlock from "./SvgBlock";
 
 /**
@@ -63,6 +64,68 @@ function cardsFrom(source: string): string | null {
 
   const spec = parseCards(source);
   return spec ? cardsSvg(spec) : null;
+}
+
+/**
+ * Blok kode dengan satu tombol salin di pojoknya.
+ *
+ * Halaman Standar hampir tidak pernah menampilkan kode di sini: yang masuk blok
+ * ini adalah rumus dan langkah perhitungan — data, hitung, hasil — dan itu
+ * justru bagian yang paling sering dipindahkan orang ke laporan, ke Excel, ke
+ * WhatsApp. Sampai tombol ini ada, satu-satunya caranya adalah menyeret dengan
+ * tetikus di dalam kotak yang bisa menggulir sendiri saat jawabannya masih
+ * mengalir, dan seretan yang meleset harus diulang dari awal.
+ *
+ * Diagram sudah punya jalan keluarnya sejak lama — `SvgBlock` menyimpannya
+ * sebagai PNG. Yang tidak punya justru angkanya.
+ *
+ * Tombolnya menempel pada PEMBUNGKUS, bukan pada `<pre>`: `<pre>` yang isinya
+ * lebih lebar dari layar menggulir ke samping, dan tombol di dalamnya akan ikut
+ * bergeser keluar dari pandangan persis pada blok yang paling butuh disalin.
+ */
+function CodeBlock({ source, children }: { source: string; children: ReactNode }) {
+  const { t } = useI18n();
+  const [state, setState] = useState<"idle" | "done" | "failed">("idle");
+
+  // Kembali ke "Salin" sendiri. Tanpa ini, tulisan "Tersalin" menetap selamanya
+  // dan blok berikutnya yang belum disalin terlihat seperti sudah.
+  useEffect(() => {
+    if (state === "idle") return;
+    const id = window.setTimeout(() => setState("idle"), 2_000);
+    return () => window.clearTimeout(id);
+  }, [state]);
+
+  async function copy() {
+    try {
+      // Bisa tidak ada sama sekali: Clipboard API hanya hidup di secure
+      // context, dan halaman yang dibuka lewat http polos di jaringan kantor
+      // tidak punya `navigator.clipboard`. Ditangkap, bukan dibiarkan
+      // melempar — tombol yang diam saat ditekan tidak menjelaskan apa pun.
+      await navigator.clipboard.writeText(source);
+      setState("done");
+    } catch {
+      setState("failed");
+    }
+  }
+
+  return (
+    <div className="code-block">
+      {children}
+      <button
+        type="button"
+        onClick={copy}
+        className="code-copy"
+        aria-label={t("standard.copyBlock")}
+        title={t("standard.copyBlock")}
+      >
+        {state === "done"
+          ? t("standard.copied")
+          : state === "failed"
+            ? t("standard.copyFailed")
+            : t("standard.copy")}
+      </button>
+    </div>
+  );
 }
 
 /**
@@ -231,7 +294,11 @@ export default function Markdown({
               );
             }
 
-            return <pre {...props}>{children}</pre>;
+            return (
+              <CodeBlock source={source}>
+                <pre {...props}>{children}</pre>
+              </CodeBlock>
+            );
           },
           code: ({ node, className, children, ...props }) => {
             const source = String(children);

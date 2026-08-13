@@ -16,6 +16,7 @@
  *
  * Terpisah dari route-nya supaya bisa diuji.
  */
+import { DEFAULT_LOCALE, type Locale } from "@/lib/locale";
 
 /**
  * Kalimat sistem yang pernah dipakai menggantikan diagram di riwayat.
@@ -255,30 +256,64 @@ export interface Redo {
   notice: string;
 }
 
-export function redoReason(reply: string, question: string): Redo | null {
+/**
+ * Kalimatnya dalam dua bahasa, karena keduanya sampai ke layar.
+ *
+ * `notice` jelas dibaca pengguna. `instruction` dikirim ke model — dan itu pun
+ * ikut berbahasa, bukan demi kerapian: sebuah perintah tulis-ulang berbahasa
+ * Indonesia di tengah percakapan berbahasa Inggris adalah dorongan paling kuat
+ * yang bisa diterima model untuk berpindah bahasa di jawaban keduanya, persis
+ * pada giliran yang sedang diperbaiki.
+ */
+const REDO_TEXT = {
+  id: {
+    leakInstruction:
+      "Jawabanmu menyalin sebuah kalimat catatan sistem yang bukan bagian dari jawaban. " +
+      "Kalimat itu tidak pernah untuk dibaca pengguna. Tulis ulang jawabannya secara utuh " +
+      "tanpa kalimat itu, dan kalau memang ada gambar, gambarnya benar-benar digambar.",
+    leakNotice: "Jawaban pertama memuat catatan internal, jadi ditulis ulang.",
+    imageInstruction:
+      "Jawabanmu memuat penanda seperti [diagram] tanpa gambar yang sesungguhnya, " +
+      "dan yang tampil di layar hanya tulisan itu. Tulis ulang jawabannya secara " +
+      "utuh dengan gambarnya benar-benar ada — blok cards untuk sekumpulan hal " +
+      "sejenis, atau blok svg berisi <svg ...> ... </svg> untuk yang berbentuk. " +
+      "Jangan pernah menulis penanda sebagai pengganti gambar.",
+    imageNotice: "Jawaban pertama belum menyertakan gambarnya, jadi ditulis ulang.",
+  },
+  en: {
+    leakInstruction:
+      "Your answer copied an internal system note that is not part of the answer. " +
+      "That sentence was never meant for the reader. Rewrite the answer in full " +
+      "without it, and if a drawing belongs there, actually draw it.",
+    leakNotice: "The first answer contained an internal note, so it was rewritten.",
+    imageInstruction:
+      "Your answer contained a placeholder such as [diagram] with no actual drawing, " +
+      "so the reader only saw that word. Rewrite the answer in full with the drawing " +
+      "really present — a cards block for a set of similar things, or an svg block " +
+      "containing <svg ...> ... </svg> for anything with a shape. Never write a " +
+      "placeholder in place of a drawing.",
+    imageNotice: "The first answer was missing its drawing, so it was rewritten.",
+  },
+} as const;
+
+export function redoReason(
+  reply: string,
+  question: string,
+  // Bawaannya Indonesia supaya pemanggil yang belum tahu soal bahasa — dan
+  // pengujiannya — berjalan persis seperti sebelumnya.
+  locale: Locale = DEFAULT_LOCALE
+): Redo | null {
+  const say = REDO_TEXT[locale];
+
   // Kalimat catatan sistem yang tersalin ke dalam jawaban. Sumbernya sudah
   // dicabut dan sisanya disapu saat riwayat dibaca, jadi ini tinggal jaring
   // terakhir.
   if (/\(catatan sistem:/i.test(reply)) {
-    return {
-      instruction:
-        "Jawabanmu menyalin sebuah kalimat catatan sistem yang bukan bagian dari jawaban. " +
-        "Kalimat itu tidak pernah untuk dibaca pengguna. Tulis ulang jawabannya secara utuh " +
-        "tanpa kalimat itu, dan kalau memang ada gambar, gambarnya benar-benar digambar.",
-      notice: "Jawaban pertama memuat catatan internal, jadi ditulis ulang.",
-    };
+    return { instruction: say.leakInstruction, notice: say.leakNotice };
   }
 
   if (promisedButMissing(reply)) {
-    return {
-      instruction:
-        "Jawabanmu memuat penanda seperti [diagram] tanpa gambar yang sesungguhnya, " +
-        "dan yang tampil di layar hanya tulisan itu. Tulis ulang jawabannya secara " +
-        "utuh dengan gambarnya benar-benar ada — blok cards untuk sekumpulan hal " +
-        "sejenis, atau blok svg berisi <svg ...> ... </svg> untuk yang berbentuk. " +
-        "Jangan pernah menulis penanda sebagai pengganti gambar.",
-      notice: "Jawaban pertama belum menyertakan gambarnya, jadi ditulis ulang.",
-    };
+    return { instruction: say.imageInstruction, notice: say.imageNotice };
   }
 
   // Kata beraksara asing TIDAK di sini, dan itu perubahan yang disengaja.

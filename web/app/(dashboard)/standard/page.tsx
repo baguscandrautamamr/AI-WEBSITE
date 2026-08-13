@@ -125,8 +125,56 @@ function Marked({ text, terms }: { text: string; terms: string[] }) {
   );
 }
 
+/**
+ * Ikon-ikon kepala halaman, sebagai SVG sebaris.
+ *
+ * Bukan emoji dan bukan berkas: emoji digambar berbeda di tiap sistem — dan di
+ * sebagian Windows, kaca pembesar tampil berwarna kuning terang di samping
+ * tulisan abu-abu — sementara sebuah berkas ikon adalah satu permintaan
+ * jaringan untuk sesuatu sebesar dua puluh piksel. `currentColor` membuatnya
+ * ikut warna tulisannya, jadi tema gelap tidak butuh berkas kedua.
+ */
+function SearchIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M10.5 10.5 14 14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** Empat sudut yang memencar: perbesar. */
+function ExpandIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path
+        d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** Empat sudut yang menguncup: kembali ke ukuran biasa. */
+function ShrinkIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <path
+        d="M2 6h4V2M14 6h-4V2M2 10h4v4M14 10h-4v4"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function StandardPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   /**
@@ -138,13 +186,53 @@ export default function StandardPage() {
    * ditekan Enter.
    */
   const [find, setFind] = useState("");
+  /**
+   * Apakah kotak cari sedang terbuka.
+   *
+   * Tertutup secara bawaan, dan itu bukan penghematan piksel yang sepele.
+   * Panel ini tingginya dikunci ke tinggi layar; judul, keterangan, dan sebuah
+   * kotak cari yang selalu berdiri memakan sekitar seperempat ruang baca di
+   * laptop, sepanjang hari, untuk sesuatu yang dipakai sesekali. Ia sekarang
+   * satu tombol — dan Ctrl+F, yang memang sudah jadi kebiasaan orang.
+   */
+  const [findOpen, setFindOpen] = useState(false);
   /** Gambar yang sudah dipilih tapi belum terkirim. */
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [loading, setLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Panel menempati seluruh layar, menutupi menu.
+   *
+   * Jawaban di halaman ini panjang — perhitungan bertahap, tabel, diagram — dan
+   * dibaca berlama-lama. Di panel setinggi `100vh - 9rem` itu berarti menggulir
+   * hampir sepanjang waktu, dengan separuh lebar layar di kanan-kiri yang tidak
+   * dipakai apa-apa.
+   */
+  const [full, setFull] = useState(false);
+  /**
+   * Satu kalimat untuk pembaca layar, dan hanya itu.
+   *
+   * Daftar pesannya sendiri TIDAK diberi `aria-live`, dan itu disengaja: isinya
+   * bertambah beberapa huruf sekaligus, puluhan kali per jawaban, dan sebuah
+   * daftar hidup di atasnya berarti pembaca layar membacakan potongan kalimat
+   * yang sama berulang-ulang sampai jawabannya selesai. Yang perlu diumumkan
+   * bukan tiap hurufnya melainkan keadaannya: mulai ditulis, selesai, berhenti.
+   */
+  const [spoken, setSpoken] = useState("");
   const bottom = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
+  const findBox = useRef<HTMLInputElement>(null);
+  /**
+   * Pembatal permintaan yang sedang berjalan.
+   *
+   * Sampai ini ada, jawaban yang sedang mengalir tidak bisa dihentikan sama
+   * sekali: tombol kirim hanya mati, dan satu-satunya jalan keluar dari
+   * pertanyaan yang salah ketik adalah menunggu jawabannya selesai — untuk
+   * jawaban standar itu puluhan detik — atau memuat ulang halaman, yang juga
+   * membuang gambar yang sudah dilampirkan.
+   */
+  const inflight = useRef<AbortController | null>(null);
 
   /**
    * Apakah gulirnya masih mengikuti jawaban yang sedang ditulis.
@@ -160,6 +248,15 @@ export default function StandardPage() {
    */
   const following = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
+  /**
+   * Apakah bagian paling atas daftar masih terlihat.
+   *
+   * Dipakai untuk memudarkan tepi atasnya saat ada isi di baliknya. Tanpa itu
+   * baris yang kebetulan berada persis di batas terpotong separuh tingginya —
+   * setengah huruf yang tergantung di tepi kotak, yang terbaca sebagai render
+   * yang rusak, bukan sebagai "masih ada di atas".
+   */
+  const [atTop, setAtTop] = useState(true);
 
   /**
    * Kecocokan sebagai TITIK di dalam teks, bukan sebagai gelembung.
@@ -228,6 +325,7 @@ export default function StandardPage() {
     const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
     following.current = distance < 80;
     setAtBottom(following.current);
+    setAtTop(element.scrollTop < 8);
   }
 
   /**
@@ -309,6 +407,59 @@ export default function StandardPage() {
   }, [intake, attachments.length, loading]);
 
   /**
+   * Membuka kotak cari, lalu menaruh kursor di dalamnya.
+   *
+   * Fokusnya lewat `requestAnimationFrame`: pada saat fungsi ini berjalan
+   * kotaknya belum ada di DOM — ia baru lahir pada render berikutnya — dan
+   * `focus()` pada sesuatu yang belum tergambar tidak melakukan apa-apa.
+   */
+  function openFind() {
+    setFindOpen(true);
+    requestAnimationFrame(() => findBox.current?.focus());
+  }
+
+  /**
+   * Pintasan papan ketik untuk seluruh halaman.
+   *
+   * Ctrl+F sengaja MENGGANTIKAN pencarian bawaan peramban di halaman ini, dan
+   * itu penukaran yang menguntungkan pembacanya: pencarian peramban hanya
+   * menemukan yang sedang tergambar, sementara jawaban di sini panjang dan
+   * gelembungnya disaring — yang dicari sering ada di percakapan tapi tidak ada
+   * di DOM saat itu. Yang di sini tahu seluruh utasnya.
+   *
+   * Esc punya urutan, bukan satu arti: yang paling dangkal dulu. Sedang
+   * mencari → berhenti mencari. Kotak cari terbuka tapi kosong → tutup. Layar
+   * penuh → keluar. Menutup semuanya sekaligus dengan satu ketukan berarti
+   * orang yang cuma ingin membatalkan pencarian ikut terlempar keluar dari
+   * layar penuh, dan harus masuk lagi.
+   */
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+        // Tidak ada yang bisa dicari di percakapan kosong; biarkan pencarian
+        // peramban bekerja seperti biasa.
+        if (messages.length === 0) return;
+        event.preventDefault();
+        openFind();
+        return;
+      }
+
+      if (event.key !== "Escape") return;
+
+      if (find) {
+        clearFind();
+      } else if (findOpen) {
+        setFindOpen(false);
+      } else if (full) {
+        setFull(false);
+      }
+    }
+
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [messages.length, find, findOpen, full]);
+
+  /**
    * Berhenti mencari, dan kembali ke tempat percakapan ditinggalkan.
    *
    * Mengosongkan kotak cari saja meninggalkan guliran di tengah utas lama,
@@ -350,6 +501,12 @@ export default function StandardPage() {
         return;
       }
       setMessages([]);
+      // Pencarian ikut ditutup. Kalau tidak, kata kuncinya bertahan diam-diam
+      // pada percakapan yang sudah kosong — dan begitu pertanyaan berikutnya
+      // dikirim, kotak carinya muncul kembali sendiri berisi kata dari
+      // percakapan yang sudah tidak ada.
+      setFind("");
+      setFindOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("standard.clearFailed"));
     } finally {
@@ -392,6 +549,10 @@ export default function StandardPage() {
     setAttachments([]);
     setLoading(true);
     setError(null);
+    setSpoken(t("standard.liveWriting"));
+
+    const controller = new AbortController();
+    inflight.current = controller;
 
     // Mode Standard TIDAK PERNAH menulis ke commands_queue —
     // ini murni chat ke LLM, tidak menyentuh Revit sama sekali.
@@ -399,9 +560,16 @@ export default function StandardPage() {
       const res = await fetch("/api/ai/standard", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           message: question,
           images: sending.map(({ media_type, data }) => ({ media_type, data })),
+          // Bahasa antarmuka ikut berangkat. Tanpa ini pilihan bahasa hanya
+          // mengubah tulisan di tombol: prompt di server menebak sendiri, dan
+          // tebakannya selalu Bahasa Indonesia — jadi antarmuka berbahasa
+          // Inggris menampilkan jawaban Indonesia tanpa satu pun cara
+          // mengubahnya dari dalam aplikasi.
+          language: locale,
         }),
       });
 
@@ -508,11 +676,48 @@ export default function StandardPage() {
       // Jawaban yang berakhir kosong berarti tidak ada yang datang sama sekali;
       // gelembung kosong lebih membingungkan daripada tidak ada gelembung.
       setMessages((prev) => prev.filter((m, i) => i !== index || m.content.length > 0));
+      setSpoken(t("standard.liveDone"));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("standard.failed"));
+      /**
+       * Dihentikan sendiri oleh penggunanya, bukan gagal.
+       *
+       * Yang sudah tergambar dibiarkan — ia sudah dibaca, dan menghapusnya
+       * setelah tombol Berhenti ditekan berarti menghukum orang yang cuma ingin
+       * berhenti menunggu. Tapi ia diberi keterangan, karena bagian ini memang
+       * TIDAK tersimpan: penyimpanan ke `standards_threads` terjadi setelah
+       * aliran selesai, dan aliran yang diputus tidak pernah sampai ke sana.
+       * Tanpa satu baris keterangan, jawaban yang hilang setelah halaman dimuat
+       * ulang terbaca sebagai data yang hilang sendiri.
+       */
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setMessages((prev) =>
+          prev.map((m, i) =>
+            i === prev.length - 1 && m.role === "assistant" && m.content.length > 0
+              ? { ...m, notice: t("standard.stopped") }
+              : m
+          )
+        );
+        setSpoken(t("standard.liveStopped"));
+      } else {
+        setError(err instanceof Error ? err.message : t("standard.failed"));
+      }
     } finally {
+      inflight.current = null;
       setLoading(false);
     }
+  }
+
+  /**
+   * Menghentikan jawaban yang sedang mengalir.
+   *
+   * Hanya menutup sisi klien: server sudah berangkat ke gateway, dan
+   * `controller.enqueue` yang menulis ke pembaca yang sudah pergi akan
+   * melempar, jadi permintaannya berhenti dengan sendirinya di sana tanpa
+   * sempat menyimpan. Itu sebabnya gelembungnya diberi keterangan, bukan
+   * dibiarkan tampak seperti jawaban biasa yang sudah tersimpan.
+   */
+  function stop() {
+    inflight.current?.abort();
   }
 
   // Yang tampil saat sedang mencari. Nomor aslinya dibawa serta supaya kunci
@@ -535,39 +740,104 @@ export default function StandardPage() {
   const searching = find.trim().length > 0;
   const terms = searchTerms(find);
 
+  /**
+   * Lebar kolom baca saat layar penuh.
+   *
+   * Kosong pada ukuran biasa: di sana panelnya sendiri sudah selebar area yang
+   * tersedia dan tidak ada yang perlu dibatasi. Yang dibatasi hanya isinya,
+   * bukan panelnya — latar kaca tetap penuh dari tepi ke tepi, seperti panel
+   * yang memang menempati layar.
+   */
+  const column = full ? "mx-auto w-full max-w-5xl" : "";
+
   return (
     // Selebar dan setinggi area yang tersedia. Jawaban standar sering memuat
     // tabel dan daftar bertingkat, dan kolom sempit membuat tiap barisnya
     // terlipat sampai tabelnya tidak terbaca lagi.
     // Tinggi layar dikurangi tempat yang dipakai menu: di HP menu ada di atas
     // dan ikut memakan tinggi, di layar lebar ia di samping dan tidak.
+    //
+    // Di layar penuh panel ini KELUAR dari alur halaman: `fixed inset-0`, di
+    // atas menu, tanpa sudut membulat — sudut membulat di tepi layar hanya
+    // menyisakan empat segitiga latar yang terlihat seperti panel yang salah
+    // ukur. Tingginya datang dari `inset-0` sendiri, bukan dari `h-screen`
+    // tambahan: keduanya sekaligus bisa berselisih di peramban telepon, dan
+    // yang kalah adalah baris paling bawah — kolom tulisnya.
+    //
+    // Jarak atas-bawahnya menghormati notch. Padding `env(safe-area-inset-*)`
+    // di <body> tidak berlaku untuk elemen `fixed`: ia diukur dari viewport,
+    // bukan dari body, jadi tanpa baris ini judulnya berada di bawah kamera
+    // depan iPhone.
     <div
-      className="glass-panel flex h-[calc(100vh-9rem)] w-full flex-col space-y-4 p-4
-                 md:h-[calc(100vh-3rem)] md:p-6"
+      style={
+        full
+          ? {
+              paddingTop: "max(1rem, env(safe-area-inset-top))",
+              paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+              paddingLeft: "max(1rem, env(safe-area-inset-left))",
+              paddingRight: "max(1rem, env(safe-area-inset-right))",
+            }
+          : undefined
+      }
+      className={
+        full
+          ? "glass-panel fixed inset-0 z-50 flex w-full flex-col space-y-4 rounded-none"
+          : `glass-panel flex h-[calc(100vh-9rem)] w-full flex-col space-y-4 p-4
+             md:h-[calc(100vh-3rem)] md:p-6`
+      }
     >
-      <div className="flex flex-wrap items-start justify-between gap-2">
+      <div className={`flex flex-wrap items-start justify-between gap-2 ${column}`}>
         <div>
           <h1 className="text-lg font-medium">{t("standard.title")}</h1>
           <p className="text-sm text-text-secondary">{t("standard.subtitle")}</p>
         </div>
-        {messages.length > 0 && (
+
+        <div className="flex items-center gap-3">
+          {/* Cari — sebuah tombol, bukan sebuah kolom yang selalu berdiri.
+              Tersembunyi selama belum ada yang bisa dicari. */}
+          {messages.length > 0 && !findOpen && (
+            <button
+              type="button"
+              onClick={openFind}
+              aria-label={t("standard.findOpen")}
+              title={t("standard.findOpen")}
+              className="text-text-secondary hover:text-text-primary"
+            >
+              <SearchIcon />
+            </button>
+          )}
+
           <button
             type="button"
-            onClick={clearChat}
-            disabled={clearing || loading}
-            className="text-xs text-red-500 underline disabled:opacity-40"
+            onClick={() => setFull((prev) => !prev)}
+            aria-label={full ? t("standard.fullscreenExit") : t("standard.fullscreen")}
+            title={full ? t("standard.fullscreenExit") : t("standard.fullscreen")}
+            aria-pressed={full}
+            className="text-text-secondary hover:text-text-primary"
           >
-            {clearing ? t("standard.clearing") : t("standard.clear")}
+            {full ? <ShrinkIcon /> : <ExpandIcon />}
           </button>
-        )}
+
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={clearChat}
+              disabled={clearing || loading}
+              className="text-xs text-red-500 underline disabled:opacity-40"
+            >
+              {clearing ? t("standard.clearing") : t("standard.clear")}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Pencarian di dalam utas.
           Hanya muncul kalau memang ada yang bisa dicari — sebuah kolom cari di
           atas percakapan kosong cuma menambah satu hal untuk diabaikan. */}
-      {messages.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
+      {messages.length > 0 && findOpen && (
+        <div className={`flex flex-wrap items-center gap-2 ${column}`}>
           <input
+            ref={findBox}
             type="search"
             className="glass-input min-w-[12rem] flex-1"
             placeholder={t("standard.findPlaceholder")}
@@ -575,13 +845,13 @@ export default function StandardPage() {
             onChange={(e) => setFind(e.target.value)}
             // Enter di kotak CARI tidak mengirim apa pun ke model — ia pindah ke
             // kecocokan berikutnya, kebiasaan yang sama dengan Ctrl+F di mana
-            // pun. Esc berhenti mencari.
+            // pun. Esc ditangani penyimak sehalaman, supaya urutannya sama dari
+            // mana pun ia ditekan.
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
                 stepHit(e.shiftKey ? -1 : 1);
               }
-              if (e.key === "Escape") clearFind();
             }}
           />
           {searching && (
@@ -627,13 +897,44 @@ export default function StandardPage() {
               {t("standard.findClear")}
             </button>
           )}
+          {/* Menutup kotaknya, dan sekaligus mengembalikan ruang bacanya.
+              Terpisah dari "kosongkan": yang satu membatalkan kata kunci, yang
+              satu lagi selesai mencari. */}
+          <button
+            type="button"
+            onClick={() => {
+              if (find) clearFind();
+              setFindOpen(false);
+            }}
+            aria-label={t("standard.findClose")}
+            title={t("standard.findClose")}
+            className="text-text-secondary hover:text-text-primary px-1 text-sm"
+          >
+            ✕
+          </button>
         </div>
       )}
 
       {/* relative: tombol "turun ke terbaru" mengapung di atas daftar ini, dan
           harus ikut daftarnya — bukan halamannya. */}
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        <div ref={list} onScroll={onListScroll} className="flex-1 space-y-2 overflow-auto">
+      <div className="relative flex min-h-0 w-full flex-1 flex-col">
+        <div
+          ref={list}
+          onScroll={onListScroll}
+          // `role="log"` tanpa `aria-live`: pembaca layar boleh menelusurinya
+          // sebagai daftar giliran, tapi tidak membacakannya ulang setiap kali
+          // beberapa huruf bertambah. Yang mengumumkan keadaan ada di bawah,
+          // satu kalimat, di luar daftar ini.
+          role="log"
+          aria-label={t("standard.log")}
+          // `column` di layar penuh: yang melebar adalah PANELNYA, bukan
+          // barisnya. Di monitor 27 inci, gelembung selebar 92% berarti kalimat
+          // sepanjang seribu empat ratus piksel — mata kehilangan barisnya di
+          // perjalanan kembali ke tepi kiri, dan membaca jadi lebih berat
+          // daripada sebelum tombolnya ada. Tabel dan blok kode tidak ikut
+          // terjepit: keduanya sudah menggulir di kotaknya sendiri.
+          className={`flex-1 space-y-2 overflow-auto ${atTop ? "" : "fade-top"} ${column}`}
+        >
           {shown.map(({ m, index: i }) => (
             <div
               key={i}
@@ -729,28 +1030,49 @@ export default function StandardPage() {
             terlihat sama sekali. Tombol ini yang menyebutkan bahwa ada sesuatu
             di bawah sana, dan sekaligus jalan kembali ke sana — mencari dasar
             halaman dengan jari sambil teksnya masih memanjang itu tidak mudah. */}
+        {/* Di POJOK KANAN, bukan di tengah bawah.
+            Di tengah, tombol ini berdiri persis di atas kolom teks — dan yang
+            tertutup olehnya adalah baris terakhir yang tergambar, yang pada
+            jawaban perhitungan justru baris HASIL-nya. Di pojok ia menutupi
+            margin kanan, tempat yang memang tidak ada tulisannya. */}
         {!atBottom && messages.length > 0 && (
           <button
             type="button"
             onClick={jumpToLatest}
-            className="glass-input absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 text-xs shadow-lg"
+            className="glass-input absolute bottom-3 right-3 rounded-full px-3 py-1 text-xs shadow-lg"
           >
             {loading ? t("standard.jumpWriting") : t("standard.jumpLatest")}
           </button>
         )}
       </div>
 
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {/* Keadaan jawaban, untuk pembaca layar saja. Kosong di layar; yang
+          berubah isinya diumumkan sekali, bukan setiap potongan teks. */}
+      <p className="sr-only" role="status" aria-live="polite">
+        {spoken}
+      </p>
+
+      {error && <p className={`text-sm text-red-500 ${column}`}>{error}</p>}
 
       {/* Yang sudah dipilih, di atas kolom tulis — bukan di dalamnya. Sebuah
           gambar di dalam kolom akan mengubah tingginya setiap kali dilampirkan,
           dan kolom yang melompat saat sedang diketik itu tidak bisa diabaikan. */}
-      <AttachmentStrip
-        items={attachments}
-        onRemove={(id) => setAttachments((prev) => prev.filter((a) => a.id !== id))}
-      />
+      {/* Pembungkusnya ikut bersyarat, bukan hanya isinya: `AttachmentStrip`
+          mengembalikan null saat tidak ada gambar, dan sebuah div kosong di
+          dalam `space-y-4` tetap menuntut jaraknya sendiri — satu rem ruang
+          kosong di atas kolom tulis, sepanjang waktu, untuk sesuatu yang tidak
+          ada di layar. */}
+      {attachments.length > 0 && (
+        <div className={column}>
+          <AttachmentStrip
+            items={attachments}
+            onRemove={(id) => setAttachments((prev) => prev.filter((a) => a.id !== id))}
+          />
+        </div>
+      )}
 
       <ChatInput
+        className={column}
         value={input}
         onChange={setInput}
         onSubmit={send}
@@ -762,9 +1084,21 @@ export default function StandardPage() {
           onAdd={(items) => setAttachments((prev) => [...prev, ...items])}
           onError={setError}
         />
-        <button onClick={send} disabled={loading} className="btn-accent shrink-0">
-          {loading ? t("standard.sending") : t("standard.send")}
-        </button>
+        {/* Satu tombol, dua pekerjaan — bukan dua tombol bersebelahan.
+            Tombol kirim yang MATI selama menunggu adalah satu-satunya keadaan
+            di mana orang butuh menekan sesuatu, dan yang ia butuhkan justru
+            berhenti. Menaruh "Berhenti" di sebelah tombol yang sedang mati
+            berarti dua kotak yang salah satunya tidak berguna, di tempat yang
+            paling sempit di layar telepon. */}
+        {loading ? (
+          <button onClick={stop} className="btn-accent shrink-0">
+            {t("standard.stop")}
+          </button>
+        ) : (
+          <button onClick={send} className="btn-accent shrink-0">
+            {t("standard.send")}
+          </button>
+        )}
       </ChatInput>
     </div>
   );

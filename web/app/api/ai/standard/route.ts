@@ -6,10 +6,11 @@ import { guardArea } from "@/lib/access";
 import {
   attachmentNote,
   checkImages,
-  IMAGE_ONLY_QUESTION,
+  imageOnlyQuestion,
   type ImageInput,
   type ImageType,
 } from "@/lib/imageInput";
+import { asLocale, type Locale } from "@/lib/locale";
 import {
   applyFixes,
   fitHistory,
@@ -27,7 +28,35 @@ const MAX_QUESTION_CHARS = 4_000;
 /** 20 pertanyaan per menit per user. */
 const QUESTIONS_PER_MINUTE = 20;
 
-const SYSTEM_PROMPT = `Kamu Revit Command Center. Kalau ditanya siapa kamu — atau
+/**
+ * Aturan bahasa jawaban, satu paragraf, ditentukan pilihan bahasa antarmuka.
+ *
+ * Ini yang dulu tidak tersambung ke mana pun. Pilihan bahasa hidup di
+ * localStorage dan hanya mengatur tulisan di tombol; permintaan yang berangkat
+ * ke sini tidak membawanya, jadi prompt-nya menebak sendiri — dan tebakannya
+ * "hampir selalu Bahasa Indonesia". Akibatnya antarmuka berbahasa Inggris
+ * menampilkan jawaban Indonesia, dan tidak ada satu pun cara mengubahnya dari
+ * dalam aplikasi.
+ *
+ * Bahasa penanya tetap menang kalau ia memang mengetik dalam bahasa lain:
+ * seseorang yang memilih English lalu bertanya dalam Bahasa Indonesia sedang
+ * menyatakan maksudnya dengan cara yang lebih jelas daripada sebuah tombol yang
+ * mungkin ditekan berbulan-bulan lalu.
+ */
+const LANGUAGE_RULE: Record<Locale, string> = {
+  id: `BAHASA. Bahasa jawabanmu adalah BAHASA INDONESIA — itu bahasa yang dipilih
+penggunanya di antarmuka. Kalau ia justru bertanya dalam bahasa lain, ikuti
+bahasa pertanyaannya. SELURUH jawabanmu memakai huruf Latin.`,
+  en: `LANGUAGE. Answer in ENGLISH — that is the language the user selected in the
+interface. If they ask in another language, follow the language of their
+question instead. Your entire answer must use the Latin alphabet.
+
+Everything below is written in Indonesian because it is an internal instruction
+to you. It says nothing about what language to answer in — those rules are about
+drawings, tables, and formatting, and they apply the same in English.`,
+};
+
+const systemPrompt = (locale: Locale) => `Kamu Revit Command Center. Kalau ditanya siapa kamu — atau
 disapa tanpa pertanyaan — sebut nama itu dalam satu kalimat, lalu tawarkan apa
 yang bisa kamu bantu di halaman ini. Jangan menyebut nama model atau perusahaan
 yang membuatmu.
@@ -37,8 +66,7 @@ dan regulasi kelistrikan (SNI, PUIL, IEC, NEC, dsb.) untuk kebutuhan desain MEP.
 Jawab singkat, akurat, dan sebutkan nomor standar jika relevan. Kamu TIDAK pernah
 mengeksekusi apa pun di Revit — kamu murni memberi informasi.
 
-BAHASA. Jawab dalam bahasa yang dipakai penanya — untuk halaman ini hampir
-selalu Bahasa Indonesia — dan SELURUH jawabanmu memakai huruf Latin.
+${LANGUAGE_RULE[locale]}
 
 Istilah teknis Inggris justru dipertahankan, jangan diterjemahkan paksa: busbar,
 bonding braid, load break switch, earthing, dan semacamnya memang dipakai begitu
@@ -264,11 +292,17 @@ export async function POST(req: Request) {
 
   let message: unknown;
   let rawImages: unknown;
+  let rawLanguage: unknown;
   try {
-    ({ message, images: rawImages } = await req.json());
+    ({ message, images: rawImages, language: rawLanguage } = await req.json());
   } catch {
     return NextResponse.json({ error: "body harus JSON" }, { status: 400 });
   }
+
+  // Bahasa antarmuka si penanya. Yang tidak dikenali — termasuk yang tidak
+  // dikirim sama sekali, seperti dari `curl` atau versi halaman yang lebih lama
+  // yang masih ada di cache — jatuh ke Indonesia, persis perilaku sebelumnya.
+  const locale = asLocale(rawLanguage);
 
   // Diperiksa DI SINI, bukan hanya di halaman. Halaman memang mengecilkan
   // gambarnya lebih dulu, tapi yang menentukan bukan halaman: sebuah `curl`
@@ -294,7 +328,7 @@ export async function POST(req: Request) {
   const limit = rateLimit(`ai:standard:${user.id}`, QUESTIONS_PER_MINUTE, 60_000);
   if (!limit.ok) return tooManyRequests(limit);
 
-  const question = message.trim() || IMAGE_ONLY_QUESTION;
+  const question = message.trim() || imageOnlyQuestion(locale);
 
   const { data: thread } = await supabase
     .from("standards_threads")
@@ -373,7 +407,7 @@ export async function POST(req: Request) {
           // bukan gambar pendek. Gambar berdimensi yang lengkap memang memakan
           // ribuan token sendiri, dan sekarang ia boleh.
           max_tokens: 32_000,
-          system: SYSTEM_PROMPT,
+          system: systemPrompt(locale),
           messages,
         });
 
@@ -404,7 +438,7 @@ export async function POST(req: Request) {
         // pertanyaannya sendiri akan berhasil. Diulang di sini, dengan
         // kegagalannya diperlihatkan kembali kepada model supaya percobaan kedua
         // bukan lemparan dadu yang sama.
-        const redo = redoReason(reply, question);
+        const redo = redoReason(reply, question, locale);
         if (redo) {
           console.warn("[api/ai/standard] jawaban ditulis ulang:", redo.notice);
 
@@ -451,10 +485,19 @@ export async function POST(req: Request) {
               messages: [
                 {
                   role: "user",
+                  // Padanannya diminta dalam bahasa JAWABAN, bukan selalu
+                  // Indonesia. Menambal kata Sirilik di tengah jawaban Inggris
+                  // dengan sebuah kata Indonesia hanya menukar satu kata yang
+                  // tidak terbaca dengan kata lain yang juga tidak terbaca.
                   content:
-                    `Kata-kata berikut muncul di tengah jawaban berbahasa Indonesia dan tidak ` +
-                    `terbaca pembacanya. Beri padanan Bahasa Indonesia yang paling tepat untuk ` +
-                    `konteks teknik kelistrikan:\n${stray.words.join("\n")}`,
+                    locale === "en"
+                      ? `The following words appeared in the middle of an English answer and ` +
+                        `its reader cannot read them. Give the most accurate English ` +
+                        `equivalent for each, in an electrical-engineering context:\n` +
+                        stray.words.join("\n")
+                      : `Kata-kata berikut muncul di tengah jawaban berbahasa Indonesia dan tidak ` +
+                        `terbaca pembacanya. Beri padanan Bahasa Indonesia yang paling tepat untuk ` +
+                        `konteks teknik kelistrikan:\n${stray.words.join("\n")}`,
                 },
               ],
             });
@@ -469,7 +512,10 @@ export async function POST(req: Request) {
               reply = applyFixes(reply, fixes);
               send({
                 fix: fixes,
-                why: `Kata beraksara ${stray.script} pada jawaban ini diganti padanannya.`,
+                why:
+                  locale === "en"
+                    ? `${stray.script} words in this answer were replaced with their equivalents.`
+                    : `Kata beraksara ${stray.script} pada jawaban ini diganti padanannya.`,
               });
             }
           } catch (err) {
@@ -481,13 +527,23 @@ export async function POST(req: Request) {
         }
       } catch (err) {
         console.error("[api/ai/standard] gateway call failed", err);
-        send({ e: "asisten standar sedang tidak bisa dihubungi" });
+        send({
+          e:
+            locale === "en"
+              ? "the standards assistant cannot be reached right now"
+              : "asisten standar sedang tidak bisa dihubungi",
+        });
         controller.close();
         return;
       }
 
       if (!reply) {
-        send({ e: "asisten tidak mengembalikan jawaban" });
+        send({
+          e:
+            locale === "en"
+              ? "the assistant returned no answer"
+              : "asisten tidak mengembalikan jawaban",
+        });
         controller.close();
         return;
       }
@@ -499,7 +555,10 @@ export async function POST(req: Request) {
         // yang sudah tidak bisa dilihat lagi, bukan mengarang isinya.
         {
           role: "user",
-          text: images.length > 0 ? `${question}\n\n${attachmentNote(images.length)}` : question,
+          text:
+            images.length > 0
+              ? `${question}\n\n${attachmentNote(images.length, locale)}`
+              : question,
         },
         // Disimpan UTUH, termasuk diagramnya. Tabel inilah yang dibaca ulang
         // saat halaman dibuka; menyimpan penandanya di sini berarti gambarnya
