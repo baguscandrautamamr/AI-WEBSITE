@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useCallback, useRef } from "react";
 import { useI18n } from "@/lib/i18n";
 import {
   IMAGE_TYPES,
@@ -68,6 +68,95 @@ async function shrink(file: File): Promise<{ preview: string; data: string }> {
 }
 
 /**
+ * Gambar-gambar di dalam papan klip, kalau memang ada.
+ *
+ * Dibaca dari `items`, bukan dari `files`: menempel hasil Snipping Tool
+ * mengisi keduanya di Chrome, tapi tidak setiap peramban dan tidak setiap
+ * sumber. `items` adalah bentuk yang selalu ada.
+ *
+ * Menempel TEKS mengembalikan daftar kosong — dan itu yang membuat pemasangan
+ * penyimaknya di seluruh halaman aman: tempelan teks tidak pernah disentuh.
+ */
+export function imagesFromClipboard(clipboard: DataTransfer | null): File[] {
+  if (!clipboard) return [];
+
+  const files: File[] = [];
+
+  for (const item of Array.from(clipboard.items ?? [])) {
+    if (item.kind !== "file") continue;
+    const file = item.getAsFile();
+    if (file && file.type.startsWith("image/")) files.push(file);
+  }
+
+  return files;
+}
+
+/**
+ * Menerima berkas gambar — dari tombol, dari papan klip, dari mana pun.
+ *
+ * Satu jalur untuk semua sumbernya, dan itu bukan kerapian: pemeriksaan format,
+ * pengecilan, dan batas ukuran adalah hal yang paling mudah lupa disalin ke
+ * jalan masuk yang kedua. Yang lupa diperiksa akan ditolak gateway dengan 400,
+ * di depan orang yang cuma menekan Ctrl+V.
+ */
+export function useImageIntake(onError: (message: string) => void) {
+  const { t } = useI18n();
+
+  return useCallback(
+    async (files: File[], room: number): Promise<Attachment[]> => {
+      if (files.length === 0 || room <= 0) {
+        if (files.length > 0) {
+          onError(t("standard.imageMax").replace("{n}", String(MAX_IMAGES)));
+        }
+        return [];
+      }
+
+      if (files.length > room) {
+        onError(t("standard.imageMax").replace("{n}", String(MAX_IMAGES)));
+      }
+
+      const accepted: Attachment[] = [];
+
+      for (const file of files.slice(0, room)) {
+        if (!(IMAGE_TYPES as readonly string[]).includes(file.type)) {
+          onError(t("standard.imageType"));
+          continue;
+        }
+
+        try {
+          const { preview, data } = await shrink(file);
+
+          // Diperiksa SESUDAH dikecilkan, bukan sebelum: yang menentukan bukan
+          // besar berkas aslinya melainkan apa yang benar-benar dikirim, dan
+          // menolak foto 6 MB yang akan menjadi 300 KB itu menolak tanpa sebab.
+          if (Math.floor((data.length * 3) / 4) > MAX_IMAGE_BYTES) {
+            onError(t("standard.imageTooBig"));
+            continue;
+          }
+
+          accepted.push({
+            // Nama boleh sama persis — tempelan Snipping Tool selalu
+            // "image.png" — jadi yang membedakan barisnya angka acak, bukan
+            // namanya. Dua kunci React yang sama membuat gambar kedua
+            // menggantikan yang pertama di layar.
+            id: `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            name: file.name,
+            preview,
+            media_type: "image/jpeg",
+            data,
+          });
+        } catch {
+          onError(t("standard.imageUnreadable").replace("{name}", file.name));
+        }
+      }
+
+      return accepted;
+    },
+    [t, onError]
+  );
+}
+
+/**
  * Tombol lampirkan gambar, dan deretan gambar yang sudah dipilih.
  *
  * Dipisah dari halaman Standar karena isinya bukan urusan percakapan: membaca
@@ -86,48 +175,14 @@ export function AttachButton({
 }) {
   const { t } = useI18n();
   const input = useRef<HTMLInputElement>(null);
+  const intake = useImageIntake(onError);
 
   const full = count >= MAX_IMAGES;
 
   async function pick(files: FileList | null) {
     if (!files || files.length === 0) return;
 
-    const room = MAX_IMAGES - count;
-    if (files.length > room) {
-      onError(t("standard.imageMax").replace("{n}", String(MAX_IMAGES)));
-    }
-
-    const accepted: Attachment[] = [];
-
-    for (const file of Array.from(files).slice(0, room)) {
-      if (!(IMAGE_TYPES as readonly string[]).includes(file.type)) {
-        onError(t("standard.imageType"));
-        continue;
-      }
-
-      try {
-        const { preview, data } = await shrink(file);
-
-        // Diperiksa SESUDAH dikecilkan, bukan sebelum: yang menentukan bukan
-        // besar berkas aslinya melainkan apa yang benar-benar dikirim, dan
-        // menolak foto 6 MB yang akan menjadi 300 KB itu menolak tanpa sebab.
-        if (Math.floor((data.length * 3) / 4) > MAX_IMAGE_BYTES) {
-          onError(t("standard.imageTooBig"));
-          continue;
-        }
-
-        accepted.push({
-          id: `${file.name}-${Date.now()}-${accepted.length}`,
-          name: file.name,
-          preview,
-          media_type: "image/jpeg",
-          data,
-        });
-      } catch {
-        onError(t("standard.imageUnreadable").replace("{name}", file.name));
-      }
-    }
-
+    const accepted = await intake(Array.from(files), MAX_IMAGES - count);
     if (accepted.length > 0) onAdd(accepted);
 
     // Dikosongkan supaya berkas yang SAMA bisa dipilih lagi setelah dihapus —

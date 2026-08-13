@@ -376,6 +376,12 @@ Foto papan nama panel, gambar kerja, tangkapan layar tabel — sampai **3 gambar
 per pertanyaan (JPG, PNG, WebP, GIF). Pertanyaannya boleh kosong: gambar saja
 sudah cukup untuk "ini apa?".
 
+Dua jalan masuk: tombol 📎, atau **tempel langsung dengan Ctrl+V** — Win+Shift+S,
+pilih areanya, Ctrl+V, terkirim. Penyimak tempelnya dipasang di seluruh halaman,
+bukan di kolom tulis saja: di antara memilih area dan menekan Ctrl+V tidak ada
+yang menyuruh orangnya mengklik kolom tulis lebih dulu. Tempelan **teks** tidak
+pernah disentuh — tanpa gambar di papan klip, penyimaknya langsung keluar.
+
 Gambarnya **dikecilkan di browser** ke sisi panjang 1600 px dan dijadikan JPEG
 sebelum satu byte pun dikirim. Foto telepon 8 MB berangkat sebagai ratusan
 kilobyte, dan yang paling mahal dari sebuah foto — perjalanannya lewat jaringan
