@@ -34,7 +34,7 @@ form di UI dibangun otomatis dari sana.
 |---|---|
 | `/electrical` | Perintah yang mengubah model (place_*, cable tray, equip_room, modify, delete, undo). Butuh peran `editor`. |
 | `/export-import` | `list_sheets`, `print_pdf`, `export`. Boleh untuk `viewer`. |
-| `/standard` | Tanya jawab standar (SNI/PUIL/IEC). Tidak pernah menyentuh `commands_queue`. Riwayatnya di `standards_threads`, sama dengan bot Telegram. |
+| `/standard` | Tanya jawab standar (SNI/PUIL/IEC), boleh dengan lampiran gambar. Tidak pernah menyentuh `commands_queue`. Riwayatnya di `standards_threads`, sama dengan bot Telegram. |
 | `/history` | 50 perintah terakhir milik sendiri dari `commands_queue`, beserta status dan hasilnya. |
 | `/admin/users` | Memberi/mencabut akses proyek (`user_project_access`). Anggota proyek boleh melihat; yang memberi hanya admin proyek. Membuat proyek hanya admin sistem. |
 
@@ -369,6 +369,31 @@ Membuat proyek dulu terbuka untuk setiap akun yang login, dan pembuatnya
 langsung ditulis sebagai admin proyek itu. Akibatnya berantai: daftar email →
 login → buat proyek → admin proyek → `granted` → seluruh aplikasi terbuka, tanpa
 persetujuan siapa pun. Sekarang `/api/projects` menuntut admin sistem.
+
+## Melampirkan gambar di halaman Standar
+
+Foto papan nama panel, gambar kerja, tangkapan layar tabel — sampai **3 gambar**
+per pertanyaan (JPG, PNG, WebP, GIF). Pertanyaannya boleh kosong: gambar saja
+sudah cukup untuk "ini apa?".
+
+Gambarnya **dikecilkan di browser** ke sisi panjang 1600 px dan dijadikan JPEG
+sebelum satu byte pun dikirim. Foto telepon 8 MB berangkat sebagai ratusan
+kilobyte, dan yang paling mahal dari sebuah foto — perjalanannya lewat jaringan
+telepon — tidak pernah terjadi. Batas ukurannya tetap ditegakkan ulang di server
+(`web/lib/imageInput.ts`): halaman memang mengecilkan lebih dulu, tapi sebuah
+`curl` bisa mengirim apa saja.
+
+**Gambarnya tidak tersimpan di riwayat.** `standards_threads` hanya menerima
+`{ role, text }` — bentuk yang dipakai bersama bot Telegram — jadi yang
+tertinggal di sana keterangan `[N gambar dilampirkan]`, bukan fotonya. Di layar
+gambarnya bertahan selama tab terbuka; setelah dimuat ulang yang tersisa
+pertanyaan dan jawabannya. Model diberi tahu soal ini di system prompt, jadi
+pertanyaan lanjutan tentang gambar yang sudah hilang dijawab dengan meminta
+gambarnya dikirim ulang — bukan dengan mengarang isinya.
+
+Gateway di `AI_GATEWAY_BASE_URL` harus meneruskan blok `image` milik Messages
+API. Kalau gambar ditolak dengan 400 dari sana sementara pertanyaan teks biasa
+jalan, penyebabnya gateway-nya, bukan kode ini.
 
 ## Import & file hasil export
 

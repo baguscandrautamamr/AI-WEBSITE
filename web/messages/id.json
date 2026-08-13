@@ -32,6 +32,12 @@
     "findPrev": "Kecocokan sebelumnya (Shift+Enter)",
     "findNext": "Kecocokan berikutnya (Enter)",
     "sending": "Mengirim…",
+    "attach": "Lampirkan gambar",
+    "imageMax": "Maksimal {n} gambar per pertanyaan",
+    "imageType": "Hanya gambar JPG, PNG, WebP, atau GIF",
+    "imageTooBig": "Gambar terlalu besar, coba yang resolusinya lebih kecil",
+    "imageUnreadable": "Gambar \"{name}\" tidak bisa dibaca",
+    "imageRemove": "Hapus gambar ini",
     "findNone": "Tidak ada yang cocok",
     "findClear": "kosongkan"
   },

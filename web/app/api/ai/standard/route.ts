@@ -4,6 +4,13 @@ import { rateLimit, tooManyRequests } from "@/lib/rateLimit";
 import { anthropic, MODEL } from "@/lib/anthropic";
 import { guardArea } from "@/lib/access";
 import {
+  attachmentNote,
+  checkImages,
+  IMAGE_ONLY_QUESTION,
+  type ImageInput,
+  type ImageType,
+} from "@/lib/imageInput";
+import {
   applyFixes,
   fitHistory,
   parseFixes,
@@ -47,6 +54,21 @@ terasa lebih pas dalam bahasa lain, tulis padanannya dalam bahasa jawaban.
 
 Lambang satuan tetap ditulis sebagaimana mestinya — Ω, μF, cos φ, ΔV. Itu
 lambang teknis, bukan kata asing.
+
+GAMBAR YANG DILAMPIRKAN. Pengguna bisa melampirkan foto atau tangkapan layar —
+papan nama panel, gambar kerja, tabel di buku standar, tampilan alat ukur. Baca
+yang benar-benar terlihat, sebutkan angka dan tulisan yang terbaca apa adanya,
+lalu kaitkan dengan standarnya.
+
+Yang tidak terbaca dikatakan tidak terbaca. Foto papan nama yang buram atau
+angka yang terpotong adalah hal biasa, dan menebak satu angka di situ lebih
+berbahaya daripada memintanya difoto ulang — angka itu dipakai orang untuk
+memilih pengaman.
+
+Riwayat percakapan hanya menyimpan KETERANGAN bahwa ada gambar, bukan gambarnya.
+Jadi kalau giliran sebelumnya menyebut "[N gambar dilampirkan]" dan sekarang
+tidak ada gambar apa pun, kamu memang sudah tidak bisa melihatnya: katakan itu
+dan minta gambarnya dikirim ulang, jangan mengarang isinya dari ingatan.
 
 DIAGRAM. Kalau — dan hanya kalau — pengguna meminta gambar, diagram, sketsa, atau
 denah, ada DUA bentuk jawaban, dan memilih yang benar menentukan rapi-tidaknya
@@ -241,13 +263,24 @@ export async function POST(req: Request) {
   if (!gate.ok) return NextResponse.json({ error: gate.reason }, { status: 403 });
 
   let message: unknown;
+  let rawImages: unknown;
   try {
-    ({ message } = await req.json());
+    ({ message, images: rawImages } = await req.json());
   } catch {
     return NextResponse.json({ error: "body harus JSON" }, { status: 400 });
   }
 
-  if (typeof message !== "string" || !message.trim()) {
+  // Diperiksa DI SINI, bukan hanya di halaman. Halaman memang mengecilkan
+  // gambarnya lebih dulu, tapi yang menentukan bukan halaman: sebuah `curl`
+  // bisa mengirim apa saja, dan yang dibayar per gambar adalah kami.
+  const checked = checkImages(rawImages);
+  if (!checked.ok) return NextResponse.json({ error: checked.reason }, { status: 400 });
+  const images = checked.images;
+
+  // Gambar saja, tanpa satu kata pun, adalah pertanyaan yang sah — "ini apa?"
+  // memang tidak perlu diketik kalau gambarnya sudah ada. Yang tidak sah adalah
+  // permintaan yang benar-benar kosong.
+  if (typeof message !== "string" || (!message.trim() && images.length === 0)) {
     return NextResponse.json({ error: "`message` wajib diisi" }, { status: 400 });
   }
 
@@ -261,7 +294,7 @@ export async function POST(req: Request) {
   const limit = rateLimit(`ai:standard:${user.id}`, QUESTIONS_PER_MINUTE, 60_000);
   if (!limit.ok) return tooManyRequests(limit);
 
-  const question = message.trim();
+  const question = message.trim() || IMAGE_ONLY_QUESTION;
 
   const { data: thread } = await supabase
     .from("standards_threads")
@@ -299,8 +332,37 @@ export async function POST(req: Request) {
 
       let reply = "";
 
+      /**
+       * Isi sebuah giliran: teks saja, atau gambar-gambar lalu teksnya.
+       *
+       * Gambar diletakkan SEBELUM teks, dan itu bukan selera: pada urutan
+       * sebaliknya model menjawab pertanyaannya lebih dulu lalu baru melihat
+       * gambarnya — yang berarti jawabannya disusun tanpa hal yang ditanyakan.
+       */
+      type Block =
+        | { type: "text"; text: string }
+        // `media_type` bertipe sempit, bukan string: SDK-nya menuntut salah satu
+        // dari empat format yang memang bisa dibaca, dan itu pemeriksaan yang
+        // lebih baik terjadi saat kompilasi daripada sebagai 400 dari gateway.
+        | { type: "image"; source: { type: "base64"; media_type: ImageType; data: string } };
+
+      function asked(text: string, withImages: ImageInput[] = []): Block[] | string {
+        if (withImages.length === 0) return text;
+        return [
+          ...withImages.map(
+            (image): Block => ({
+              type: "image",
+              source: { type: "base64", media_type: image.media_type, data: image.data },
+            })
+          ),
+          { type: "text", text },
+        ];
+      }
+
       /** Satu panggilan, dialirkan potongan demi potongan sambil dikumpulkan. */
-      async function ask(messages: { role: "user" | "assistant"; content: string }[]) {
+      async function ask(
+        messages: { role: "user" | "assistant"; content: string | Block[] }[]
+      ) {
         let text = "";
 
         const response = anthropic.messages.stream({
@@ -331,7 +393,7 @@ export async function POST(req: Request) {
 
       try {
         const history = asContext(previous);
-        reply = await ask([...history, { role: "user", content: question }]);
+        reply = await ask([...history, { role: "user", content: asked(question, images) }]);
 
         // Sekali saja, dan hanya untuk kegagalan yang sudah pasti.
         //
@@ -352,7 +414,9 @@ export async function POST(req: Request) {
 
           reply = await ask([
             ...history,
-            { role: "user", content: question },
+            // Gambarnya ikut lagi: percobaan kedua tanpa gambar adalah
+            // percobaan menjawab pertanyaan yang berbeda.
+            { role: "user", content: asked(question, images) },
             { role: "assistant", content: reply },
             { role: "user", content: redo.instruction },
           ]);
@@ -430,7 +494,13 @@ export async function POST(req: Request) {
 
       const all: Turn[] = [
         ...previous,
-        { role: "user", text: question },
+        // Gambarnya TIDAK ikut tersimpan — lihat `attachmentNote`. Yang
+        // tertinggal keterangannya, supaya giliran berikutnya tahu ada gambar
+        // yang sudah tidak bisa dilihat lagi, bukan mengarang isinya.
+        {
+          role: "user",
+          text: images.length > 0 ? `${question}\n\n${attachmentNote(images.length)}` : question,
+        },
         // Disimpan UTUH, termasuk diagramnya. Tabel inilah yang dibaca ulang
         // saat halaman dibuka; menyimpan penandanya di sini berarti gambarnya
         // hilang begitu aplikasi dimuat lagi. Penghematan tokennya terjadi di

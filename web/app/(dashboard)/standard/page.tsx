@@ -7,12 +7,23 @@ import { matchesQuery, searchTerms } from "@/lib/search";
 import { splitHighlights } from "@/lib/highlight";
 import { useTypewriter } from "@/lib/useTypewriter";
 import ChatInput from "../ChatInput";
+import { AttachButton, AttachmentStrip, type Attachment } from "./ImagePicker";
 import Markdown from "../Markdown";
 import SvgBlock from "../SvgBlock";
 
 interface Msg {
   role: "user" | "assistant";
   content: string;
+  /**
+   * Gambar yang dikirim bersama pertanyaan ini, sebagai data URL.
+   *
+   * Hidup selama halaman terbuka saja. Riwayat di server hanya menyimpan
+   * keterangan bahwa ada gambar (lihat `attachmentNote`), jadi setelah dimuat
+   * ulang yang tersisa adalah pertanyaan dan jawabannya — bukan fotonya. Itu
+   * disengaja: satu foto di dalam kolom JSON dibaca ulang setiap kali halaman
+   * dibuka dan setiap kali giliran berikutnya dikirim.
+   */
+  images?: string[];
   /**
    * Kenapa jawaban ini ditulis ulang, kalau memang ditulis ulang.
    *
@@ -120,6 +131,8 @@ export default function StandardPage() {
    * ditekan Enter.
    */
   const [find, setFind] = useState("");
+  /** Gambar yang sudah dipilih tapi belum terkirim. */
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [loading, setLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -301,7 +314,10 @@ export default function StandardPage() {
 
   async function send() {
     const question = input.trim();
-    if (!question || loading) return;
+    // Gambar tanpa satu kata pun tetap pertanyaan yang sah — "ini apa?" memang
+    // tidak perlu diketik kalau fotonya sudah ada. Yang ditolak cuma yang
+    // benar-benar kosong.
+    if ((!question && attachments.length === 0) || loading) return;
 
     // Mengirim pertanyaan berarti minta melihat jawabannya. Kalau gulirnya
     // ditinggal di tempat pembacanya berhenti membaca tadi, pertanyaan yang
@@ -318,8 +334,17 @@ export default function StandardPage() {
     // jawabannya.
     if (find) setFind("");
 
-    setMessages((prev) => [...prev, { role: "user", content: question }]);
+    const sending = attachments;
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "user",
+        content: question,
+        images: sending.length > 0 ? sending.map((a) => a.preview) : undefined,
+      },
+    ]);
     setInput("");
+    setAttachments([]);
     setLoading(true);
     setError(null);
 
@@ -329,7 +354,10 @@ export default function StandardPage() {
       const res = await fetch("/api/ai/standard", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: question }),
+        body: JSON.stringify({
+          message: question,
+          images: sending.map(({ media_type, data }) => ({ media_type, data })),
+        }),
       });
 
       // Kegagalan sebelum aliran dimulai masih berupa JSON biasa.
@@ -581,9 +609,29 @@ export default function StandardPage() {
               }`}
             >
               {m.role === "user" ? (
-              // Pertanyaan bukan markdown — ia teks apa adanya — jadi
-              // penandaannya di sini, bukan lewat perender markdown.
-              <Marked text={m.content} terms={terms} />
+              <>
+                {/* Gambar di atas pertanyaannya, urutan yang sama dengan yang
+                    dikirim ke model. Ukurannya dibatasi: sebuah foto setinggi
+                    layar mendorong pertanyaannya sendiri keluar dari pandangan. */}
+                {m.images && m.images.length > 0 && (
+                  <div className="mb-1.5 flex flex-wrap gap-1.5">
+                    {m.images.map((src, n) => (
+                      // data URL dari berkas pengguna; next/image butuh URL yang
+                      // bisa diambil server, dan tidak ada yang bisa diambil.
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={n}
+                        src={src}
+                        alt=""
+                        className="max-h-40 rounded-xl object-contain"
+                      />
+                    ))}
+                  </div>
+                )}
+                {/* Pertanyaan bukan markdown — ia teks apa adanya — jadi
+                    penandaannya di sini, bukan lewat perender markdown. */}
+                <Marked text={m.content} terms={terms} />
+              </>
             ) : (
               /* Hanya gelembung TERAKHIR yang diketik, dan hanya selagi mengalir.
                  Jawaban lama sudah selesai; mengetiknya ulang setiap render
@@ -649,12 +697,26 @@ export default function StandardPage() {
 
       {error && <p className="text-sm text-red-500">{error}</p>}
 
+      {/* Yang sudah dipilih, di atas kolom tulis — bukan di dalamnya. Sebuah
+          gambar di dalam kolom akan mengubah tingginya setiap kali dilampirkan,
+          dan kolom yang melompat saat sedang diketik itu tidak bisa diabaikan. */}
+      <AttachmentStrip
+        items={attachments}
+        onRemove={(id) => setAttachments((prev) => prev.filter((a) => a.id !== id))}
+      />
+
       <ChatInput
         value={input}
         onChange={setInput}
         onSubmit={send}
         placeholder={t("standard.placeholder")}
       >
+        <AttachButton
+          disabled={loading}
+          count={attachments.length}
+          onAdd={(items) => setAttachments((prev) => [...prev, ...items])}
+          onError={setError}
+        />
         <button onClick={send} disabled={loading} className="btn-accent shrink-0">
           {loading ? t("standard.sending") : t("standard.send")}
         </button>
