@@ -1,22 +1,37 @@
 name: Eval
 
-# TIDAK jalan di push, dan itu keputusan.
+# MANUAL SAJA. Tidak di push, dan tidak berjadwal.
 #
-# Suite ini memanggil model bahasa yang sungguhan: berbiaya, butuh jaringan, dan
-# hasilnya tidak sepenuhnya sama dari satu jalannya ke jalannya berikutnya. Di
-# setiap push, ia akan sesekali merah karena hal yang bukan kesalahan siapa pun —
-# dan CI yang begitu berhenti dibaca dalam dua minggu, sesudah itu ia tidak
-# menjaga apa pun.
+# Tidak di push: suite ini memanggil model bahasa yang sungguhan — berbiaya,
+# butuh jaringan, dan hasilnya tidak sepenuhnya sama dari satu jalannya ke
+# jalannya berikutnya. Di setiap push ia akan sesekali merah karena hal yang
+# bukan kesalahan siapa pun, dan CI yang begitu berhenti dibaca dalam dua minggu.
 #
-# Yang dijaga eval ini bukan kode melainkan PERILAKU MODEL, dan perilaku model
-# bergeser karena hal-hal yang tidak ada di dalam repo ini: `claude-sonnet-5`
-# adalah ID lengkap tanpa varian bertanggal, jadi tidak ada versi yang bisa
-# dikunci. Pergeserannya tidak akan datang bersama sebuah commit — jadi yang
-# memeriksanya juga tidak boleh menunggu commit.
+# Tidak berjadwal, dan ini yang perlu dijelaskan karena sebelumnya ia berjadwal
+# tiap malam. Sebabnya bukan biaya: tanpa secret AI_GATEWAY_API_KEY terpasang,
+# suite MELEWATI dirinya sendiri dan job-nya HIJAU. Sebuah centang hijau tiap
+# pagi yang tidak memeriksa apa pun lebih buruk daripada tidak ada centang: ia
+# melatih orang percaya ada yang menjaga.
+#
+# Jadi ia dijalankan pada saat yang memang menuntutnya, oleh orang yang tahu
+# kenapa ia menjalankannya:
+#
+#   - sebelum mengubah salah satu dari dua system prompt
+#   - sebelum menaikkan AI_MODEL
+#   - saat sebuah laporan pengguna mengarah ke perilaku model, bukan ke kode
+#
+# Yang kedua itu sebab utama suite ini ada. `claude-sonnet-5` adalah ID lengkap
+# tanpa varian bertanggal, jadi tidak ada versi yang bisa dikunci — dan
+# pergeserannya tidak akan datang bersama sebuah commit. Yang memberi tahu tanpa
+# perlu dijalankan siapa pun tetap ada: kolom `model_served` di ai_events, dan
+# kueri nomor 6 di supabase/queries/ai_health.sql.
+#
+# Menghidupkan jadwalnya kembali: kembalikan blok `schedule:` di bawah, SETELAH
+# secret-nya terpasang. Sebelum itu, ia cuma menghasilkan hijau yang kosong.
+#
+#   schedule:
+#     - cron: "0 22 * * *"   # 22:00 UTC = 05:00 WIB
 on:
-  schedule:
-    # 22:00 UTC = 05:00 WIB. Hasilnya sudah ada sebelum orang mulai bekerja.
-    - cron: "0 22 * * *"
   workflow_dispatch:
 
 jobs:
