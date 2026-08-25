@@ -54,7 +54,8 @@
     "liveWriting": "Jawaban sedang ditulis.",
     "liveDone": "Jawaban selesai.",
     "liveStopped": "Jawaban dihentikan.",
-    "log": "Percakapan"
+    "log": "Percakapan",
+    "sources": "Dikutip dari dokumen di perpustakaan sistem ini:"
   },
   "exportImport": {
     "title": "Export & Import",

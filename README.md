@@ -355,8 +355,9 @@ Preview).
 Lihat `supabase/README.md`. Ringkasnya: skema inti (0001–0007) ada di repo
 `electrical_ai`; repo ini hanya menambah `0008_web_auth.sql` dan
 `0009_web_user_trigger_fix.sql` untuk login web, `0010_access_class.sql` untuk
-kelas akun, serta `0011_ai_events.sql` dan `0012_ai_events_step.sql` untuk
-telemetri model bahasa.
+kelas akun, `0011_ai_events.sql` dan `0012_ai_events_step.sql` untuk telemetri
+model bahasa, serta `0013_standard_sources.sql` untuk perpustakaan dokumen
+standar.
 
 Akun yang baru mendaftar **sengaja tidak punya akses proyek apa pun** sampai
 seorang admin memberikannya lewat `/admin/users`.
@@ -549,6 +550,131 @@ Gateway di `AI_GATEWAY_BASE_URL` harus meneruskan blok `image` milik Messages
 API. Kalau gambar ditolak dengan 400 dari sana sementara pertanyaan teks biasa
 jalan, penyebabnya gateway-nya, bukan kode ini.
 
+## Perpustakaan dokumen standar, dan kutipan yang bisa diperiksa
+
+Ini yang menyelesaikan bagian di bawah. Halaman Standar sekarang bisa menjawab
+**dari dokumen** — dengan nomor pasal dan halaman yang diambil dari dokumennya,
+bukan dari ingatan model — dan setiap kutipan bernomor `[1]`, `[2]` yang
+pasangannya tampil di bawah jawaban. Yang bertanya bisa membuka dokumen aslinya
+di halaman itu dan melihat sendiri.
+
+**Korpusnya kosong sampai kamu mengisinya, dan itu bukan sementara.** SNI, PUIL,
+IEC, dan NEC berhak cipta; repo ini tidak memuat satu pun dari mereka dan tidak
+boleh memuatnya. Selama korpusnya kosong, halaman Standar bekerja persis seperti
+sebelumnya — jawaban dari pengetahuan model, dengan keterangan bahwa nomor pasal
+perlu dicek.
+
+### Memasukkan dokumen
+
+`POST /api/admin/standards`, **admin sistem saja**, diperiksa dengan service role.
+Yang diterima teks, bukan PDF:
+
+```bash
+pdftotext -layout puil-2011.pdf puil-2011.txt   # periksa hasilnya dulu
+
+curl -X POST https://<host>/api/ai/../api/admin/standards \
+  -H 'Content-Type: application/json' \
+  --cookie "$COOKIE" \
+  -d "$(jq -n --rawfile text puil-2011.txt '{
+        code: "PUIL 2011",
+        title: "Persyaratan Umum Instalasi Listrik",
+        edition: "2011",
+        note: "Salinan kantor, lisensi BSN No. … — dipegang oleh …",
+        text: $text }')"
+```
+
+`note` **wajib** dan tidak punya nilai bawaan: dari mana salinan ini dan atas
+dasar apa ia ada di sini. Korpus standar tanpa catatan asal tidak bisa diaudit,
+dan yang akan ditanyakan lebih dulu bukan soal teknis.
+
+`pdftotext` menulis **form feed** antar halaman, dan `chunkDocument` membaca itu
+sebagai nomor halaman — jadi "hal. 142" di kutipan adalah halaman 142 di PDF yang
+dipegang orangnya. Sumber tanpa form feed tetap diterima; kutipannya menyebut
+pasalnya saja.
+
+PDF **tidak** diterima langsung, dan itu keputusan. Ekstraksi PDF punya dua
+kegagalan yang tidak berbunyi seperti kegagalan: hasil pindaian tanpa lapisan
+teks menghasilkan halaman kosong, dan ekstraksi kolom-ganda mengacak urutan
+kalimat. Keduanya menghasilkan korpus yang tetap bisa dicari dan tetap bisa
+dikutip — dengan kutipan yang menunjuk ke tempat yang salah. Untuk fitur yang
+seluruh gunanya justru menghapus jawaban yang salah tapi terdengar yakin, itu
+bukan langkah pertama yang benar. `pdftotext` di tanganmu, dengan hasilnya di
+depan matamu, adalah langkah yang benar.
+
+`GET` mendaftar isi korpus beserta jumlah potongan per dokumen;
+`DELETE ?id=<uuid>` mengeluarkan sebuah dokumen (potongannya ikut lewat
+`on delete cascade`). Memuat ulang dokumen yang sama (`code` + `edition` yang
+sama) **mengganti** isinya: potongan lama dibuang seluruhnya lebih dulu, karena
+ekstraksi yang diperbaiki menghasilkan jumlah potongan yang berbeda dan ekor
+potongan lama tetap terindeks — kutipan dari versi yang sudah diganti,
+berdampingan dengan yang baru, tanpa apa pun yang membedakannya.
+
+### Kenapa full-text search, bukan vektor
+
+Gateway di `AI_GATEWAY_BASE_URL` adalah proxy Anthropic, dan Messages API tidak
+punya endpoint embeddings. Pencarian semantik berarti **vendor kedua** — kunci
+baru, egress baru, biaya baru — dan itu keputusan pemilik sistem.
+
+Untuk pertanyaan standar, FTS bukan pilihan kedua. Kueri di halaman itu penuh hal
+yang harus cocok **persis**: "PUIL", "IEC 60364", "KHA", nomor pasal, nama tabel.
+Nomor pasal ikut diindeks bersama isi potongannya, jadi "3.24.2.1" menemukan
+pasalnya langsung.
+
+Pencariannya (`search_standard_chunks`, migrasi 0013) punya **dua tahap**, dan
+tahap kedua yang menyelamatkan sebagian besar pertanyaan nyata:
+`websearch_to_tsquery` meng-AND-kan seluruh kata, jadi "berapa KHA kabel NYY 4x25
+kalau dipasang di dalam conduit" menuntut kesembilan kata ada di satu potongan
+yang sama — dan hasilnya nol. Nol dari pencarian tidak bisa dibedakan dari korpus
+yang memang tidak memuatnya. Jadi kalau AND kosong, kueri yang sama dicoba
+sebagai OR dan diperingkat. Keduanya diuji terhadap Postgres 16 sungguhan, bukan
+dibaca ulang.
+
+Batasnya nyata dan tidak disembunyikan: pertanyaan yang **tidak memakai satu pun
+kata** dari dokumennya tidak akan ditemukan — "jarak kabel ke pipa air" terhadap
+pasal berjudul "separasi utilitas". Menambahkan vektor nanti bersifat menambah:
+satu kolom `embedding`, satu indeks, satu cabang lagi di fungsi itu.
+
+### Yang menjaganya
+
+- **Membaca** dibatasi RLS dengan pagar yang sama seperti halaman Standar itu
+  sendiri (`access_class <> 'no_standard'`), dan fungsi pencariannya
+  `security invoker` — jadi akun yang kelasnya tidak mencakup Standar tidak
+  mendapat satu potongan pun, ditegakkan database, bukan oleh route yang mungkin
+  lupa memeriksa. Diuji sebagai peran non-superuser.
+- **Menulis** tidak punya policy sama sekali: anon key tidak bisa menyentuh dua
+  tabel itu, termasuk dari kode yang belum ditulis. Satu-satunya jalan masuk
+  `/api/admin/standards` dengan service role. Sebuah policy "boleh menulis kalau
+  kamu admin" akan terlihat lebih rapi dan lebih buruk — ia memindahkan kunci ke
+  sisi browser, untuk tabel yang isinya dipakai sebagai sumber jawaban teknis.
+- **Sebuah potongan tidak pernah melintasi halaman.** Ditemukan oleh tesnya
+  sendiri: tiga halaman pendek digabung jadi satu potongan, dan kutipannya
+  menyebut "hal. 1" untuk kalimat yang ada di halaman tiga. Orangnya membuka
+  halaman 1, tidak menemukan apa yang dikutip, dan yang ia simpulkan bukan
+  "halamannya bergeser" melainkan bahwa sistem ini mengarang kutipan.
+- **Nomor di jawaban dan nomor di daftar keluar dari satu fungsi.**
+  `buildSources()` menghasilkan blok untuk model dan daftar untuk layar dalam satu
+  perulangan, karena dua perulangan yang menghitung anggaran yang sama akan
+  berbeda pada perubahan pertama — dan bentuk perbedaannya adalah `[2]` di kalimat
+  menunjuk dokumen yang berbeda dari `[2]` di daftar.
+- **Sumbernya di giliran pengguna, bukan di system prompt.** System prompt halaman
+  ini ratusan baris dan sama untuk setiap pertanyaan; menyuntikkan hasil pencarian
+  ke dalamnya berarti tidak ada dua permintaan yang punya awalan sama. Aturan
+  *cara memakai* blok itu tetap di system prompt — ia memang tidak berubah.
+- **Yang tersimpan di `standards_threads` tetap pertanyaannya apa adanya.** Blok
+  sumber tidak ikut: ia hasil pencarian untuk pertanyaan itu saja.
+- Kolom `ai_events.sources` mencatat berapa potongan yang benar-benar ikut. Itu
+  satu-satunya angka yang mengatakan apakah perpustakaannya perlu diisi lebih
+  banyak; tanpanya pertanyaan itu hanya bisa dijawab dari perasaan orang yang
+  paling terakhir bertanya.
+
+### Kalau sumbernya tidak memuat jawabannya
+
+Model diperintahkan mengatakannya dalam satu kalimat, lalu menjawab dari
+pengetahuan umumnya dengan aturan di bawah berlaku penuh. Yang **dilarang**
+adalah menjawab dari ingatan lalu menempelkan `[1]` padanya: nomor kutipan yang
+menunjuk sumber yang tidak mengatakannya adalah kebohongan yang mengundang orang
+memeriksanya, lalu menyesatkan pemeriksaannya.
+
 ## Nomor pasal dijawab dari ingatan, dan itu dikatakan
 
 Halaman Standar menjawab SNI/PUIL/IEC/NEC **tanpa satu pun dokumen standar
@@ -581,9 +707,13 @@ membaca; yang di jawaban ikut terbawa ketika jawabannya disalin ke WhatsApp atau
 ditempel ke notulen — dan pada saat itu keterangan di halaman sudah tidak ada di
 mana-mana.
 
-Ini penambalan, bukan penyelesaian. Yang menyelesaikan adalah korpus standar
-sendiri (pgvector di Supabase) atau pencarian web dengan kutipan, sehingga
-jawabannya bisa menunjuk sumber alih-alih meminta orang memercayainya.
+Seluruh bagian ini adalah **perilaku cadangan**, dan sekarang memang begitu
+kedudukannya. Yang menyelesaikannya sudah ada di atas — perpustakaan dokumen
+standar, dengan kutipan bernomor yang bisa diperiksa. Aturan di sini berlaku
+untuk yang tidak terjawab olehnya: korpus yang belum diisi, dan pertanyaan yang
+tidak ditemukan di dalamnya. Dua keadaan itu akan selalu ada, jadi aturan ini
+tidak akan pernah bisa dihapus — yang berubah cuma seberapa sering ia dipakai,
+dan `ai_events.sources` yang mengukurnya.
 
 ## Import & file hasil export
 
