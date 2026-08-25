@@ -10,8 +10,9 @@ import cases from "./cases/electrical.json";
  * ia berbiaya, butuh jaringan, dan hasilnya tidak sepenuhnya sama dari satu
  * jalannya ke jalannya berikutnya. Menjalankannya di setiap PR berarti CI yang
  * kadang merah karena hal yang bukan kesalahan siapa pun — dan CI yang begitu
- * berhenti dibaca dalam dua minggu. Jalannya: `npm run eval`, dan sekali sehari
- * lewat .github/workflows/eval.yml.
+ * berhenti dibaca dalam dua minggu. Jalannya: `npm run eval` lokal, atau
+ * Actions → Eval → Run workflow. MANUAL, tidak berjadwal — lihat sebabnya di
+ * .github/workflows/eval.yml.
  *
  * Yang dipanggil `propose()` — fungsi yang SAMA dengan yang dipakai
  * /api/ai/electrical. Bukan tiruannya. Itu seluruh sebab fungsi itu dikeluarkan

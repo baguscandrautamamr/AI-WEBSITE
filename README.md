@@ -471,7 +471,7 @@ di push.
 | | dijalankan | menjawab |
 |---|---|---|
 | `npm test` | setiap push (CI) | apakah **kodenya** benar |
-| `npm run eval` | sekali sehari + manual | apakah **perilaku modelnya** masih seperti yang dirancang |
+| `npm run eval` | **manual saja** | apakah **perilaku modelnya** masih seperti yang dirancang |
 
 Digabung, sifat yang paling berharga dari `npm test` hilang. Ia sekarang 371 tes
 yang jalan dalam dua detik tanpa jaringan, dan merahnya **selalu** berarti ada
@@ -480,13 +480,34 @@ hasilnya tidak sepenuhnya sama dari satu jalannya ke jalannya berikutnya. Di
 setiap PR ia akan sesekali merah tanpa sebab — dan CI yang begitu berhenti dibaca
 dalam dua minggu, sesudah itu ia tidak menjaga apa pun.
 
-Kapan menjalankannya sendiri: **sebelum mengubah salah satu prompt**, dan
-**sebelum menaikkan `AI_MODEL`**. Yang kedua itu sebabnya suite ini ada. Karena
-`claude-sonnet-5` adalah ID lengkap tanpa varian bertanggal, tidak ada versi yang
-bisa dikunci — pergeseran perilaku tidak akan datang bersama sebuah commit, jadi
-yang memeriksanya juga tidak boleh menunggu commit. `.github/workflows/eval.yml`
-menjalankannya 22:00 UTC (05:00 WIB), hasilnya sudah ada sebelum orang mulai
-bekerja.
+### Manual saja, dan kenapa bukan berjadwal
+
+`.github/workflows/eval.yml` hanya punya `workflow_dispatch` — Actions → **Eval**
+→ Run workflow, atau `npm run eval` lokal. Tidak ada `schedule`.
+
+Ia sempat berjadwal tiap malam, dan itu dicabut karena satu sebab yang bukan
+biaya: **tanpa secret `AI_GATEWAY_API_KEY` terpasang, suite melewati dirinya
+sendiri dan job-nya hijau.** Sebuah centang hijau tiap pagi yang tidak memeriksa
+apa pun lebih buruk daripada tidak ada centang — ia melatih orang percaya ada
+yang menjaga. Jadwal yang benar adalah jadwal yang dipasang **setelah**
+secret-nya ada.
+
+Kapan menjalankannya:
+
+- **sebelum mengubah salah satu dari dua system prompt** — supaya kamu tahu apa
+  yang berubah, bukan cuma bahwa sesuatu berubah;
+- **sebelum menaikkan `AI_MODEL`** — ini sebab utama suite ini ada;
+- saat sebuah laporan pengguna mengarah ke perilaku model, bukan ke kode.
+
+Yang kedua perlu diulang: `claude-sonnet-5` adalah ID lengkap tanpa varian
+bertanggal, jadi tidak ada versi yang bisa dikunci, dan pergeseran perilaku tidak
+akan datang bersama sebuah commit. Yang tetap memberi tahu tanpa perlu
+dijalankan siapa pun: kolom `model_served` di `ai_events`, dan kueri nomor 6 di
+`supabase/queries/ai_health.sql`. Eval adalah peringatan yang lebih awal;
+telemetri adalah peringatan yang tidak bisa lupa dijalankan.
+
+Menghidupkan jadwalnya kembali: kembalikan blok `schedule:` yang sudah
+dituliskan sebagai komentar di workflow-nya — setelah secret-nya terpasang.
 
 ### Yang dipanggil adalah kode yang dipakai pengguna
 
