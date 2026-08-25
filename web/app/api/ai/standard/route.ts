@@ -31,6 +31,16 @@ const MAX_QUESTION_CHARS = 4_000;
 const QUESTIONS_PER_MINUTE = 20;
 
 /**
+ * Ruang jawaban mode Standar. Diekspor bersama systemPrompt supaya eval
+ * memanggil model dengan parameter yang sama, bukan yang mirip.
+ *
+ * Longgar, bukan hemat: tagihan dihitung per permintaan, jadi batas yang ketat
+ * tidak membeli apa pun dan hanya memotong gambar di tengah tag — yang
+ * menghasilkan gambar RUSAK, bukan gambar pendek.
+ */
+export const STANDARD_MAX_TOKENS = 32_000;
+
+/**
  * Aturan bahasa jawaban, satu paragraf, ditentukan pilihan bahasa antarmuka.
  *
  * Ini yang dulu tidak tersambung ke mana pun. Pilihan bahasa hidup di
@@ -58,7 +68,19 @@ to you. It says nothing about what language to answer in — those rules are abo
 drawings, tables, and formatting, and they apply the same in English.`,
 };
 
-const systemPrompt = (locale: Locale) => `Kamu Revit Command Center. Kalau ditanya siapa kamu — atau
+/**
+ * Diekspor supaya EVAL memakai prompt yang sama, bukan salinannya.
+ *
+ * Sebuah `export` tambahan di file route memang tidak biasa, dan alternatifnya
+ * lebih buruk: memindahkan 450 baris ini ke lib/ hanya demi sebuah import, atau
+ * menyalinnya ke dalam eval. Yang kedua adalah eval yang menguji prompt lain —
+ * ia akan lulus sementara yang dibaca pengguna sudah bergeser, dan sejak saat
+ * itu setiap "lulus" tidak berarti apa-apa.
+ *
+ * Next hanya memperlakukan nama tertentu sebagai khusus di file route (GET,
+ * POST, runtime, dan seterusnya); sebuah const bernama lain aman.
+ */
+export const systemPrompt = (locale: Locale) => `Kamu Revit Command Center. Kalau ditanya siapa kamu — atau
 disapa tanpa pertanyaan — sebut nama itu dalam satu kalimat, lalu tawarkan apa
 yang bisa kamu bantu di halaman ini. Jangan menyebut nama model atau perusahaan
 yang membuatmu.
@@ -498,7 +520,7 @@ export async function POST(req: Request) {
           // memotong gambar di tengah tag — yang menghasilkan gambar RUSAK,
           // bukan gambar pendek. Gambar berdimensi yang lengkap memang memakan
           // ribuan token sendiri, dan sekarang ia boleh.
-          max_tokens: 32_000,
+          max_tokens: STANDARD_MAX_TOKENS,
           system: systemPrompt(locale),
           messages,
         });

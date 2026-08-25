@@ -1,0 +1,191 @@
+{
+  "note": [
+    "Himpunan kasus emas mode Electrical. Setiap kasus di sini berasal dari",
+    "sebuah aturan yang benar-benar ada di ELECTRICAL_SYSTEM_PROMPT, dan hampir",
+    "semuanya ditulis karena kegagalannya pernah terjadi. Yang diuji BUKAN",
+    "'apakah modelnya pintar' melainkan 'apakah aturan yang sudah kami bayar",
+    "masih berlaku'.",
+    "",
+    "Menambah kasus: tulis yang paling spesifik yang bisa kamu tulis. Kasus yang",
+    "menuntut satu nilai argumen tertentu menangkap pergeseran; kasus yang cuma",
+    "menuntut 'ada tool yang dipanggil' akan lulus selamanya dan tidak pernah",
+    "memberi tahu apa pun."
+  ],
+
+  "context": {
+    "rooms": ["MEETING 1", "MEETING 2", "LOUNGE 5", "PANTRY"],
+    "familyTypes": {
+      "lighting": [
+        "ACT_E_DOWNLIGHT 22WATT: DOWNLIGHT 22 WATT",
+        "ACT_E_TL 36WATT: TL 36 WATT"
+      ],
+      "lighting_device": ["ACT_E_SAKLAR: SAKLAR TUNGGAL"]
+    }
+  },
+
+  "cases": [
+    {
+      "name": "jumlah dan tinggi yang disebut jelas masuk ke argumennya",
+      "message": "pasang 6 lampu di MEETING 1 tinggi 3 meter",
+      "expect": {
+        "kind": "command",
+        "command": "place_lighting",
+        "values": { "room": "MEETING 1", "count": 6, "height": 3 }
+      }
+    },
+    {
+      "name": "JUMLAH mengisi count, dan grid dibiarkan kosong",
+      "why": [
+        "Aturan prompt: grid dihitung sistem dari jumlahnya. Grid yang dikarang",
+        "model bisa memuat lebih banyak titik daripada jumlahnya dan",
+        "meninggalkan lubang di deret terakhir."
+      ],
+      "message": "pasang 10 lampu di LOUNGE 5",
+      "expect": {
+        "kind": "command",
+        "command": "place_lighting",
+        "values": { "room": "LOUNGE 5", "count": 10 },
+        "absent": ["grid"]
+      }
+    },
+    {
+      "name": "bentuk yang disebut ORANGNYA justru dipakai",
+      "message": "pasang lampu di PANTRY, dua baris lima kolom",
+      "expect": {
+        "kind": "command",
+        "command": "place_lighting",
+        "valuesMatch": "5x2|2x5"
+      }
+    },
+    {
+      "name": "\"semua ruangan\" dimekarkan, bukan ditanyakan balik",
+      "why": [
+        "Aturan prompt: isi room dengan * dan sistem yang memekarkannya. Model",
+        "yang bertanya balik satu per satu adalah lima kali mengetik untuk satu",
+        "maksud."
+      ],
+      "message": "kasih saklar di semua ruangan",
+      "expect": {
+        "kind": "batch",
+        "command": "place_lighting_device",
+        "rooms": ["MEETING 1", "MEETING 2", "LOUNGE 5", "PANTRY"]
+      }
+    },
+    {
+      "name": "jarak pintu yang disebut lain dari standarnya dipakai",
+      "message": "pasang saklar di MEETING 1, 500 mm dari pintu",
+      "expect": {
+        "kind": "command",
+        "command": "place_lighting_device",
+        "values": { "door_offset": 500 }
+      }
+    },
+    {
+      "name": "door_offset TIDAK diisi kalau tidak disebut",
+      "why": [
+        "300 mm sudah jadi bawaan add-in. Mengisinya untuk menegaskan yang sudah",
+        "berlaku membuat setiap perintah membawa argumen yang tidak diminta",
+        "siapa pun — dan menyembunyikan saat orangnya memang menyebut angka lain."
+      ],
+      "message": "pasang saklar di MEETING 2",
+      "expect": {
+        "kind": "command",
+        "command": "place_lighting_device",
+        "absent": ["door_offset"]
+      }
+    },
+    {
+      "name": "pertanyaan satu angka memakai query, dan boleh berjalan sendiri",
+      "message": "berapa total panjang cable tray di model ini?",
+      "expect": {
+        "kind": "command",
+        "command": "query",
+        "autoRun": true
+      }
+    },
+    {
+      "name": "pertanyaan yang MENYEBUT family disaring, bukan dijawab per kategori",
+      "why": [
+        "Menjawab \"128 armatur\" untuk pertanyaan tentang satu family adalah",
+        "angka yang benar untuk pertanyaan yang tidak ditanyakan siapa pun, dan",
+        "tidak ada apa pun di jawaban itu yang menunjukkannya."
+      ],
+      "message": "ada berapa downlight 22W di model ini?",
+      "expect": {
+        "commandIn": ["query", "inspect"],
+        "valuesMatch": "22"
+      }
+    },
+    {
+      "name": "nama ruangan yang meragukan DITANYAKAN, bukan dipilih sendiri",
+      "why": [
+        "Model punya MEETING 1 dan MEETING 2. Memilih sendiri berarti perangkat",
+        "terpasang di ruangan yang tidak diminta, dan yang salah baru terlihat di",
+        "gambar."
+      ],
+      "message": "pasang 4 lampu di meeting",
+      "expect": {
+        "kind": "reply",
+        "textMatches": "MEETING 1|MEETING 2|ruangan|mana"
+      }
+    },
+    {
+      "name": "pertanyaan standar/regulasi tidak memanggil tool apa pun",
+      "message": "menurut PUIL, berapa KHA minimum penghantar netral?",
+      "expect": {
+        "kind": "reply",
+        "textMatches": "Standar|standar"
+      }
+    },
+    {
+      "name": "viewer tidak ditawari perintah yang mengubah model",
+      "why": [
+        "toolsForRole menyaring per peran. Yang harus TIDAK terjadi: usulan",
+        "place_lighting yang lalu ditolak /api/commands sesudahnya."
+      ],
+      "role": "viewer",
+      "message": "pasang 6 lampu di MEETING 1",
+      "expect": { "kind": "reply" }
+    },
+    {
+      "name": "permintaan yang diulang DIKIRIM lagi, bukan ditolak",
+      "why": [
+        "Kegagalan yang sudah terjadi: model menjawab \"sudah dijalankan di",
+        "langkah sebelumnya\" tanpa memanggil tool — jadi model Revit tidak",
+        "berubah sementara chat menyatakan selesai."
+      ],
+      "history": [
+        { "role": "user", "content": "pasang 6 lampu di MEETING 1" },
+        {
+          "role": "assistant",
+          "content": "[CATATAN SISTEM] Kamu memanggil tool place_lighting; sistem yang memasukkannya ke antrean Revit. Argumennya: /place_lighting \"MEETING 1\" count=6 Hasilnya belum tentu ada di giliran ini."
+        }
+      ],
+      "message": "pasang 6 lampu lagi di MEETING 1",
+      "expect": {
+        "kind": "command",
+        "command": "place_lighting",
+        "values": { "room": "MEETING 1", "count": 6 }
+      }
+    },
+    {
+      "name": "hasil pembacaan yang sudah ada DIPAKAI, tidak dibaca ulang",
+      "why": [
+        "Inti rantai baca berantai. Nama parameter sudah ada di blok ISI",
+        "HASILNYA; mengulang what=categories berarti orangnya menunggu Revit",
+        "setengah menit untuk daftar yang sudah tertulis di layarnya."
+      ],
+      "history": [
+        { "role": "user", "content": "ada berapa armatur di lantai 1?" },
+        {
+          "role": "assistant",
+          "content": "[CATATAN SISTEM] Kamu memanggil tool inspect; sistem menjalankannya di Revit dan Revit sudah menjawab. Argumennya: /inspect what=categories HASILNYA: 3 kategori — lighting 128, receptacle 64, lighting_device 40.\n\nISI HASILNYA (apa adanya dari Revit — pakai nama dan angka dari sini, jangan mengarang):\ncategories (3):\n- name=lighting count=128\n- name=receptacle count=64\n- name=lighting_device count=40"
+        }
+      ],
+      "message": "[CATATAN SISTEM] Hasil perintah bacamu sudah ada di catatan di atas — pengguna TIDAK mengetik apa pun, sistem yang membangunkanmu. Kalau catatan itu sudah cukup untuk menjawab pertanyaan terakhir pengguna, JAWAB SEKARANG dengan angka dan nama dari catatan itu, dan jangan memanggil tool apa pun. Kalau memang masih kurang satu langkah baca lagi, panggil tool bacanya — pakai nama yang persis seperti di blok ISI HASILNYA.",
+      "expect": {
+        "valuesNotMatch": "categories"
+      }
+    }
+  ]
+}
