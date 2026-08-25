@@ -1,5 +1,37 @@
+import fs from "node:fs";
 import path from "node:path";
 import { defineConfig } from "vitest/config";
+
+/**
+ * `.env.local` dibaca sendiri, karena vitest TIDAK membacanya.
+ *
+ * Diuji, bukan dikira: dengan AI_GATEWAY_API_KEY di `.env.local`, seluruh suite
+ * tetap dilewati — dan yang terlihat orangnya adalah 19 tes yang di-skip tanpa
+ * sebab yang jelas, padahal kuncinya sudah ia taruh di tempat yang dipakai
+ * `next dev`. Itu setengah jam yang hilang untuk sesuatu yang bukan soal
+ * kualitas jawaban.
+ *
+ * Yang dikirim lewat perintah MENANG atas yang di file: satu jalannya dengan
+ * kunci lain — model lain, gateway lain — harus bisa dilakukan tanpa menyunting
+ * apa pun.
+ *
+ * Kenapa tidak dipasang di vitest.config.mts juga: `npm test` sengaja tidak
+ * boleh menyentuh jaringan. Sebuah suite yang perilakunya berubah karena ada
+ * atau tidaknya sebuah file env bukan suite yang merahnya selalu berarti sama.
+ */
+for (const file of [".env.local", ".env"]) {
+  const at = path.resolve(__dirname, file);
+  if (!fs.existsSync(at)) continue;
+
+  for (const line of fs.readFileSync(at, "utf8").split("\n")) {
+    const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+    if (!match || line.trim().startsWith("#")) continue;
+
+    const [, key, raw] = match;
+    if (process.env[key] !== undefined) continue;
+    process.env[key] = raw.trim().replace(/^(['"])(.*)\1$/, "$2");
+  }
+}
 
 /**
  * Konfigurasi TERPISAH untuk eval, dan pemisahannya bukan soal kerapian.

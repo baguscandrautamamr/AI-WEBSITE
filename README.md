@@ -538,6 +538,37 @@ panggilan per kasus — dan kegagalan **kedua** percobaan dilaporkan bersama.
 Kalau keduanya gagal dengan cara yang berbeda, itu keterangan tersendiri: bukan
 satu aturan yang bergeser, melainkan model yang sedang tidak stabil di kasus itu.
 
+### Kuncinya: env Vercel TIDAK berlaku di sini
+
+Ini jebakan yang mudah kena, dan sekali kena akan terlihat seperti eval yang
+lulus. **Env Vercel dan secret GitHub Actions adalah dua penyimpanan yang
+berbeda.** `AI_GATEWAY_API_KEY` yang sudah terpasang di Vercel memberi jalan ke
+aplikasinya saat berjalan — dan tidak terlihat sama sekali oleh
+`.github/workflows/eval.yml`, yang membaca `${{ secrets.* }}` dari repo GitHub.
+
+Jadi ia perlu dipasang **dua kali**, di dua tempat, untuk dua tujuan:
+
+| Tempat | Untuk apa |
+|---|---|
+| Vercel → Environment Variables | aplikasinya menjawab pertanyaan pengguna |
+| GitHub → Settings → Secrets and variables → **Actions** | eval nightly memeriksa perilakunya |
+
+Yang wajib di Actions cuma `AI_GATEWAY_API_KEY`. `AI_GATEWAY_BASE_URL` dan
+`AI_MODEL` hanya perlu kalau nilainya berbeda dari bawaan di
+`web/lib/anthropic.ts` — kalau sama, biarkan kosong dan bawaannya yang dipakai.
+
+**Menjalankan lokal:** `npm run eval` membaca `web/.env.local` (dan `.env`)
+sendiri. Vitest tidak melakukannya — diuji, dan tanpa penanganan itu seluruh
+suite dilewati walaupun kuncinya sudah ada di file yang dipakai `next dev`, tanpa
+sebab yang kelihatan. Yang dikirim lewat perintah menang atas yang di file, jadi
+satu jalannya dengan model lain tidak menuntut menyunting apa pun:
+
+```bash
+cd web
+npm run eval                                  # pakai .env.local
+AI_MODEL=claude-opus-5 npm run eval           # sekali jalan dengan model lain
+```
+
 ### Tanpa kunci, ia melewati dirinya sendiri
 
 `AI_GATEWAY_API_KEY` tidak ada → seluruh suite di-skip dengan peringatan, bukan
