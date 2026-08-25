@@ -40,6 +40,16 @@ interface Msg {
    * "ada yang diperbaiki".
    */
   notice?: string;
+  /**
+   * Dokumen yang dikutip jawaban ini, bernomor sama dengan `[1]`/`[2]` di
+   * dalamnya.
+   *
+   * Ada karena kutipan yang tidak bisa ditunjuk tidak bisa diperiksa. `[2]` di
+   * tengah kalimat hanya berarti sesuatu kalau di bawah jawaban ada baris yang
+   * mengatakan [2] itu dokumen apa, pasal berapa, halaman berapa — supaya
+   * orangnya bisa membuka dokumen aslinya di situ dan melihat sendiri.
+   */
+  sources?: { n: number; label: string }[];
 }
 
 /**
@@ -600,6 +610,7 @@ export default function StandardPage() {
           reset?: boolean;
           why?: string;
           fix?: [string, string][];
+          sources?: { n: number; label: string }[];
         };
         try {
           chunk = JSON.parse(line);
@@ -609,6 +620,14 @@ export default function StandardPage() {
 
         if (chunk.e) {
           setError(chunk.e);
+          return;
+        }
+
+        // Daftar sumber datang sebelum huruf pertama jawaban, supaya `[1]` di
+        // kalimat pembuka sudah punya pasangannya di layar saat ia terbaca.
+        if (chunk.sources) {
+          const list = chunk.sources;
+          setMessages((prev) => prev.map((m, i) => (i === index ? { ...m, sources: list } : m)));
           return;
         }
 
@@ -1007,6 +1026,20 @@ export default function StandardPage() {
                   typing={loading && i === messages.length - 1}
                   highlight={terms}
                 />
+                {m.sources && m.sources.length > 0 && (
+                  <div className="mt-3 border-t border-black/10 pt-2 dark:border-white/10">
+                    <p className="mb-1 text-xs font-medium opacity-70">
+                      {t("standard.sources")}
+                    </p>
+                    <ol className="space-y-0.5 text-xs opacity-70">
+                      {m.sources.map((source) => (
+                        <li key={source.n}>
+                          <span className="opacity-60">[{source.n}]</span> {source.label}
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
               </>
             )}
             </div>

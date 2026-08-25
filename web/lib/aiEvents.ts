@@ -54,6 +54,15 @@ export interface AiEvent {
   forced_retry?: boolean;
   redo?: string | null;
   stray_words?: number;
+  /**
+   * Berapa potongan dokumen standar yang ikut sebagai SUMBER; 0 = dijawab dari
+   * pengetahuan model.
+   *
+   * Ini angka yang mengatakan apakah perpustakaan standarnya perlu diisi lebih
+   * banyak. Tanpa kolom ini pertanyaan itu hanya bisa dijawab dari perasaan
+   * orang yang paling terakhir bertanya.
+   */
+  sources?: number;
   error?: string | null;
 }
 
@@ -130,6 +139,7 @@ export async function logAiEvent(
       forced_retry: event.forced_retry ?? false,
       redo: event.redo ?? null,
       stray_words: event.stray_words ?? 0,
+      sources: event.sources ?? 0,
       error: event.error ?? null,
     });
 

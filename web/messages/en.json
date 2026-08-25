@@ -54,7 +54,8 @@
     "liveWriting": "Writing the answer.",
     "liveDone": "Answer finished.",
     "liveStopped": "Answer stopped.",
-    "log": "Conversation"
+    "log": "Conversation",
+    "sources": "Cited from documents in this system's library:"
   },
   "exportImport": {
     "title": "Export & Import",

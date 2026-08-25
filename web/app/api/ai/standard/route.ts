@@ -20,6 +20,7 @@ import {
   strayWords,
 } from "@/lib/history";
 import { type AiEvent, logAiEvent, statsOf } from "@/lib/aiEvents";
+import { retrieveSources } from "@/lib/standards";
 
 export const runtime = "nodejs";
 
@@ -113,6 +114,32 @@ Jadi:
   gambar kerja atau perhitungan yang ditandatangani. Satu kalimat, sekali, di
   jawaban yang memang memuatnya — bukan paragraf peringatan di setiap jawaban,
   dan tidak sama sekali pada jawaban yang tidak menyebut nomor apa pun.
+
+KALAU ADA BLOK "SUMBER" DI PERTANYAANNYA, SEMUA DI ATAS BERUBAH.
+
+Blok itu berisi potongan dokumen standar yang benar-benar ada di perpustakaan
+sistem ini — bukan ingatanmu — beserta nomor pasal dan halamannya, masing-masing
+bernomor [1], [2], dan seterusnya. Kalau blok itu ada:
+
+- Jawab DARI blok itu, dan tunjuk nomornya di kalimat yang memakainya: "penghantar
+  netral harus biru muda [1]". Nomor pasal dan angka tabel yang kamu sebut diambil
+  dari blok itu, persis, termasuk nomor halamannya kalau ada.
+- Untuk yang kamu ambil dari sumber, kamu TIDAK perlu meragukan nomornya dan tidak
+  perlu menutup dengan kalimat "perlu dicek" — pembacanya bisa membuka dokumen di
+  nomor yang kamu tunjuk dan menemukannya di situ. Itu seluruh bedanya.
+- Blok itu hasil pencarian, jadi ia bisa memuat potongan yang TIDAK berhubungan
+  dengan pertanyaannya. Yang tidak berhubungan diabaikan tanpa disebut-sebut.
+  Jangan memaksa sebuah pertanyaan dijawab oleh sumber yang kebetulan muncul.
+- Kalau blok itu TIDAK memuat jawabannya, katakan begitu dalam satu kalimat —
+  "di dokumen yang ada di sistem ini saya tidak menemukannya" — lalu jawab dari
+  pengetahuan umummu dengan aturan di atas berlaku penuh: nomor yang tidak kamu
+  yakini tidak disebut, dan penutup "perlu dicek" dipakai. Yang DILARANG adalah
+  menjawab dari ingatan lalu menempelkan [1] padanya. Nomor kutipan yang menunjuk
+  sumber yang tidak mengatakannya adalah kebohongan yang mengundang orang
+  memeriksanya, lalu menyesatkan pemeriksaannya.
+- Jangan menyalin blok SUMBER apa adanya ke jawabanmu, dan jangan menyebut
+  "menurut potongan yang diberikan". Bagi pembacanya, sumber itu memang isi
+  perpustakaan sistem ini; yang ia perlu lihat nomor kutipannya, bukan mekanismenya.
 
 GAMBAR YANG DILAMPIRKAN. Pengguna bisa melampirkan foto atau tangkapan layar —
 papan nama panel, gambar kerja, tabel di buku standar, tampilan alat ukur. Baca
@@ -379,6 +406,22 @@ export async function POST(req: Request) {
       (t as Turn).text.trim().length > 0
   );
 
+  /**
+   * Sumber dari perpustakaan dokumen standar, dicari SEBELUM aliran dimulai.
+   *
+   * Di sini dan bukan di dalam stream: kalau pencariannya jadi bagian aliran,
+   * kegagalannya sampai ke layar setelah status HTTP terkirim, dan yang terlihat
+   * pengguna adalah jawaban yang mulai lalu berhenti. Satu kueri Postgres
+   * sebelum apa pun dikirim lebih murah daripada itu.
+   *
+   * Kosong adalah keadaan yang WAJAR, bukan galat: korpusnya bisa belum diisi
+   * (lihat /api/admin/standards), atau pertanyaannya tidak cocok dengan apa pun.
+   * Yang terjadi kemudian adalah perilaku halaman ini sebelum korpusnya ada —
+   * jawaban dari pengetahuan model, lengkap dengan aturan bahwa nomor pasal yang
+   * tidak diyakini tidak disebut.
+   */
+  const sources = await retrieveSources(supabase, question);
+
   // Jawaban dikirim bertahap, bukan sebagai satu blok di akhir.
   //
   // Pertanyaan standar dijawab beberapa paragraf, dan menunggu seluruhnya
@@ -396,6 +439,17 @@ export async function POST(req: Request) {
         controller.enqueue(encoder.encode(`${JSON.stringify(chunk)}\n`));
 
       let reply = "";
+
+      /**
+       * Daftar sumbernya dikirim LEBIH DULU, sebelum satu kata jawaban pun.
+       *
+       * Supaya kutipan `[1]` yang muncul di kalimat pertama sudah punya
+       * pasangannya di layar pada saat ia terbaca. Kalau daftarnya menyusul di
+       * akhir, ada beberapa detik di mana jawaban penuh nomor kutipan yang tidak
+       * menunjuk apa pun — dan nomor yang tidak menunjuk apa pun terbaca sebagai
+       * penanda rusak, bukan sebagai kutipan yang datang sebentar lagi.
+       */
+      if (sources.refs.length > 0) send({ sources: sources.refs });
 
       // Telemetri giliran ini, dikumpulkan sambil jalan lalu ditulis sekali di
       // ujung. Lihat lib/aiEvents.ts — isi pertanyaan dan jawabannya TIDAK ikut.
@@ -474,9 +528,37 @@ export async function POST(req: Request) {
         return text;
       }
 
+      /**
+       * Pertanyaan yang dikirim ke model: sumbernya lebih dulu, pertanyaannya
+       * di belakang.
+       *
+       * Sumber di GILIRAN PENGGUNA, bukan di system prompt, dan itu disengaja.
+       * System prompt halaman ini ratusan baris dan sama untuk setiap
+       * pertanyaan; menyuntikkan hasil pencarian ke dalamnya berarti tidak ada
+       * dua permintaan yang punya awalan sama, dan awalan yang selalu berubah
+       * adalah awalan yang tidak akan pernah bisa di-cache. Aturan CARA memakai
+       * blok ini tetap di system prompt — ia memang tidak berubah.
+       *
+       * Sumbernya di DEPAN pertanyaan dengan alasan yang sama seperti gambar
+       * diletakkan sebelum teks di bawah: pada urutan sebaliknya model menyusun
+       * jawabannya lebih dulu lalu membaca sumbernya, dan jawaban yang sudah
+       * tersusun akan mencari kutipan yang mendukungnya alih-alih dibentuk
+       * olehnya.
+       *
+       * Yang TERSIMPAN di standards_threads tetap `question` apa adanya. Blok
+       * sumber tidak ikut: ia hasil pencarian untuk pertanyaan ini saja, dan
+       * menyimpannya berarti membayarnya ulang di setiap giliran berikutnya —
+       * untuk sumber yang mungkin sudah tidak relevan dengan yang ditanyakan
+       * nanti.
+       */
+      const asking = sources.block
+        ? `SUMBER dari perpustakaan dokumen standar sistem ini:\n\n${sources.block}\n\n` +
+          `--- akhir SUMBER ---\n\nPERTANYAAN: ${question}`
+        : question;
+
       try {
         const history = asContext(previous);
-        reply = await ask([...history, { role: "user", content: asked(question, images) }]);
+        reply = await ask([...history, { role: "user", content: asked(asking, images) }]);
 
         // Sekali saja, dan hanya untuk kegagalan yang sudah pasti.
         //
@@ -500,7 +582,7 @@ export async function POST(req: Request) {
             ...history,
             // Gambarnya ikut lagi: percobaan kedua tanpa gambar adalah
             // percobaan menjawab pertanyaan yang berbeda.
-            { role: "user", content: asked(question, images) },
+            { role: "user", content: asked(asking, images) },
             { role: "assistant", content: reply },
             { role: "user", content: redo.instruction },
           ]);
@@ -591,6 +673,7 @@ export async function POST(req: Request) {
           latency_ms: Date.now() - startedAt,
           redo: redoNotice,
           stray_words: strayCount,
+          sources: sources.refs.length,
           error: "gateway_unreachable",
         });
         controller.close();
@@ -611,6 +694,7 @@ export async function POST(req: Request) {
           latency_ms: Date.now() - startedAt,
           redo: redoNotice,
           stray_words: strayCount,
+          sources: sources.refs.length,
           error: "empty_reply",
         });
         controller.close();
@@ -656,6 +740,7 @@ export async function POST(req: Request) {
         latency_ms: Date.now() - startedAt,
         redo: redoNotice,
         stray_words: strayCount,
+        sources: sources.refs.length,
       });
 
       controller.close();
