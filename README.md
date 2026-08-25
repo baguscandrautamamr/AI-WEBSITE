@@ -454,6 +454,131 @@ Panel chat menampilkan **langkah keberapa dari berapa**, bukan satu kalimat yang
 tidak berubah: "Menyusun perintah…" yang diam selama tiga menit berbunyi sama
 persis dengan halaman yang menggantung.
 
+## Eval: apakah perilaku modelnya masih seperti yang dirancang
+
+Seluruh nilai aplikasi ini ada di dua prompt panjang, dan sampai sekarang tidak
+ada satu pun tes yang menyentuh perilakunya. Yang diuji `npm test`: `asciiTable`,
+`grid`, `families` — helper. Sementara riwayat repo ini penuh regresi perilaku:
+model menulis perintah sebagai teks, `[diagram]` sebagai penanda, kata Sirilik
+menyelip, `Family: Type` disalin utuh. Setiap perbaikan adalah aturan prompt
+tanpa jaring.
+
+`npm run eval` adalah jaringnya. **Bukan** bagian dari `npm test`, dan tidak jalan
+di push.
+
+### Dua perintah, dua arti
+
+| | dijalankan | menjawab |
+|---|---|---|
+| `npm test` | setiap push (CI) | apakah **kodenya** benar |
+| `npm run eval` | sekali sehari + manual | apakah **perilaku modelnya** masih seperti yang dirancang |
+
+Digabung, sifat yang paling berharga dari `npm test` hilang. Ia sekarang 371 tes
+yang jalan dalam dua detik tanpa jaringan, dan merahnya **selalu** berarti ada
+kode yang salah. Eval memanggil model sungguhan: berbiaya, butuh jaringan, dan
+hasilnya tidak sepenuhnya sama dari satu jalannya ke jalannya berikutnya. Di
+setiap PR ia akan sesekali merah tanpa sebab — dan CI yang begitu berhenti dibaca
+dalam dua minggu, sesudah itu ia tidak menjaga apa pun.
+
+Kapan menjalankannya sendiri: **sebelum mengubah salah satu prompt**, dan
+**sebelum menaikkan `AI_MODEL`**. Yang kedua itu sebabnya suite ini ada. Karena
+`claude-sonnet-5` adalah ID lengkap tanpa varian bertanggal, tidak ada versi yang
+bisa dikunci — pergeseran perilaku tidak akan datang bersama sebuah commit, jadi
+yang memeriksanya juga tidak boleh menunggu commit. `.github/workflows/eval.yml`
+menjalankannya 22:00 UTC (05:00 WIB), hasilnya sudah ada sebelum orang mulai
+bekerja.
+
+### Yang dipanggil adalah kode yang dipakai pengguna
+
+Ini yang menentukan eval ini berarti atau tidak. Keputusan mode Electrical
+dikeluarkan dari route-nya ke `web/lib/propose.ts`; yang tertinggal di route
+adalah wewenang, batas laju, telemetri, dan bentuk HTTP (400 → 173 baris).
+`/api/ai/electrical` dan eval memanggil **`propose()` yang sama**.
+
+Alternatifnya dua, dan keduanya buruk. Memanggil route lewat HTTP menuntut sesi
+login, baris proyek, dan Supabase yang hidup — perkakas yang lebih rapuh daripada
+yang diamankannya, dan yang gagal karena hal-hal yang bukan soal kualitas
+jawaban. Menyalin logikanya ke dalam eval berarti menguji implementasi paralel:
+ia akan berbeda dari yang dipakai pada perubahan pertama, dan sejak saat itu
+setiap "lulus" tidak berarti apa-apa. Untuk alasan yang sama, `systemPrompt` mode
+Standar **diekspor** dari route-nya alih-alih disalin.
+
+### Kasusnya
+
+`web/evals/cases/electrical.json` — 13 kasus, masing-masing diturunkan dari satu
+aturan yang benar-benar ada di `ELECTRICAL_SYSTEM_PROMPT`, hampir semuanya
+ditulis karena kegagalannya pernah terjadi: `count` tanpa `grid` karangan,
+`door_offset` yang tidak diisi kalau tidak disebut, "semua ruangan" yang
+dimekarkan alih-alih ditanyakan balik, pertanyaan ber-nama-family yang disaring
+alih-alih dijawab per kategori, nama ruangan meragukan yang **ditanyakan**,
+permintaan terulang yang **dikirim lagi** alih-alih ditolak, dan hasil pembacaan
+yang dipakai alih-alih dibaca ulang.
+
+Setiap kasus punya kolom `why` yang menjelaskan kenapa ia ada — dan kolom itu
+ikut dicetak saat kasusnya gagal, karena yang membaca kegagalan enam bulan dari
+sekarang perlu tahu apa yang dijaga sebelum memutuskan mengubah prompt.
+
+Menambah kasus: tulis yang paling spesifik yang bisa ditulis. Kasus yang menuntut
+satu nilai argumen tertentu menangkap pergeseran; kasus yang cuma menuntut "ada
+tool yang dipanggil" akan lulus selamanya dan tidak pernah memberi tahu apa pun.
+
+`web/evals/standard.eval.ts` — enam kasus, dan yang menilai adalah **pendeteksi
+yang sama** yang dipakai route: `redoReason()` untuk penanda `[diagram]`,
+`strayWords()` untuk kata beraksara asing. Dipakai apa adanya, bukan ditulis
+ulang: kalau ambangnya bergeser, eval ikut bergeser — kalau tidak, ia menjaga
+aturan yang sudah tidak berlaku. Plus tiga yang khusus RAG: jawaban dari sumber
+harus **menunjuk** `[1]`, sumber yang **tidak** memuat jawabannya tidak boleh
+dikutip, dan tanpa sumber nomor pasal tidak dijual sebagai kepastian.
+
+### Dua percobaan, gagal kalau keduanya gagal
+
+Model bahasa tidak menghasilkan hal yang sama persis setiap kali. Percobaan kedua
+hanya dijalankan kalau yang pertama gagal — jadi jalannya yang normal tetap satu
+panggilan per kasus — dan kegagalan **kedua** percobaan dilaporkan bersama.
+Kalau keduanya gagal dengan cara yang berbeda, itu keterangan tersendiri: bukan
+satu aturan yang bergeser, melainkan model yang sedang tidak stabil di kasus itu.
+
+### Kuncinya: env Vercel TIDAK berlaku di sini
+
+Ini jebakan yang mudah kena, dan sekali kena akan terlihat seperti eval yang
+lulus. **Env Vercel dan secret GitHub Actions adalah dua penyimpanan yang
+berbeda.** `AI_GATEWAY_API_KEY` yang sudah terpasang di Vercel memberi jalan ke
+aplikasinya saat berjalan — dan tidak terlihat sama sekali oleh
+`.github/workflows/eval.yml`, yang membaca `${{ secrets.* }}` dari repo GitHub.
+
+Jadi ia perlu dipasang **dua kali**, di dua tempat, untuk dua tujuan:
+
+| Tempat | Untuk apa |
+|---|---|
+| Vercel → Environment Variables | aplikasinya menjawab pertanyaan pengguna |
+| GitHub → Settings → Secrets and variables → **Actions** | eval nightly memeriksa perilakunya |
+
+Yang wajib di Actions cuma `AI_GATEWAY_API_KEY`. `AI_GATEWAY_BASE_URL` dan
+`AI_MODEL` hanya perlu kalau nilainya berbeda dari bawaan di
+`web/lib/anthropic.ts` — kalau sama, biarkan kosong dan bawaannya yang dipakai.
+
+**Menjalankan lokal:** `npm run eval` membaca `web/.env.local` (dan `.env`)
+sendiri. Vitest tidak melakukannya — diuji, dan tanpa penanganan itu seluruh
+suite dilewati walaupun kuncinya sudah ada di file yang dipakai `next dev`, tanpa
+sebab yang kelihatan. Yang dikirim lewat perintah menang atas yang di file, jadi
+satu jalannya dengan model lain tidak menuntut menyunting apa pun:
+
+```bash
+cd web
+npm run eval                                  # pakai .env.local
+AI_MODEL=claude-opus-5 npm run eval           # sekali jalan dengan model lain
+```
+
+### Tanpa kunci, ia melewati dirinya sendiri
+
+`AI_GATEWAY_API_KEY` tidak ada → seluruh suite di-skip dengan peringatan, bukan
+merah. Seorang kontributor tanpa kunci harus diberi tahu bahwa ia melewatinya.
+
+**Jebakannya:** eval yang dilewati terlihat sama dengan eval yang lulus — job
+GitHub Actions-nya hijau dua-duanya. Yang membedakan cuma baris peringatan di
+log. Kalau secret-nya belum dipasang di Settings → Secrets and variables →
+Actions, cari baris itu lebih dulu sebelum menyimpulkan perilakunya masih baik.
+
 ## Telemetri model bahasa (`ai_events`)
 
 Tabel dari `0011_ai_events.sql`. Satu baris per pemanggilan model, dan alasannya
@@ -490,6 +615,20 @@ prompt terlalu bertele-tele.
 ruangan, nama family. Itu data proyek orang, dan tabel telemetri bukan tempatnya.
 Yang tersimpan hanya bentuk kejadiannya — cukup untuk menghitung, tidak cukup
 untuk membaca ulang percakapan siapa pun.
+
+**Membacanya:** `supabase/queries/ai_health.sql` — sembilan kueri untuk ditempel
+di SQL editor, masing-masing menjawab satu pertanyaan: seberapa sering model
+menulis perintah sebagai teks, berapa jawaban yang terpotong, sebaran kedalaman
+rantai baca, berapa persen jawaban standar yang benar-benar bersumber, berapa
+yang harus ditulis ulang, **model mana yang benar-benar melayani**, token dan
+latensi p95 per hari, apa yang gagal, dan pemakaian per akun. Semuanya diuji
+terhadap Postgres 16 sungguhan.
+
+Bukan sebuah halaman, dan itu disengaja: yang membacanya satu-dua orang beberapa
+kali sebulan, biasanya saat memutuskan apakah sebuah perubahan prompt memperbaiki
+sesuatu. Dasbor untuk itu adalah kode yang dipelihara demi pemakaian yang jarang —
+dan yang paling sering terjadi padanya adalah ia basi diam-diam sementara SQL
+tetap benar.
 
 Ditulis lewat klien sesi (bukan service role), dengan policy `ai_events_insert_self`
 yang hanya mengizinkan menulis barisnya sendiri. Konsekuensinya jujur: sebuah
