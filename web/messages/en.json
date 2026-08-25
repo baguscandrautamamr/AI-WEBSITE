@@ -333,7 +333,12 @@
     "showCommand": "show command",
     "hideCommand": "hide command",
     "runFailed": "Failed in Revit",
-    "finished": "Done in Revit."
+    "finished": "Done in Revit.",
+    "stop": "Stop",
+    "stopped": "Stopped. Commands already in the Revit queue keep running to completion.",
+    "step": "Reading the model… step {n} of {max}",
+    "stepLimit": "I read the model {n} times for this question, so I stopped there — the answer may be incomplete. If it is, name the level or room you mean so the reads can be narrower.",
+    "readTimeout": "Revit has not answered this read, so the chain stopped. Make sure Revit is open with the add-in running, then ask again."
   },
   "importExcel": {
     "title": "Import Excel",

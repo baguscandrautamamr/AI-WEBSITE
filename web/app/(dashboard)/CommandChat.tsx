@@ -113,6 +113,9 @@ export type ChatEntry = ChatBody & { id: number };
 export default function CommandChat({
   entries,
   busy,
+  step,
+  maxSteps,
+  onStop,
   disabled,
   onSend,
   onChoose,
@@ -120,6 +123,11 @@ export default function CommandChat({
 }: {
   entries: ChatEntry[];
   busy: boolean;
+  /** Pembacaan keberapa yang sedang berjalan; 0 = belum ada rantai yang jalan. */
+  step: number;
+  maxSteps: number;
+  /** Memotong rantai baca yang berjalan terlalu lama. */
+  onStop: () => void;
   disabled: boolean;
   onSend: (message: string) => void;
   /** Family dipilih dari daftar; `null` berarti biarkan add-in yang memilih. */
@@ -261,7 +269,17 @@ export default function CommandChat({
 
             return <Proposal key={e.id} entry={e} onOpenForm={onOpenForm} />;
           })}
-          {busy && <p className="text-xs opacity-60">{t("chat.thinking")}</p>}
+          {/* Satu pertanyaan sekarang bisa berarti empat perjalanan ke Revit,
+              masing-masing puluhan detik. "Menyusun perintah…" yang tidak berubah
+              selama tiga menit berbunyi sama persis dengan halaman yang
+              menggantung — jadi yang ditampilkan langkah keberapa dari berapa. */}
+          {busy && (
+            <p className="text-xs opacity-60">
+              {step > 0
+                ? t("chat.step").replace("{n}", String(step)).replace("{max}", String(maxSteps))
+                : t("chat.thinking")}
+            </p>
+          )}
           <div ref={bottom} />
         </div>
       )}
@@ -273,9 +291,19 @@ export default function CommandChat({
         placeholder={t("chat.placeholder")}
         disabled={disabled}
       >
-        <button onClick={submit} disabled={busy || disabled} className="btn-accent shrink-0">
-          {busy ? t("chat.sending") : t("chat.send")}
-        </button>
+        {/* Saat rantai berjalan, tombolnya BERHENTI — bukan tombol kirim yang
+            mati. Sebuah rantai bisa memakan beberapa menit menunggu Revit, dan
+            satu-satunya jalan keluar sebelum ini adalah memuat ulang halaman,
+            yang juga membuang seluruh percakapannya. */}
+        {busy ? (
+          <button onClick={onStop} className="btn-accent shrink-0">
+            {t("chat.stop")}
+          </button>
+        ) : (
+          <button onClick={submit} disabled={disabled} className="btn-accent shrink-0">
+            {t("chat.send")}
+          </button>
+        )}
       </ChatInput>
     </div>
   );

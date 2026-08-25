@@ -39,6 +39,17 @@ export interface AiEvent {
   cache_read_tokens?: number | null;
   latency_ms?: number | null;
   tool?: string | null;
+  /**
+   * Pembacaan otomatis yang ke berapa dalam satu pertanyaan; 0 = giliran yang
+   * benar-benar diketik orang.
+   *
+   * Ini yang menjawab pertanyaan yang muncul begitu loop baca berantai ada:
+   * berapa langkah yang sebenarnya dipakai sebuah pertanyaan. Kalau ternyata
+   * hampir semuanya menyentuh batas, batasnya yang salah — atau urutan
+   * pembacaan di prompt yang tidak efisien. Tanpa kolom ini keduanya cuma bisa
+   * dikira-kira.
+   */
+  step?: number;
   wrote_command_as_text?: boolean;
   forced_retry?: boolean;
   redo?: string | null;
@@ -113,6 +124,7 @@ export async function logAiEvent(
       cache_read_tokens: event.cache_read_tokens ?? null,
       latency_ms: event.latency_ms ?? null,
       tool: event.tool ?? null,
+      step: event.step ?? 0,
       outcome: event.outcome,
       wrote_command_as_text: event.wrote_command_as_text ?? false,
       forced_retry: event.forced_retry ?? false,

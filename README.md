@@ -355,7 +355,8 @@ Preview).
 Lihat `supabase/README.md`. Ringkasnya: skema inti (0001–0007) ada di repo
 `electrical_ai`; repo ini hanya menambah `0008_web_auth.sql` dan
 `0009_web_user_trigger_fix.sql` untuk login web, `0010_access_class.sql` untuk
-kelas akun, dan `0011_ai_events.sql` untuk telemetri model bahasa.
+kelas akun, serta `0011_ai_events.sql` dan `0012_ai_events_step.sql` untuk
+telemetri model bahasa.
 
 Akun yang baru mendaftar **sengaja tidak punya akses proyek apa pun** sampai
 seorang admin memberikannya lewat `/admin/users`.
@@ -370,6 +371,87 @@ Membuat proyek dulu terbuka untuk setiap akun yang login, dan pembuatnya
 langsung ditulis sebagai admin proyek itu. Akibatnya berantai: daftar email →
 login → buat proyek → admin proyek → `granted` → seluruh aplikasi terbuka, tanpa
 persetujuan siapa pun. Sekarang `/api/projects` menuntut admin sistem.
+
+## Rantai baca: satu pertanyaan, beberapa pembacaan
+
+Prompt-nya sendiri mewajibkan sebuah urutan untuk pertanyaan tentang isi model:
+`what=categories` untuk tahu kategori apa yang ada, lalu `what=parameters` untuk
+tahu nama parameternya **persis**, baru `what=elements`. Alasannya nyata — nama
+parameter yang salah mengembalikan kolom KOSONG, dan kosong tidak bisa dibedakan
+dari model yang memang tidak punya nilainya.
+
+Yang mengerjakan urutan itu dulu **penggunanya**. Satu pemanggilan model = satu
+perintah, dan hasil perintah itu tidak pernah kembali ke model, jadi "berapa
+downlight 22W di lantai 1" berarti tiga kali mengetik, tiga kali menunggu Revit,
+dan di antaranya ia sendiri yang menyalin nama parameter dari layar ke kalimat
+berikutnya.
+
+Sekarang sistem yang menjalankannya. Perintah **baca** dijalankan, ditunggu, dan
+hasilnya dikembalikan kepada model sebagai catatan sistem — sampai ia bisa
+menjawab, atau sampai batas empat pembacaan.
+
+**Perintah yang mengubah model tidak pernah masuk rantai ini.** Ia diusulkan
+sekali, berhenti di situ, dan hasilnya tidak dikembalikan kepada model untuk
+dilanjutkan. Yang memutuskan perintah mana yang boleh berjalan sendiri adalah
+`canAutoRun()` di `web/lib/commands.ts`, dan syaratnya diturunkan dari katalog,
+bukan dari daftar nama: `group === "read"` **dan** `role === "viewer"` **dan**
+tanpa `confirm` **dan** tidak `hidden`. Hari ini itu tepat dua perintah — `query`
+dan `inspect` — dan `web/lib/commands.test.ts` menuliskan daftar itu harfiah,
+supaya perintah baru yang salah dikelompokkan ke `read` menggagalkan CI alih-alih
+mulai berjalan sendiri di model orang.
+
+`list_sheets` sengaja tidak ikut walaupun ia membaca: ia berkelompok `export`, dan
+mengikutkannya berarti menambahkan pengecualian bernama ke fungsi yang seluruh
+gunanya justru tidak punya daftar nama. `print_pdf`, `export_cad`, dan `export`
+juga tidak — ketiganya menulis berkas ke disk PC Revit, dan berkas yang tertimpa
+tidak kembali.
+
+### Yang dikembalikan ke model bukan ringkasannya
+
+Ini yang menentukan rantainya berguna atau sia-sia. `summarizeResult` menjawab
+`inspect what=parameters` dengan **"12 parameter"** — benar, cukup sebagai judul
+gelembung, dan tidak mungkin dipakai memutuskan langkah berikutnya, karena yang
+dibutuhkan langkah berikutnya justru nama kedua belas parameter itu.
+
+Jadi ada `digestResult()` (`web/lib/resultDigest.ts`): isi hasilnya, dirapikan
+untuk dibaca model. Skalar lebih dulu — `total`, `shown`, `room`, `family_used` —
+lalu daftarnya, dibatasi 40 butir dan 3.000 karakter. Kalau pemotongan harus
+terjadi, yang hilang baris ke-38 sebuah daftar, bukan angka yang ditanyakan
+orangnya. Dan setiap pemotongan **dikatakan**: daftar yang dipendekkan menyebut
+jumlah sebenarnya, karena 40 yang dibaca sebagai seluruhnya adalah kesimpulan
+salah tanpa satu pun tanda.
+
+Fungsi itu sengaja tidak tahu bentuk keluaran satu pun perintah. Aturannya umum,
+dan itu pilihan yang diambil setelah melihat apa yang sudah dua kali menyakiti
+repo ini: setiap tempat yang menyalin bentuk keluaran add-in akan berbeda dari
+add-in pada perubahan pertama.
+
+Digest hanya ikut untuk langkah yang sedang berjalan. Riwayat yang disusun ulang
+dari layar pada giliran-giliran berikutnya membawa ringkasannya saja — isi lengkap
+setiap pembacaan yang pernah terjadi adalah biaya input yang dibayar berulang
+untuk data yang sudah selesai dipakai.
+
+### Batasnya, dan di mana ia ditegakkan
+
+Empat pembacaan per pertanyaan (`MAX_AUTO_STEPS`), ditulis di **dua** tempat dan
+keduanya perlu: `web/app/api/ai/electrical/route.ts` yang menegakkannya — langkah
+kelima ditolak dengan 400 — dan `CommandRunner.tsx` yang berhenti dengan sopan
+sebelum sampai ke situ. Client yang melingkar, jadi client yang menghitung; tapi
+hitungan client bukan batas, ia hanya niat baik sebuah program yang bisa punya
+bug. Batas laju 30 giliran/menit menahan lajunya dan tidak pernah menghentikan
+apa pun — 30 per menit selamanya tetap selamanya.
+
+Rantainya juga berhenti, tanpa mengirim ulang apa pun, ketika: pembacaannya
+**gagal** di Revit (mengirim ulang otomatis dengan argumen yang ditebak adalah
+cara membakar antrean Revit tanpa ada yang meminta), Revit **tidak menjawab**
+dalam 90 detik, atau orangnya menekan **Berhenti** — tombol yang menggantikan
+tombol kirim selama rantai berjalan, karena sebelumnya satu-satunya jalan keluar
+dari penantian beberapa menit adalah memuat ulang halaman, yang juga membuang
+seluruh percakapannya.
+
+Panel chat menampilkan **langkah keberapa dari berapa**, bukan satu kalimat yang
+tidak berubah: "Menyusun perintah…" yang diam selama tiga menit berbunyi sama
+persis dengan halaman yang menggantung.
 
 ## Telemetri model bahasa (`ai_events`)
 
@@ -395,6 +477,13 @@ varian bertanggal untuk "mengunci" versinya, dan sufiks tanggal seperti
 Karena hampir setiap aturan di kedua prompt panjang itu di-tuning terhadap
 kebiasaan satu model tertentu, penjagaannya jadi pengamatan, bukan pinning:
 pergantian model terlihat di kolom itu, bukan di laporan pengguna.
+
+Kolom `step` (migrasi `0012`) membedakan lima baris dari lima pertanyaan dengan
+lima baris dari SATU pertanyaan yang memakai empat pembacaan. Tanpa itu keduanya
+terlihat sama persis dan menuntut kesimpulan yang berlawanan. Yang mau dijawabnya:
+kalau hampir semua pertanyaan menyentuh batas empat, yang salah bukan
+penggunanya — batasnya terlalu rendah, atau urutan pembacaan yang diwajibkan
+prompt terlalu bertele-tele.
 
 **Yang TIDAK disimpan:** isi pertanyaan, isi jawaban, argumen perintah, nama
 ruangan, nama family. Itu data proyek orang, dan tabel telemetri bukan tempatnya.
