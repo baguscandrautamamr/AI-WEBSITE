@@ -14,6 +14,7 @@
   "standard": {
     "title": "Electrical Standards & Codes",
     "subtitle": "Q&A about standards (SNI, PUIL, IEC, NEC) — never touches Revit",
+    "verify": "Clause numbers and table values come from the model's memory, with no standard document in front of it. Check them against the source before using them in drawings or in calculations you sign.",
     "placeholder": "Ask about SNI/PUIL/IEC standards...",
     "send": "Send",
     "failed": "Could not reach the standards assistant",

@@ -9,6 +9,7 @@ import { COMMANDS_BY_NAME, canRun } from "@/lib/commands";
 import { CommandValidationError, buildPayload } from "@/lib/queue";
 import { resolveFamilies } from "@/lib/familyChoice";
 import { expandRooms } from "@/lib/roomList";
+import { type AiEvent, logAiEvent, statsOf } from "@/lib/aiEvents";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,27 @@ const MAX_MESSAGE_CHARS = 2_000;
 
 /** 30 giliran per menit per user — jauh di atas kecepatan mengetik orang. */
 const TURNS_PER_MINUTE = 30;
+
+/**
+ * Ruang untuk thinking + jawaban + panggilan tool, sekaligus.
+ *
+ * Dulu 2048, dan itu terlalu sempit dengan cara yang tidak terlihat. Pada Sonnet
+ * 5 adaptive thinking aktif secara default dan `max_tokens` membatasi thinking
+ * BESERTA jawabannya (lihat lib/anthropic.ts) — jadi permintaan yang butuh
+ * berpikir agak panjang ("semua ruangan, tiga kategori") bisa menghabiskan
+ * jatahnya sebelum blok `tool_use` selesai ditulis.
+ *
+ * Yang terjadi kemudian bukan galat. Jawabannya berhenti di tengah, tidak ada
+ * blok tool_use untuk ditemukan, dan permintaan itu jatuh ke cabang "model
+ * bertanya balik" di bawah — sehingga yang dibaca orangnya adalah "Bisa
+ * diperjelas maksudnya?" untuk kalimat yang sudah sangat jelas. Ia lalu
+ * mengetik ulang kalimat yang sama, dan gagal dengan cara yang sama.
+ *
+ * 16.000 adalah angka yang dianjurkan untuk permintaan non-streaming: cukup
+ * lapang, dan masih di bawah batas waktu HTTP bawaan SDK. Mode standard yang
+ * memang dialirkan memakai 32.000.
+ */
+const MAX_TOKENS = 16_000;
 
 /**
  * Menerjemahkan kalimat biasa jadi satu perintah terstruktur — TANPA
@@ -95,7 +117,7 @@ export async function POST(req: Request) {
   const ask = (force: boolean) =>
     anthropic.messages.create({
       model: MODEL,
-      max_tokens: 2048,
+      max_tokens: MAX_TOKENS,
       system,
       tools: tools as never,
       // `any` = wajib memakai salah satu tool. Dipakai hanya pada percobaan
@@ -105,16 +127,52 @@ export async function POST(req: Request) {
       messages,
     });
 
+  const startedAt = Date.now();
+
   let response;
   try {
     response = await ask(false);
   } catch (err) {
     console.error("[api/ai/electrical] gateway call failed", err);
+    await logAiEvent(supabase, user.id, {
+      mode: "electrical",
+      outcome: "error",
+      latency_ms: Date.now() - startedAt,
+      error: "gateway_unreachable",
+    });
     return NextResponse.json({ error: "asisten sedang tidak bisa dihubungi" }, { status: 502 });
   }
 
   let toolUse = response.content.find((b) => b.type === "tool_use");
   let text = textOf(response.content);
+
+  let stats = statsOf(response);
+  let forcedRetry = false;
+
+  /**
+   * Satu-satunya jalan keluar yang berhasil, supaya tidak ada cabang yang lupa
+   * mencatat.
+   *
+   * Route ini punya delapan titik `return` yang berbeda — perintah siap,
+   * perintah dimekarkan per ruangan, daftar ruangan belum terbaca, family
+   * ditahan, argumen kurang, model bertanya balik, tool di luar peran, jawaban
+   * terpotong. Mencatat di masing-masing berarti cabang kesembilan yang
+   * ditambahkan nanti akan hilang dari hitungan tanpa ada yang menyadarinya,
+   * dan yang hilang justru cabang yang baru — yang paling perlu diawasi.
+   */
+  const finish = async (
+    payload: Record<string, unknown>,
+    event: Pick<AiEvent, "outcome" | "tool"> & Partial<AiEvent>
+  ) => {
+    await logAiEvent(supabase, user.id, {
+      mode: "electrical",
+      ...stats,
+      latency_ms: Date.now() - startedAt,
+      forced_retry: forcedRetry,
+      ...event,
+    });
+    return NextResponse.json(payload);
+  };
 
   /**
    * Jawaban yang MENULIS perintahnya alih-alih memanggil tool-nya, dicoba sekali
@@ -134,12 +192,17 @@ export async function POST(req: Request) {
    */
   if (!toolUse && tools.length > 0 && mentionsCommand(text)) {
     console.warn("[api/ai/electrical] jawaban menulis perintah tanpa memanggil tool — dipaksa");
+    forcedRetry = true;
     try {
       const forced = await ask(true);
       const forcedTool = forced.content.find((b) => b.type === "tool_use");
       if (forcedTool) {
         toolUse = forcedTool;
         text = textOf(forced.content) || "";
+        // Angka pemakaian ikut yang KEDUA: itu jawaban yang benar-benar dipakai.
+        // Percobaan pertamanya tetap terhitung lewat `forced_retry`, jadi
+        // biayanya tidak hilang dari catatan — yang hilang cuma penggandaannya.
+        stats = statsOf(forced);
       }
     } catch (err) {
       // Percobaan kedua yang gagal bukan alasan menjatuhkan giliran ini: jawaban
@@ -152,24 +215,59 @@ export async function POST(req: Request) {
   // Tidak memilih tool = model bertanya balik atau menolak. Itu hasil yang sah,
   // bukan kegagalan: pertanyaan klarifikasi justru yang membuat mode ini aman.
   if (!toolUse || toolUse.type !== "tool_use") {
-    return NextResponse.json({
-      kind: "reply",
-      text: text || "Bisa diperjelas maksudnya?",
-      // Jawaban yang menyebut sebuah perintah padahal tidak ada yang dikirim
-      // ditandai, supaya panel chat mengatakannya terus terang alih-alih
-      // membiarkan kalimat model berdiri sebagai laporan.
-      nothingSent: mentionsCommand(text),
-    });
+    /**
+     * KECUALI kalau jawabannya memang terpotong di batas token.
+     *
+     * Ini yang selama ini tidak pernah dibaca: `stop_reason` tidak disentuh di
+     * mana pun di repo, jadi jawaban yang habis jatahnya di tengah — tanpa blok
+     * tool_use, karena belum sampai menulisnya — tidak bisa dibedakan dari model
+     * yang memang memilih bertanya balik. Keduanya berakhir di cabang ini, dan
+     * yang ditampilkan untuk keduanya adalah sebuah pertanyaan klarifikasi.
+     *
+     * Bedanya besar bagi orangnya. Pertanyaan klarifikasi bisa dijawab;
+     * jawaban yang terpotong tidak bisa — mengetik ulang kalimat yang sama akan
+     * terpotong lagi di tempat yang sama. Jadi dikatakan apa adanya, beserta
+     * satu-satunya hal yang memang menolong: memperkecil permintaannya.
+     */
+    if (stats.stop_reason === "max_tokens") {
+      console.warn("[api/ai/electrical] jawaban terpotong di batas token");
+      return finish(
+        {
+          kind: "reply",
+          text:
+            "Jawaban saya terpotong sebelum selesai, jadi tidak ada perintah yang " +
+            "dikirim ke Revit. Coba pecah permintaannya jadi lebih kecil — misalnya " +
+            "satu kategori perangkat dulu, atau sebagian ruangan saja.",
+          nothingSent: true,
+        },
+        { outcome: "truncated", tool: null }
+      );
+    }
+
+    return finish(
+      {
+        kind: "reply",
+        text: text || "Bisa diperjelas maksudnya?",
+        // Jawaban yang menyebut sebuah perintah padahal tidak ada yang dikirim
+        // ditandai, supaya panel chat mengatakannya terus terang alih-alih
+        // membiarkan kalimat model berdiri sebagai laporan.
+        nothingSent: mentionsCommand(text),
+      },
+      { outcome: "reply", tool: null, wrote_command_as_text: mentionsCommand(text) }
+    );
   }
 
   const spec = COMMANDS_BY_NAME[toolUse.name];
   if (!spec || !canRun(spec, role)) {
     // Model menyebut command di luar katalog atau di luar perannya. Dijawab
     // sebagai teks supaya percakapan tetap jalan.
-    return NextResponse.json({
-      kind: "reply",
-      text: text || `Perintah "${toolUse.name}" tidak tersedia untuk peranmu di proyek ini.`,
-    });
+    return finish(
+      {
+        kind: "reply",
+        text: text || `Perintah "${toolUse.name}" tidak tersedia untuk peranmu di proyek ini.`,
+      },
+      { outcome: "unavailable_tool", tool: toolUse.name }
+    );
   }
 
   const values = (toolUse.input ?? {}) as Record<string, unknown>;
@@ -188,13 +286,16 @@ export async function POST(req: Request) {
     if (resolved.question) {
       // Ditahan, dan daftarnya ditawarkan di percakapan — satu ketukan, bukan
       // mengisi ulang formulir.
-      return NextResponse.json({
-        kind: "choose",
-        command: spec.name,
-        values: resolved.values,
-        note: text || null,
-        ...resolved.question,
-      });
+      return finish(
+        {
+          kind: "choose",
+          command: spec.name,
+          values: resolved.values,
+          note: text || null,
+          ...resolved.question,
+        },
+        { outcome: "choose", tool: spec.name }
+      );
     }
 
     // "Semua ruangan" dimekarkan jadi satu perintah per ruangan.
@@ -211,12 +312,15 @@ export async function POST(req: Request) {
 
     if (rooms) {
       if (rooms.length === 0) {
-        return NextResponse.json({
-          kind: "reply",
-          text:
-            text ||
-            "Daftar ruangan belum terbaca dari Revit, jadi \"semua ruangan\" belum bisa saya jabarkan. Buka Revit dengan add-in berjalan, atau sebutkan nama ruangannya.",
-        });
+        return finish(
+          {
+            kind: "reply",
+            text:
+              text ||
+              "Daftar ruangan belum terbaca dari Revit, jadi \"semua ruangan\" belum bisa saya jabarkan. Buka Revit dengan add-in berjalan, atau sebutkan nama ruangannya.",
+          },
+          { outcome: "reply", tool: spec.name }
+        );
       }
 
       const items = rooms.map((room) => {
@@ -224,35 +328,53 @@ export async function POST(req: Request) {
         return { room, values, commandText: buildPayload(spec, values).commandText };
       });
 
-      return NextResponse.json({
-        kind: "batch",
-        command: spec.name,
-        items,
-        confirm: Boolean(spec.confirm),
-        note: text || null,
-      });
+      return finish(
+        {
+          kind: "batch",
+          command: spec.name,
+          items,
+          confirm: Boolean(spec.confirm),
+          note: text || null,
+        },
+        { outcome: "batch", tool: spec.name }
+      );
     }
 
     const { commandText } = buildPayload(spec, resolved.values);
-    return NextResponse.json({
-      kind: "command",
-      command: spec.name,
-      values: resolved.values,
-      commandText,
-      confirm: Boolean(spec.confirm),
-      note: text || null,
-    });
+    return finish(
+      {
+        kind: "command",
+        command: spec.name,
+        values: resolved.values,
+        commandText,
+        confirm: Boolean(spec.confirm),
+        note: text || null,
+      },
+      { outcome: "command", tool: spec.name }
+    );
   } catch (err) {
     if (err instanceof CommandValidationError) {
-      return NextResponse.json({
-        kind: "incomplete",
-        command: spec.name,
-        values,
-        issues: err.issues,
-        note: text || null,
-      });
+      return finish(
+        {
+          kind: "incomplete",
+          command: spec.name,
+          values,
+          issues: err.issues,
+          note: text || null,
+        },
+        { outcome: "incomplete", tool: spec.name }
+      );
     }
     console.error("[api/ai/electrical] buildPayload failed", err);
+    await logAiEvent(supabase, user.id, {
+      mode: "electrical",
+      outcome: "error",
+      tool: spec.name,
+      ...stats,
+      latency_ms: Date.now() - startedAt,
+      forced_retry: forcedRetry,
+      error: "build_payload_failed",
+    });
     return NextResponse.json({ error: "gagal menyusun perintah" }, { status: 500 });
   }
 }

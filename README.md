@@ -354,7 +354,8 @@ Preview).
 
 Lihat `supabase/README.md`. Ringkasnya: skema inti (0001–0007) ada di repo
 `electrical_ai`; repo ini hanya menambah `0008_web_auth.sql` dan
-`0009_web_user_trigger_fix.sql` untuk login web.
+`0009_web_user_trigger_fix.sql` untuk login web, `0010_access_class.sql` untuk
+kelas akun, dan `0011_ai_events.sql` untuk telemetri model bahasa.
 
 Akun yang baru mendaftar **sengaja tidak punya akses proyek apa pun** sampai
 seorang admin memberikannya lewat `/admin/users`.
@@ -369,6 +370,64 @@ Membuat proyek dulu terbuka untuk setiap akun yang login, dan pembuatnya
 langsung ditulis sebagai admin proyek itu. Akibatnya berantai: daftar email →
 login → buat proyek → admin proyek → `granted` → seluruh aplikasi terbuka, tanpa
 persetujuan siapa pun. Sekarang `/api/projects` menuntut admin sistem.
+
+## Telemetri model bahasa (`ai_events`)
+
+Tabel dari `0011_ai_events.sql`. Satu baris per pemanggilan model, dan alasannya
+bukan "biar ada dasbor": deteksi kegagalannya sudah lengkap dan tidak ada yang
+menghitungnya.
+
+`mentionsCommand()` menyala ketika model menulis baris perintah sebagai teks
+alih-alih memanggil tool — kegagalan termahal di repo ini, karena chat berbunyi
+seperti perintahnya sudah berangkat sementara `commands_queue` kosong.
+`redoReason()` menyala ketika yang diminta gambar dan yang datang tulisan
+`[diagram]`. `strayWords()` menyala ketika ada kata beraksara asing yang harus
+ditambal. Ketiganya sudah berjalan sejak lama; yang dihasilkan nyalanya cuma
+`console.warn` yang tenggelam di log Vercel. Jadi "seberapa sering model menulis
+perintah sebagai teks?" tidak bisa dijawab siapa pun — termasuk untuk
+membuktikan bahwa perbaikan berikutnya memperbaiki sesuatu.
+
+Dua kolom model, dan bedanya justru intinya. `model_requested` adalah isi env
+`AI_MODEL`; `model_served` adalah yang benar-benar menjawab, dari `response.model`.
+Dipisah karena **`claude-sonnet-5` sudah ID yang lengkap dan eksak** — tidak ada
+varian bertanggal untuk "mengunci" versinya, dan sufiks tanggal seperti
+`claude-sonnet-5-20251114` adalah ID yang tidak ada, bukan versi yang terkunci.
+Karena hampir setiap aturan di kedua prompt panjang itu di-tuning terhadap
+kebiasaan satu model tertentu, penjagaannya jadi pengamatan, bukan pinning:
+pergantian model terlihat di kolom itu, bukan di laporan pengguna.
+
+**Yang TIDAK disimpan:** isi pertanyaan, isi jawaban, argumen perintah, nama
+ruangan, nama family. Itu data proyek orang, dan tabel telemetri bukan tempatnya.
+Yang tersimpan hanya bentuk kejadiannya — cukup untuk menghitung, tidak cukup
+untuk membaca ulang percakapan siapa pun.
+
+Ditulis lewat klien sesi (bukan service role), dengan policy `ai_events_insert_self`
+yang hanya mengizinkan menulis barisnya sendiri. Konsekuensinya jujur: sebuah
+`curl` dari akun yang sah bisa menyisipkan baris palsu. Diterima — yang dijaga
+tabel ini pertanyaan operasional, bukan bukti. Yang membaca: admin sistem, atau
+SQL editor. Kegagalan menulisnya selalu ditelan; telemetri tidak pernah boleh
+menjatuhkan permintaan yang jawabannya sudah benar.
+
+## Kalau jawaban asisten terpotong di tengah
+
+Pada Sonnet 5 adaptive thinking aktif secara default, dan `max_tokens` membatasi
+thinking **beserta** jawabannya. `/api/ai/electrical` dulu memberi 2048 untuk
+ketiganya sekaligus (thinking + teks + panggilan tool), dan yang terjadi ketika
+jatahnya habis bukan sebuah galat: jawabannya berhenti sebelum blok `tool_use`
+selesai ditulis, jadi tidak ada tool untuk ditemukan, dan permintaan itu jatuh ke
+cabang "model bertanya balik" — sehingga yang dibaca orangnya adalah **"Bisa
+diperjelas maksudnya?" untuk kalimat yang sudah jelas.** Ia lalu mengetik ulang
+kalimat yang sama dan gagal dengan cara yang sama.
+
+Sekarang batasnya 16.000 (anjuran untuk permintaan non-streaming; mode standard
+yang dialirkan memakai 32.000), dan `stop_reason` **dibaca** — sebelumnya tidak
+disentuh di mana pun di repo. Jawaban yang berhenti di `max_tokens` dikatakan apa
+adanya, beserta satu-satunya hal yang menolong: memperkecil permintaannya.
+Bedanya besar bagi orangnya, karena pertanyaan klarifikasi bisa dijawab sementara
+jawaban yang terpotong tidak — mengetik ulang akan terpotong di tempat yang sama.
+
+`max_tokens` adalah batas atas, bukan target: menaikkannya tidak menaikkan biaya
+per permintaan.
 
 ## Melampirkan gambar di halaman Standar
 
@@ -400,6 +459,42 @@ gambarnya dikirim ulang — bukan dengan mengarang isinya.
 Gateway di `AI_GATEWAY_BASE_URL` harus meneruskan blok `image` milik Messages
 API. Kalau gambar ditolak dengan 400 dari sana sementara pertanyaan teks biasa
 jalan, penyebabnya gateway-nya, bukan kode ini.
+
+## Nomor pasal dijawab dari ingatan, dan itu dikatakan
+
+Halaman Standar menjawab SNI/PUIL/IEC/NEC **tanpa satu pun dokumen standar
+dibaca** — tidak ada korpus, tidak ada pencarian, tidak ada kutipan. Jawabannya
+berasal dari ingatan model.
+
+Itu bentuk kegagalan yang paling berbahaya di aplikasi ini, dan bahayanya justru
+karena ia tidak terlihat seperti kegagalan. System prompt sudah lama melarang
+menebak angka di foto papan nama yang buram, dengan alasan yang tepat: angka itu
+dipakai orang untuk memilih pengaman. Nomor pasal persis sama, dengan satu
+bedanya yang membuatnya lebih buruk — foto yang buram *terlihat* buram,
+sementara "PUIL 2011 pasal 3.24.2.1" terbaca seperti kutipan entah ia benar atau
+tidak. Nomor yang keliru menyuruh orang mencari di tempat yang tidak memuat apa
+pun, dan yang ia simpulkan dari situ adalah standarnya tidak mengatur hal itu.
+
+Jadi dua hal, dan keduanya perlu ada:
+
+- **Di prompt** — yang tidak diyakini nomornya disebut isinya saja, keraguan
+  ditulis di kalimat itu sendiri (bukan sebagai catatan di akhir), tahun edisi
+  tidak dikarang, dan angka tabel selalu dibawa bersama tabel asalnya beserta
+  syarat pakainya. Jawaban yang memuat nomor pasal atau angka tabel ditutup satu
+  kalimat bahwa keduanya perlu dicek di dokumen aslinya.
+- **Di halaman** — keterangan yang sama, permanen, di bawah judul. Tidak bisa
+  ditutup: peringatan yang bisa ditutup adalah peringatan yang ditutup sekali di
+  hari pertama lalu tidak pernah terlihat lagi oleh orang yang sama, termasuk
+  pada hari ia sedang tergesa.
+
+Keduanya sengaja tumpang tindih. Yang di halaman menjaga orang yang sedang
+membaca; yang di jawaban ikut terbawa ketika jawabannya disalin ke WhatsApp atau
+ditempel ke notulen — dan pada saat itu keterangan di halaman sudah tidak ada di
+mana-mana.
+
+Ini penambalan, bukan penyelesaian. Yang menyelesaikan adalah korpus standar
+sendiri (pgvector di Supabase) atau pencarian web dengan kutipan, sehingga
+jawabannya bisa menunjuk sumber alih-alih meminta orang memercayainya.
 
 ## Import & file hasil export
 

@@ -14,6 +14,7 @@
   "standard": {
     "title": "Standar & Regulasi Electrical",
     "subtitle": "Tanya jawab standar (SNI, PUIL, IEC, NEC) — tidak menyentuh Revit",
+    "verify": "Nomor pasal dan angka tabel dijawab dari ingatan model, tanpa dokumen standar di depannya. Cek di dokumen aslinya sebelum dipakai di gambar kerja atau perhitungan yang ditandatangani.",
     "placeholder": "Tanya standar SNI/PUIL/IEC...",
     "send": "Kirim",
     "failed": "Gagal menghubungi asisten standar",

@@ -19,6 +19,7 @@ import {
   scrubLeaks,
   strayWords,
 } from "@/lib/history";
+import { type AiEvent, logAiEvent, statsOf } from "@/lib/aiEvents";
 
 export const runtime = "nodejs";
 
@@ -82,6 +83,36 @@ terasa lebih pas dalam bahasa lain, tulis padanannya dalam bahasa jawaban.
 
 Lambang satuan tetap ditulis sebagaimana mestinya — Ω, μF, cos φ, ΔV. Itu
 lambang teknis, bukan kata asing.
+
+NOMOR PASAL DAN ANGKA TABEL. Kamu menjawab dari ingatan, tanpa satu pun dokumen
+standar terbuka di depanmu, dan itu harus terlihat di jawabanmu.
+
+Aturan ini sudah kamu pegang untuk hal lain, di bawah: foto papan nama yang buram
+dikatakan tidak terbaca, karena menebak satu angka di situ lebih berbahaya
+daripada memintanya difoto ulang — angka itu dipakai orang untuk memilih
+pengaman. Nomor pasal dan angka tabel persis sama bahayanya, dengan satu bedanya
+yang membuatnya LEBIH berbahaya: ia tidak terlihat seperti tebakan. Foto yang
+buram terlihat buram; "PUIL 2011 pasal 3.24.2.1" terbaca seperti kutipan, entah
+ia benar atau tidak.
+
+Jadi:
+- Yang kamu yakin nomornya, sebut. Yang tidak, sebut ISINYA tanpa nomornya —
+  "PUIL mensyaratkan …" jauh lebih berguna daripada nomor pasal yang keliru.
+  Nomor yang keliru menyuruh orang mencari di tempat yang tidak memuat apa pun,
+  dan yang ia simpulkan dari situ adalah standarnya tidak mengatur hal itu.
+- Kalau ragu, katakan ragu DI KALIMAT ITU SENDIRI, bukan sebagai catatan di
+  akhir. Yang membaca sambil bekerja berhenti di kalimat yang ia butuhkan.
+- Jangan mengarang tahun edisi. "IEC 60364" tanpa tahun lebih baik daripada
+  "IEC 60364-4-41:2005" yang tahunnya salah.
+- Angka dari tabel — KHA, faktor koreksi, ukuran minimum penghantar — selalu
+  disebut beserta tabel asalnya DAN syarat pakainya (cara pemasangan, suhu
+  sekitar, jumlah inti berbeban). Angka tanpa syaratnya adalah angka yang akan
+  dipakai di keadaan yang bukan tempatnya.
+- Jawaban yang memuat nomor pasal atau angka tabel ditutup satu kalimat pendek
+  bahwa nomor dan angkanya perlu dicek di dokumen aslinya sebelum dipakai di
+  gambar kerja atau perhitungan yang ditandatangani. Satu kalimat, sekali, di
+  jawaban yang memang memuatnya — bukan paragraf peringatan di setiap jawaban,
+  dan tidak sama sekali pada jawaban yang tidak menyebut nomor apa pun.
 
 GAMBAR YANG DILAMPIRKAN. Pengguna bisa melampirkan foto atau tangkapan layar —
 papan nama panel, gambar kerja, tabel di buku standar, tampilan alat ukur. Baca
@@ -366,6 +397,13 @@ export async function POST(req: Request) {
 
       let reply = "";
 
+      // Telemetri giliran ini, dikumpulkan sambil jalan lalu ditulis sekali di
+      // ujung. Lihat lib/aiEvents.ts — isi pertanyaan dan jawabannya TIDAK ikut.
+      const startedAt = Date.now();
+      let stats: Partial<AiEvent> = {};
+      let redoNotice: string | null = null;
+      let strayCount = 0;
+
       /**
        * Isi sebuah giliran: teks saja, atau gambar-gambar lalu teksnya.
        *
@@ -422,6 +460,17 @@ export async function POST(req: Request) {
           }
         }
 
+        // Angka pemakaian dan `stop_reason` hanya ada pada pesan yang sudah
+        // utuh; potongan-potongan yang dialirkan di atas tidak membawanya.
+        //
+        // Dipagari try sendiri: jawabannya sudah sampai ke layar orangnya pada
+        // titik ini, dan telemetri yang melempar akan membatalkannya.
+        try {
+          stats = statsOf(await response.finalMessage());
+        } catch (err) {
+          console.error("[api/ai/standard] finalMessage gagal", err);
+        }
+
         return text;
       }
 
@@ -441,6 +490,7 @@ export async function POST(req: Request) {
         const redo = redoReason(reply, question, locale);
         if (redo) {
           console.warn("[api/ai/standard] jawaban ditulis ulang:", redo.notice);
+          redoNotice = redo.notice;
 
           // Yang sudah telanjur tampil di layar dibuang dulu; kalau tidak, hasil
           // percobaan kedua tersambung di belakang jawaban yang gagal itu.
@@ -473,6 +523,7 @@ export async function POST(req: Request) {
         const stray = strayWords(reply, question);
         if (stray) {
           console.warn("[api/ai/standard] kata beraksara asing:", stray.words.join(", "));
+          strayCount = stray.words.length;
 
           try {
             const asked = await anthropic.messages.create({
@@ -533,6 +584,15 @@ export async function POST(req: Request) {
               ? "the standards assistant cannot be reached right now"
               : "asisten standar sedang tidak bisa dihubungi",
         });
+        await logAiEvent(supabase, user.id, {
+          mode: "standard",
+          outcome: "error",
+          ...stats,
+          latency_ms: Date.now() - startedAt,
+          redo: redoNotice,
+          stray_words: strayCount,
+          error: "gateway_unreachable",
+        });
         controller.close();
         return;
       }
@@ -543,6 +603,15 @@ export async function POST(req: Request) {
             locale === "en"
               ? "the assistant returned no answer"
               : "asisten tidak mengembalikan jawaban",
+        });
+        await logAiEvent(supabase, user.id, {
+          mode: "standard",
+          outcome: "error",
+          ...stats,
+          latency_ms: Date.now() - startedAt,
+          redo: redoNotice,
+          stray_words: strayCount,
+          error: "empty_reply",
         });
         controller.close();
         return;
@@ -579,6 +648,15 @@ export async function POST(req: Request) {
       // Gagal menyimpan tidak boleh menelan jawaban yang sudah terbaca — user
       // tetap dapat jawabannya, hanya kehilangan konteks di pertanyaan berikutnya.
       if (saveError) console.error("[api/ai/standard] gagal menyimpan utas", saveError);
+
+      await logAiEvent(supabase, user.id, {
+        mode: "standard",
+        outcome: "answer",
+        ...stats,
+        latency_ms: Date.now() - startedAt,
+        redo: redoNotice,
+        stray_words: strayCount,
+      });
 
       controller.close();
     },
