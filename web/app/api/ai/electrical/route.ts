@@ -5,7 +5,7 @@ import { rateLimit, tooManyRequests } from "@/lib/rateLimit";
 import { buildMessages } from "@/lib/chatHistory";
 import { anthropic, MODEL } from "@/lib/anthropic";
 import { ELECTRICAL_SYSTEM_PROMPT, mentionsCommand, toolsForRole, withModelContext } from "@/lib/aiTools";
-import { COMMANDS_BY_NAME, canRun } from "@/lib/commands";
+import { COMMANDS_BY_NAME, canAutoRun, canRun } from "@/lib/commands";
 import { CommandValidationError, buildPayload } from "@/lib/queue";
 import { resolveFamilies } from "@/lib/familyChoice";
 import { expandRooms } from "@/lib/roomList";
@@ -41,6 +41,43 @@ const TURNS_PER_MINUTE = 30;
 const MAX_TOKENS = 16_000;
 
 /**
+ * Berapa pembacaan yang boleh dijalankan sistem sendiri untuk SATU pertanyaan.
+ *
+ * Empat, karena urutan yang diwajibkan prompt — categories → parameters →
+ * elements — adalah tiga, dan satu sisa untuk pertanyaan yang butuh satu
+ * penyaringan lagi.
+ *
+ * Ditegakkan DI SINI, bukan hanya di browser yang menjalankan loop-nya. Yang
+ * melingkar adalah client, jadi client-lah yang menghitung; tapi sebuah bug di
+ * sana — atau sebuah `curl` — berarti pemanggilan model tanpa akhir, dan yang
+ * membayarnya kuota gateway. Batas laju 30 giliran/menit memang menahan lajunya,
+ * tapi ia tidak pernah menghentikan apa pun: 30 per menit selamanya tetap
+ * selamanya.
+ */
+const MAX_AUTO_STEPS = 4;
+
+/**
+ * Giliran yang MEMBANGUNKAN model setelah sebuah pembacaan selesai.
+ *
+ * Disusun di server, bukan dikirim client, dan itu bukan soal keamanan
+ * melainkan soal satu kalimat yang menentukan perilaku. Kalau client yang
+ * mengarang kalimat ini, ia akan berbeda antara satu tempat pemanggil dan
+ * tempat berikutnya, dan yang berbeda adalah apakah model menjawab atau
+ * memanggil tool sekali lagi "untuk memastikan".
+ *
+ * Bentuknya catatan sistem, sama dengan catatan lain di riwayat (lihat
+ * chatHistory.ts), karena itu memang apa adanya: tidak ada manusia yang mengetik
+ * apa pun pada giliran ini.
+ */
+const CONTINUATION =
+  "[CATATAN SISTEM] Hasil perintah bacamu sudah ada di catatan di atas — " +
+  "pengguna TIDAK mengetik apa pun, sistem yang membangunkanmu. Kalau catatan itu " +
+  "sudah cukup untuk menjawab pertanyaan terakhir pengguna, JAWAB SEKARANG dengan " +
+  "angka dan nama dari catatan itu, dan jangan memanggil tool apa pun. Kalau memang " +
+  "masih kurang satu langkah baca lagi, panggil tool bacanya — pakai nama yang " +
+  "persis seperti di blok ISI HASILNYA.";
+
+/**
  * Menerjemahkan kalimat biasa jadi satu perintah terstruktur — TANPA
  * menjalankannya.
  *
@@ -68,6 +105,13 @@ export async function POST(req: Request) {
     // jawabannya sudah ada di halaman itu — mengambilnya ulang di server
     // berarti satu putaran antrean lagi ke Revit untuk data yang sama.
     context?: { familyTypes?: Record<string, string[]>; rooms?: string[] };
+    /**
+     * Giliran ini dibangkitkan sistem setelah sebuah pembacaan selesai, bukan
+     * diketik orang. `message` tidak dipakai; yang dikirim CONTINUATION.
+     */
+    continuation?: boolean;
+    /** Pembacaan otomatis yang ke berapa dalam pertanyaan ini, mulai dari 1. */
+    step?: unknown;
   };
   try {
     body = await req.json();
@@ -75,11 +119,32 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "body harus JSON" }, { status: 400 });
   }
 
-  const message = typeof body.message === "string" ? body.message.trim() : "";
   const projectId = body.projectId;
 
+  const continuation = body.continuation === true;
+  const step = Number.isInteger(body.step) ? (body.step as number) : 0;
+
+  // Langkah yang melewati batas ditolak di sini, sebelum satu token pun dibayar.
+  // Client memang menghitung sendiri, tapi hitungan client bukan batas — ia
+  // hanya niat baik sebuah program yang bisa punya bug.
+  if (continuation && (step < 1 || step > MAX_AUTO_STEPS)) {
+    return NextResponse.json(
+      { error: `langkah baca otomatis dibatasi ${MAX_AUTO_STEPS} per pertanyaan` },
+      { status: 400 }
+    );
+  }
+
+  // Giliran lanjutan tidak punya pesan dari siapa pun, dan itu wajar: yang
+  // ditanyakan sudah ada di riwayat, dan yang baru adalah hasil pembacaannya.
+  // Kalimatnya disusun server (lihat CONTINUATION).
+  const message = continuation
+    ? CONTINUATION
+    : typeof body.message === "string"
+      ? body.message.trim()
+      : "";
+
   if (!message) return NextResponse.json({ error: "`message` wajib diisi" }, { status: 400 });
-  if (message.length > MAX_MESSAGE_CHARS) {
+  if (!continuation && message.length > MAX_MESSAGE_CHARS) {
     return NextResponse.json(
       { error: `pesan terlalu panjang (maksimal ${MAX_MESSAGE_CHARS} karakter)` },
       { status: 400 }
@@ -138,6 +203,7 @@ export async function POST(req: Request) {
       mode: "electrical",
       outcome: "error",
       latency_ms: Date.now() - startedAt,
+      step,
       error: "gateway_unreachable",
     });
     return NextResponse.json({ error: "asisten sedang tidak bisa dihubungi" }, { status: 502 });
@@ -169,6 +235,7 @@ export async function POST(req: Request) {
       ...stats,
       latency_ms: Date.now() - startedAt,
       forced_retry: forcedRetry,
+      step,
       ...event,
     });
     return NextResponse.json(payload);
@@ -349,6 +416,21 @@ export async function POST(req: Request) {
         commandText,
         confirm: Boolean(spec.confirm),
         note: text || null,
+        /**
+         * Perintah ini boleh dijalankan sistem sendiri, dan hasilnya boleh
+         * dikembalikan kepada model sebagai langkah berikutnya.
+         *
+         * Dijawab SERVER, dari katalog (lihat canAutoRun), bukan disimpulkan
+         * browser dari nama perintahnya. Bukan sebagai pagar keamanan — sebuah
+         * client memang bisa memanggil /api/commands sendiri untuk apa pun yang
+         * perannya izinkan — melainkan supaya jawaban atas "perintah mana yang
+         * boleh berjalan tanpa ditunggui" hanya ada di satu tempat. Dua tempat
+         * berarti dua jawaban, dan yang kedua ketinggalan saat katalognya berubah.
+         *
+         * Yang MENGHITUNG langkahnya tetap client: ia yang melingkar, jadi ia
+         * yang tahu sudah berapa kali. Server hanya menolak yang melewati batas.
+         */
+        autoRun: canAutoRun(spec),
       },
       { outcome: "command", tool: spec.name }
     );
@@ -373,6 +455,7 @@ export async function POST(req: Request) {
       ...stats,
       latency_ms: Date.now() - startedAt,
       forced_retry: forcedRetry,
+      step,
       error: "build_payload_failed",
     });
     return NextResponse.json({ error: "gagal menyusun perintah" }, { status: 500 });

@@ -16,8 +16,9 @@ import {
 } from "@/lib/commands";
 import { familiesFor, matchFamily, type RevitFamily } from "@/lib/families";
 import { autoGrid, awkwardCount, flip, formatGrid, friendlierCounts, gridCount, parseGrid } from "@/lib/grid";
-import { turnsFromChat } from "@/lib/chatHistory";
+import { turnsFromChat, type ChatBubble } from "@/lib/chatHistory";
 import { summarizeResult } from "@/lib/resultSummary";
+import { digestResult } from "@/lib/resultDigest";
 import CommandChat, { type ChatBody, type ChatEntry } from "./CommandChat";
 import ResultView from "./ResultView";
 
@@ -44,6 +45,17 @@ interface RunEntry {
 }
 
 const TERMINAL: QueueStatus[] = ["completed", "failed", "cancelled"];
+
+/**
+ * Berapa pembacaan yang boleh dijalankan sendiri untuk satu pertanyaan.
+ *
+ * HARUS sama dengan MAX_AUTO_STEPS di app/api/ai/electrical/route.ts. Yang di
+ * sana yang menegakkannya — sebuah langkah kelima ditolak dengan 400 — dan yang
+ * di sini yang berhenti dengan sopan sebelum sampai ke situ. Kalau keduanya
+ * berbeda, yang terlihat pengguna adalah galat di langkah terakhir, bukan
+ * kalimat yang menjelaskan bahwa pembacaannya sudah cukup banyak.
+ */
+const MAX_AUTO_STEPS = 4;
 
 /** Satu perintah yang belum selesai di proyek ini, siapa pun pengirimnya. */
 interface ActiveCommand {
@@ -160,6 +172,27 @@ export default function CommandRunner({
   const [chatEntries, setChatEntries] = useState<ChatEntry[]>([]);
   const [chatBusy, setChatBusy] = useState(false);
   const chatId = useRef(0);
+
+  /**
+   * Pembacaan keberapa yang sedang berjalan dalam pertanyaan ini; 0 = tidak ada
+   * rantai yang berjalan.
+   *
+   * Ditampilkan karena satu pertanyaan sekarang bisa berarti empat perjalanan ke
+   * Revit, dan tanpa angka ini yang terlihat cuma "Menyusun perintah…" yang tidak
+   * berubah selama beberapa menit — bunyi yang sama persis dengan halaman yang
+   * menggantung.
+   */
+  const [chatStep, setChatStep] = useState(0);
+
+  /**
+   * Ditekan orangnya untuk memotong rantai baca yang berjalan terlalu lama.
+   *
+   * Sebuah ref, bukan state: yang membacanya adalah loop di dalam `sendChat`,
+   * yang berjalan melewati beberapa await dan karena itu memegang nilai state
+   * dari render saat ia dipanggil. Sebuah state di sini akan selalu terbaca
+   * `false` di dalam loop — tombolnya menyala, dan tidak menghentikan apa pun.
+   */
+  const chatStopped = useRef(false);
 
   /**
    * Gelembung mana yang menunggu jawaban perintah mana: id antrean → id gelembung.
@@ -338,6 +371,41 @@ export default function CommandRunner({
     },
     [enqueue, t]
   );
+
+  /**
+   * Menunggu perintah yang SUDAH diantre sampai Revit menjawabnya.
+   *
+   * Berbeda dari `runAndWait` di atas, dan bedanya perlu: yang ini tidak
+   * mengantre apa pun. Barisnya sudah dibuat `dispatch`, gelembungnya sudah
+   * menampilkan kemajuannya lewat polling yang memang sudah ada, dan yang belum
+   * ada cuma satu hal — sebuah janji yang selesai ketika hasilnya sampai,
+   * supaya rantai baca bisa melanjutkan ke langkah berikutnya.
+   *
+   * Ya, ini berarti dua pihak menanyakan perintah yang sama setiap dua detik:
+   * yang ini untuk mengendalikan rantainya, dan polling gelembung untuk
+   * menampilkan hasilnya. Dibiarkan begitu dengan sengaja — menggabungkannya
+   * berarti loop ini harus mengamati perubahan state React dari dalam sebuah
+   * fungsi async, dan cara-cara melakukan itu semuanya lebih mudah salah
+   * daripada satu permintaan GET tambahan pada JSON sebesar beberapa ratus byte.
+   *
+   * 45 × 2 detik: satu `inspect` pada model besar bisa lama, dan yang lebih
+   * buruk daripada menunggu sembilan puluh detik adalah rantai yang menyerah
+   * tepat sebelum Revit menjawab. Tombol Berhenti yang membuat angka itu boleh
+   * sebesar ini.
+   */
+  const waitForRun = useCallback(async (id: string, tries = 45) => {
+    for (let i = 0; i < tries; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      if (chatStopped.current) return null;
+
+      const res = await fetch(`/api/commands?id=${encodeURIComponent(id)}`);
+      if (!res.ok) continue;
+
+      const cmd = (await res.json()) as QueuedCommand;
+      if (TERMINAL.includes(cmd.status)) return cmd;
+    }
+    return null;
+  }, []);
 
   /** Daftar `{ id, label }` yang dikembalikan query dan list_sheets. */
   function itemsOf(result: unknown) {
@@ -745,17 +813,25 @@ export default function CommandRunner({
    * pertanyaan "family mana". Keduanya harus melewati konfirmasi yang sama dan
    * persimpangan "ruangan ini sudah berisi" yang sama.
    */
+  /**
+   * Menjalankan satu usulan perintah, dan mengembalikan baris antreannya.
+   *
+   * Kembaliannya ada karena rantai baca: langkah berikutnya baru boleh disusun
+   * setelah hasil langkah ini sampai, dan yang menghubungkan keduanya adalah id
+   * antrean ini. `null` berarti tidak ada yang berangkat — ditahan, dibatalkan,
+   * atau gagal ditulis — dan gelembungnya sudah mengatakan yang mana.
+   */
   async function runProposal(
     bubble: number,
     spec: CommandSpec,
     vals: Record<string, unknown>
-  ) {
+  ): Promise<{ id: string; commandText: string } | null> {
     // Satu pertanyaan untuk yang tidak bisa dibatalkan. Kecepatan tidak
     // sebanding dengan menghapus perangkat di model orang lain karena satu
     // kalimat yang salah tafsir.
     if (spec.confirm && !window.confirm(t("command.confirm"))) {
       patchChat(bubble, { state: "held" });
-      return;
+      return null;
     }
 
     try {
@@ -763,7 +839,7 @@ export default function CommandRunner({
       // null = orangnya membatalkan di persimpangan "ruangan ini sudah berisi".
       if (!queued) {
         patchChat(bubble, { state: "held" });
-        return;
+        return null;
       }
       // Teks perintahnya diperbarui: yang berangkat bisa berbeda dari yang
       // diusulkan — modifikasi alih-alih penambahan, dan grid yang dihitung
@@ -775,12 +851,14 @@ export default function CommandRunner({
       // pertanyaan mana yang ia jawab.
       runBubble.current.set(queued.id, bubble);
       patchChat(bubble, { state: "queued", commandText: queued.commandText, runId: queued.id });
+      return queued;
     } catch (err) {
       const withIssues = err as Error & { issues?: string[] };
       patchChat(bubble, {
         state: "failed",
         error: withIssues.issues?.join(" ") ?? withIssues.message ?? t("command.sendFailed"),
       });
+      return null;
     }
   }
 
@@ -873,109 +951,260 @@ export default function CommandRunner({
   }
 
   /** Satu giliran percakapan: kalimat masuk, usulan perintah keluar. */
+  /**
+   * Satu pertanyaan, sebanyak pembacaan yang diperlukan untuk menjawabnya.
+   *
+   * Dulu satu pertanyaan = satu pemanggilan model = paling banyak satu perintah,
+   * dan hasil perintah itu TIDAK pernah kembali ke model. Akibatnya urutan yang
+   * diwajibkan prompt sendiri — `what=categories` untuk tahu kategori apa yang
+   * ada, lalu `what=parameters` untuk tahu nama parameternya persis, baru
+   * `what=elements` — harus dikerjakan orangnya: tiga kali mengetik, tiga kali
+   * menunggu Revit, untuk satu pertanyaan yang ia ajukan sekali. Dan di antara
+   * ketiganya ia sendiri yang harus menyalin nama parameter dari layar ke
+   * kalimat berikutnya.
+   *
+   * Sekarang yang menjalankan urutan itu sistem. Perintah BACA dijalankan,
+   * ditunggu, dan hasilnya dikembalikan kepada model sebagai catatan sistem
+   * beserta isinya (lihat digestResult) — sampai ia bisa menjawab, atau sampai
+   * batas empat pembacaan.
+   *
+   * YANG TIDAK BERUBAH, dan ini pagarnya: perintah yang MENGUBAH model tidak
+   * pernah masuk rantai ini. Ia diusulkan sekali, berhenti di situ, dan
+   * hasilnya tidak dikembalikan kepada model untuk dilanjutkan. Yang memutuskan
+   * perintah mana yang boleh berjalan sendiri adalah server, dari katalog
+   * (`canAutoRun`) — bukan halaman ini menyimpulkannya dari nama perintah.
+   */
   async function sendChat(message: string) {
     if (!project) return;
+
     addChat({ role: "user", text: message });
     setChatBusy(true);
+    setChatStep(0);
+    chatStopped.current = false;
+
+    /**
+     * Riwayat percakapan, ditumbuhkan LOKAL — tidak dibaca ulang dari state.
+     *
+     * Ini bukan gaya, ini syarat supaya rantainya berjalan. `chatEntries` yang
+     * terbaca di dalam fungsi ini adalah nilainya pada render saat ia dipanggil,
+     * dan ia tidak akan pernah memuat gelembung yang ditambahkan beberapa await
+     * kemudian. Membacanya ulang di langkah kedua berarti mengirim riwayat yang
+     * TIDAK memuat hasil langkah pertama — dan model yang tidak melihat hasil
+     * pembacaannya akan meminta pembacaan yang sama lagi. Setiap langkah, sampai
+     * batasnya habis, tanpa satu pun galat muncul di mana pun.
+     */
+    const bubbles: ChatBubble[] = [...chatEntries, { role: "user", text: message }];
 
     try {
-      const history = turnsFromChat(chatEntries);
+      // `reads` = pembacaan yang SUDAH dijalankan dalam pertanyaan ini, dan
+      // sekaligus nomor langkah yang dikirim ke server.
+      let reads = 0;
 
-      const res = await fetch("/api/ai/electrical", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message,
-          projectId: project.projectId,
-          history,
-          // Nama yang benar-benar ada di model ikut dikirim.
-          //
-          // Tanpa ini asisten mengarang nama tipe yang masuk akal — "downlight"
-          // alih-alih "ACT_E_Downlight: 18W" — dan perintahnya berangkat,
-          // antre, lalu gagal di Revit karena family itu tidak ada. Yang
-          // terlihat pengguna: perintah yang katanya terkirim, lampu yang tidak
-          // pernah muncul di gambar, dan sebabnya di baris hasil yang harus
-          // digulir untuk dibaca.
-          //
-          // Daftarnya sudah ada di halaman ini dari model_info; yang belum ada
-          // adalah jalan dari sana ke prompt.
-          context: model
-            ? { familyTypes: model.familyTypes, rooms: model.rooms }
-            : undefined,
-        }),
-      });
-      const body = await res.json();
+      for (;;) {
+        if (chatStopped.current) {
+          addChat({ role: "assistant", text: t("chat.stopped") });
+          return;
+        }
 
-      if (!res.ok) {
-        addChat({ role: "assistant", text: body.error ?? t("chat.failed") });
-        return;
-      }
+        const res = await fetch("/api/ai/electrical", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            // Giliran lanjutan tidak membawa pesan: kalimatnya disusun server
+            // (lihat CONTINUATION di route-nya) supaya ia sama di setiap
+            // langkah dan tidak bisa bergeser dari satu pemanggil ke pemanggil
+            // berikutnya.
+            ...(reads === 0 ? { message } : { continuation: true, step: reads }),
+            projectId: project.projectId,
+            /**
+             * Riwayat yang dikirim TIDAK memuat pertanyaan yang sedang berjalan
+             * pada langkah pertama.
+             *
+             * Pada langkah itu pertanyaannya dikirim sebagai `message`, dan
+             * server yang menempelkannya di ujung riwayat. Mengirim keduanya
+             * berarti pesan user yang sama berdiri dua kali berurutan — dan
+             * `buildMessages` menggabungkan giliran yang perannya sama, jadi yang
+             * dibaca model adalah satu pesan yang mengulang pertanyaan yang sama
+             * dua kali.
+             *
+             * Bentuk itu sudah pernah mahal di repo ini (lihat chatHistory.ts):
+             * bacaan wajar model atas permintaan yang terulang adalah "dia
+             * menanyakannya lagi, berarti sudah saya kerjakan" — lalu ia menjawab
+             * bahwa perintahnya sudah dijalankan, tanpa memanggil tool apa pun.
+             *
+             * Pada langkah lanjutan pertanyaannya justru HARUS ada di riwayat:
+             * `message` sudah dipakai CONTINUATION, dan tanpa pertanyaannya model
+             * tidak tahu hasil pembacaan ini sedang menjawab apa.
+             */
+            history: turnsFromChat(reads === 0 ? bubbles.slice(0, -1) : bubbles),
+            // Nama yang benar-benar ada di model ikut dikirim.
+            //
+            // Tanpa ini asisten mengarang nama tipe yang masuk akal — "downlight"
+            // alih-alih "ACT_E_Downlight: 18W" — dan perintahnya berangkat,
+            // antre, lalu gagal di Revit karena family itu tidak ada. Yang
+            // terlihat pengguna: perintah yang katanya terkirim, lampu yang tidak
+            // pernah muncul di gambar, dan sebabnya di baris hasil yang harus
+            // digulir untuk dibaca.
+            //
+            // Daftarnya sudah ada di halaman ini dari model_info; yang belum ada
+            // adalah jalan dari sana ke prompt.
+            context: model
+              ? { familyTypes: model.familyTypes, rooms: model.rooms }
+              : undefined,
+          }),
+        });
+        const body = await res.json();
 
-      if (body.kind === "reply") {
-        addChat({ role: "assistant", text: body.text, nothingSent: Boolean(body.nothingSent) });
-        return;
-      }
+        if (!res.ok) {
+          addChat({ role: "assistant", text: body.error ?? t("chat.failed") });
+          return;
+        }
 
-      // Family yang ditebak model tidak cocok dengan satu pun family di model.
-      // Perintahnya ditahan dan daftarnya ditawarkan sebagai tombol — dijawab
-      // satu ketukan, tanpa membuka formulir dan mengisi ulang.
-      if (body.kind === "choose") {
-        addChat({
-          role: "choice",
+        if (body.kind === "reply") {
+          addChat({ role: "assistant", text: body.text, nothingSent: Boolean(body.nothingSent) });
+          return;
+        }
+
+        // Family yang ditebak model tidak cocok dengan satu pun family di model.
+        // Perintahnya ditahan dan daftarnya ditawarkan sebagai tombol — dijawab
+        // satu ketukan, tanpa membuka formulir dan mengisi ulang.
+        if (body.kind === "choose") {
+          addChat({
+            role: "choice",
+            text: body.note ?? "",
+            command: body.command,
+            values: body.values ?? {},
+            field: body.field,
+            category: body.category,
+            guessed: body.guessed ?? "",
+            choices: body.choices ?? [],
+          });
+          return;
+        }
+
+        const spec = COMMANDS_BY_NAME[body.command];
+
+        // Satu permintaan, satu perintah per ruangan.
+        if (body.kind === "batch" && spec) {
+          await runBatch(spec, body.items ?? [], body.note ?? "");
+          return;
+        }
+
+        const incomplete = Boolean(body.issues?.length);
+
+        const bubble = addChat({
+          role: "proposal",
           text: body.note ?? "",
+          commandText: body.commandText ?? `/${body.command}`,
           command: body.command,
           values: body.values ?? {},
-          field: body.field,
-          category: body.category,
-          guessed: body.guessed ?? "",
-          choices: body.choices ?? [],
+          issues: body.issues,
+          // Belum "terkirim". Baris antreannya baru ada beberapa ratus milidetik
+          // dari sekarang, dan penulisannya masih bisa gagal.
+          state: incomplete ? undefined : "sending",
         });
-        return;
-      }
 
-      const spec = COMMANDS_BY_NAME[body.command];
+        // Perintah di luar katalog: model menyebut nama yang tidak ada, jadi tidak
+        // ada apa pun yang bisa dikirim. Dulu gelembungnya tetap berbunyi "sudah
+        // dikirim ke Revit" — kalimat yang tidak pernah benar.
+        if (!spec) {
+          patchChat(bubble, {
+            state: "failed",
+            error: `perintah "${body.command}" tidak ada di katalog`,
+          });
+          return;
+        }
 
-      // Satu permintaan, satu perintah per ruangan.
-      if (body.kind === "batch" && spec) {
-        await runBatch(spec, body.items ?? [], body.note ?? "");
-        return;
-      }
+        // Yang kurang lengkap tidak dikirim: daftar `issues` di gelembungnya
+        // menyebutkan apa yang belum disebut, dan menebak sisanya berarti
+        // menempatkan perangkat dengan angka yang tidak pernah diminta siapa pun.
+        if (incomplete) return;
 
-      const incomplete = Boolean(body.issues?.length);
+        // Perintah yang mengubah model. Dijalankan seperti sebelumnya, dan
+        // rantainya berhenti di sini — hasilnya tidak dikembalikan ke model,
+        // karena "sudah terpasang, sekarang lanjutkan sendiri" bukan sesuatu
+        // yang boleh diputuskan tanpa seorang manusia melihatnya lebih dulu.
+        if (!body.autoRun) {
+          await runProposal(bubble, spec, body.values ?? {});
+          return;
+        }
 
-      const bubble = addChat({
-        role: "proposal",
-        text: body.note ?? "",
-        commandText: body.commandText ?? `/${body.command}`,
-        command: body.command,
-        values: body.values ?? {},
-        issues: body.issues,
-        // Belum "terkirim". Baris antreannya baru ada beberapa ratus milidetik
-        // dari sekarang, dan penulisannya masih bisa gagal.
-        state: incomplete ? undefined : "sending",
-      });
+        // --- satu langkah baca: dijalankan, ditunggu, hasilnya dibawa balik ---
 
-      // Perintah di luar katalog: model menyebut nama yang tidak ada, jadi tidak
-      // ada apa pun yang bisa dikirim. Dulu gelembungnya tetap berbunyi "sudah
-      // dikirim ke Revit" — kalimat yang tidak pernah benar.
-      if (!spec) {
-        patchChat(bubble, {
-          state: "failed",
-          error: `perintah "${body.command}" tidak ada di katalog`,
+        // Berhenti yang ditekan selama model menyusun jawabannya. Tanpa
+        // pemeriksaan di sini, pembacaan yang sudah disiapkan tetap berangkat ke
+        // antrean Revit sesudah orangnya menekan Berhenti — dan yang ia lihat
+        // adalah tombol yang tidak bekerja.
+        if (chatStopped.current) {
+          patchChat(bubble, { state: "held" });
+          addChat({ role: "assistant", text: t("chat.stopped") });
+          return;
+        }
+
+        reads++;
+        setChatStep(reads);
+
+        const queued = await runProposal(bubble, spec, body.values ?? {});
+        // Tidak ada yang berangkat. Gelembungnya sudah mengatakan sebabnya, dan
+        // rantai yang melanjutkan tanpa hasil hanya akan menebak.
+        if (!queued) return;
+
+        const done = await waitForRun(queued.id);
+
+        if (chatStopped.current) {
+          addChat({ role: "assistant", text: t("chat.stopped") });
+          return;
+        }
+
+        // Revit tidak menjawab dalam waktu yang wajar. Perintahnya tetap di
+        // antrean dan gelembungnya akan berubah sendiri kalau jawabannya datang
+        // nanti; yang berhenti hanya rantainya.
+        if (!done) {
+          addChat({ role: "assistant", text: t("chat.readTimeout") });
+          return;
+        }
+
+        // Gagal atau dibatalkan: gelembungnya sudah menampilkan sebabnya lewat
+        // polling. Rantai TIDAK melanjutkan dan TIDAK mengirim ulang dengan
+        // argumen yang ditebak — perintah baca yang gagal berulang kali secara
+        // otomatis adalah cara membakar antrean Revit tanpa ada yang meminta.
+        if (done.status !== "completed") return;
+
+        // Hasilnya masuk riwayat langkah berikutnya: ringkasannya untuk dibaca,
+        // ISINYA untuk dipakai. Tanpa isinya, langkah berikutnya cuma tahu "12
+        // parameter" dan harus menebak namanya — dan nama yang salah
+        // mengembalikan nol baris tanpa satu pun galat.
+        bubbles.push({
+          role: "proposal",
+          text: body.note ?? "",
+          command: spec.name,
+          commandText: queued.commandText,
+          runStatus: "completed",
+          summary: summarizeResult(done.result_json, t),
+          // Kalau Revit menjawab dengan hasil yang kosong atau bentuknya tidak
+          // dikenali, keduanya bisa jadi string kosong sekaligus — dan catatan
+          // tanpa keduanya jatuh ke cabang "hasilnya belum tentu ada di giliran
+          // ini". Model yang membaca itu menyimpulkan pembacaannya belum
+          // terjadi, lalu mengirim perintah yang sama lagi. Satu kalimat di sini
+          // menutup jalan itu.
+          resultDigest:
+            digestResult(done.result_json) || "(Revit menjawab, tapi hasilnya kosong)",
         });
-        return;
+
+        if (reads >= MAX_AUTO_STEPS) {
+          addChat({
+            role: "assistant",
+            text: t("chat.stepLimit").replace("{n}", String(reads)),
+          });
+          return;
+        }
       }
-
-      // Yang kurang lengkap tidak dikirim: daftar `issues` di gelembungnya
-      // menyebutkan apa yang belum disebut, dan menebak sisanya berarti
-      // menempatkan perangkat dengan angka yang tidak pernah diminta siapa pun.
-      if (incomplete) return;
-
-      await runProposal(bubble, spec, body.values ?? {});
     } catch (err) {
       addChat({ role: "assistant", text: err instanceof Error ? err.message : String(err) });
     } finally {
       setChatBusy(false);
+      setChatStep(0);
+      chatStopped.current = false;
     }
   }
 
@@ -1215,6 +1444,11 @@ export default function CommandRunner({
         <CommandChat
           entries={chatEntries}
           busy={chatBusy}
+          step={chatStep}
+          maxSteps={MAX_AUTO_STEPS}
+          onStop={() => {
+            chatStopped.current = true;
+          }}
           disabled={!project}
           onSend={sendChat}
           onChoose={chooseFamily}

@@ -1301,6 +1301,46 @@ export function canRun(spec: CommandSpec, role: Role): boolean {
   return RANK[role] >= RANK[spec.role];
 }
 
+/**
+ * Perintah yang boleh dijalankan sistem SENDIRI, tanpa seorang manusia menekan
+ * apa pun, sebagai langkah antara di tengah satu pertanyaan.
+ *
+ * Inilah pagar dari loop baca berantai: "berapa downlight 22W di lantai 1"
+ * membutuhkan tiga pembacaan berurutan (categories → parameters → elements), dan
+ * yang menjalankan ketiganya adalah sistem, bukan orang yang mengetik tiga kali.
+ * Jadi pertanyaan "perintah mana yang boleh berjalan tanpa ditunggui" harus
+ * dijawab di satu tempat, dan tempatnya di sini — bukan sebuah daftar nama di
+ * dalam route, yang akan berbeda dari katalog ini pada perubahan pertama.
+ *
+ * TIGA syarat, dan ketiganya harus terpenuhi. Satu syarat sudah cukup untuk
+ * membedakan baca dari tulis hari ini; tiga syarat adalah yang masih benar
+ * setelah katalog ini berubah:
+ *
+ *   group === "read"   — maksudnya membaca. Sengaja bukan daftar nama: perintah
+ *                        baca yang ditambahkan nanti ikut, tanpa ada yang perlu
+ *                        ingat memasukkannya.
+ *   role === "viewer"  — tidak ada perintah yang mengubah model yang boleh
+ *                        dijalankan seorang viewer, jadi apa pun yang menuntut
+ *                        editor bukan bacaan. Ini yang menangkap perintah yang
+ *                        salah dikelompokkan ke "read" di kemudian hari.
+ *   !confirm           — yang butuh pertanyaan sebelum berangkat, per definisi,
+ *                        tidak boleh berangkat tanpa ditanyakan.
+ *
+ * `hidden` juga ditolak: perintah tersembunyi tidak pernah ditawarkan sebagai
+ * tool kepada model (lihat toolsForRole), jadi ia tidak akan pernah sampai ke
+ * sini — dan sesuatu yang tidak mungkin terjadi tetap lebih baik dinyatakan
+ * daripada disimpulkan pembaca berikutnya.
+ *
+ * Yang TIDAK ikut, dan sebabnya: `list_sheets`, `export`, `print_pdf`,
+ * `export_cad`. Ketiga yang terakhir menulis berkas ke disk PC Revit — itu
+ * akibat, bukan bacaan. `list_sheets` memang membaca, tapi ia berkelompok
+ * `export`, dan mengikutkannya berarti menambahkan pengecualian bernama ke
+ * fungsi yang seluruh gunanya justru tidak punya daftar nama.
+ */
+export function canAutoRun(spec: CommandSpec): boolean {
+  return spec.group === "read" && spec.role === "viewer" && !spec.confirm && !spec.hidden;
+}
+
 export function commandsForGroup(group: CommandSpec["group"], role: Role): CommandSpec[] {
   return COMMANDS.filter((c) => c.group === group && !c.hidden && canRun(c, role));
 }

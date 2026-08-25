@@ -176,6 +176,70 @@ describe("turnsFromChat", () => {
     expect(turn.content).not.toMatch(/HASILNYA/);
   });
 
+  it("catatan hasil membawa ISI hasilnya, bukan cuma ringkasannya", () => {
+    // Inti rantai baca berantai. Ringkasan `inspect what=parameters` berbunyi
+    // "12 parameter" tanpa satu pun namanya — dan yang dibutuhkan langkah
+    // berikutnya justru nama-nama itu, persis. Nama yang salah mengembalikan
+    // kolom KOSONG, dan kosong tidak bisa dibedakan dari model yang memang
+    // tidak punya nilainya.
+    const [turn] = turnsFromChat([
+      {
+        role: "proposal",
+        text: "",
+        command: "inspect",
+        commandText: "/inspect what=parameters category=lighting",
+        runStatus: "completed",
+        summary: "12 parameter",
+        resultDigest: "parameters (2):\n- name=Wattage type=Double\n- name=Mark type=String",
+      },
+    ]);
+
+    expect(turn.content).toMatch(/HASILNYA: 12 parameter/);
+    expect(turn.content).toContain("ISI HASILNYA");
+    expect(turn.content).toContain("Wattage");
+  });
+
+  it("hasil tanpa ringkasan yang jujur tetap dicatat sebagai sudah dijawab", () => {
+    // Sebelumnya cabang ini menuntut `summary`, jadi hasil yang bentuknya belum
+    // dikenali `summarizeResult` jatuh ke catatan "hasilnya belum tentu ada" —
+    // padahal Revit sudah menjawab, dan isinya ada di tangan. Rantai bacanya
+    // lalu mengulang perintah yang sama.
+    const [turn] = turnsFromChat([
+      {
+        role: "proposal",
+        text: "",
+        command: "query",
+        commandText: "/query what=all",
+        runStatus: "completed",
+        resultDigest: "aneh: 1",
+      },
+    ]);
+
+    expect(turn.content).toMatch(/Revit sudah menjawab/);
+    expect(turn.content).toContain("aneh: 1");
+    expect(turn.content).not.toMatch(/belum tentu ada di giliran ini/);
+  });
+
+  it("tanpa digest, catatannya sama seperti sebelumnya", () => {
+    // Riwayat yang disusun ulang dari layar pada giliran berikutnya TIDAK
+    // membawa digest — itu disengaja, karena isi lengkap setiap pembacaan yang
+    // pernah terjadi adalah biaya input yang dibayar berulang untuk data yang
+    // sudah selesai dipakai.
+    const [turn] = turnsFromChat([
+      {
+        role: "proposal",
+        text: "",
+        command: "query",
+        commandText: "/query what=lighting",
+        runStatus: "completed",
+        summary: "Lampu: 128",
+      },
+    ]);
+
+    expect(turn.content).toMatch(/HASILNYA: Lampu: 128/);
+    expect(turn.content).not.toContain("ISI HASILNYA");
+  });
+
   it("menyebutkan nama tool dari teks perintah kalau tidak dikirim terpisah", () => {
     const [turn] = turnsFromChat([
       { role: "proposal", text: "", commandText: "/modify_devices Lounge grid=2x5" },

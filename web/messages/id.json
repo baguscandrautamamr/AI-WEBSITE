@@ -333,7 +333,12 @@
     "showCommand": "lihat perintah",
     "hideCommand": "sembunyikan perintah",
     "runFailed": "Gagal di Revit",
-    "finished": "Selesai dijalankan di Revit."
+    "finished": "Selesai dijalankan di Revit.",
+    "stop": "Berhenti",
+    "stopped": "Dihentikan. Perintah yang sudah masuk antrean Revit tetap berjalan sampai selesai.",
+    "step": "Membaca model… langkah {n} dari {max}",
+    "stepLimit": "Sudah {n} kali saya membaca model untuk pertanyaan ini, jadi saya berhenti di sini — jawabannya mungkin belum lengkap. Kalau begitu, sebutkan lantai atau ruangan yang dimaksud supaya pembacaannya lebih sempit.",
+    "readTimeout": "Revit belum menjawab pembacaan ini, jadi rantainya berhenti. Pastikan Revit terbuka dengan add-in berjalan, lalu tanyakan lagi."
   },
   "importExcel": {
     "title": "Import Excel",

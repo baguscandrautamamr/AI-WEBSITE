@@ -1,8 +1,22 @@
 /** Berapa giliran percakapan yang ikut dikirim sebagai konteks. */
 export const MAX_HISTORY = 12;
 
-/** Potongan tiap giliran lama, supaya konteks tidak bisa digelembungkan. */
-export const MAX_TURN_CHARS = 4_000;
+/**
+ * Potongan tiap giliran lama, supaya konteks tidak bisa digelembungkan.
+ *
+ * Dinaikkan dari 4.000 karena catatan hasil sekarang bisa membawa ISI hasilnya
+ * (sampai MAX_DIGEST_CHARS = 3.000, lihat lib/resultDigest.ts) di samping teks
+ * catatannya sendiri. Pada 4.000 keduanya tidak muat, dan yang terjadi adalah
+ * pemotongan DIAM di sini: yang terbuang justru ujung digest — termasuk kalimat
+ * digest itu sendiri yang mengatakan bahwa isinya terpotong. Model lalu membaca
+ * data separuh sebagai data utuh, yang persis kegagalan yang dicegah
+ * `digestResult`.
+ *
+ * Batas atasnya tetap ada dan tetap terikat: 12 giliran (MAX_HISTORY) × 6.000
+ * karakter adalah langit-langit yang tidak bisa dilewati riwayat kiriman client,
+ * berapa pun yang ia kirim.
+ */
+export const MAX_TURN_CHARS = 6_000;
 
 export interface Turn {
   role: "user" | "assistant";
@@ -66,6 +80,24 @@ export interface ChatBubble {
   summary?: string;
   runStatus?: "completed" | "failed" | "cancelled";
   runError?: string;
+  /**
+   * ISI hasilnya, bukan ringkasannya — dan hanya untuk langkah yang sedang
+   * berjalan.
+   *
+   * `summary` cukup untuk mata manusia dan untuk pertanyaan lanjutan tentang
+   * sebuah angka. Ia TIDAK cukup untuk memutuskan langkah berikutnya: ringkasan
+   * `inspect what=parameters` berbunyi "12 parameter" tanpa satu pun namanya,
+   * sementara yang dibutuhkan langkah sesudahnya justru nama-nama itu, persis.
+   * Nama yang salah mengembalikan kolom KOSONG, dan kosong tidak bisa dibedakan
+   * dari model yang memang tidak punya nilainya.
+   *
+   * Diisi hanya oleh loop baca berantai, untuk gelembung yang baru saja selesai
+   * dalam giliran itu — lihat `digestResult` di lib/resultDigest.ts. Riwayat yang
+   * disusun ulang dari layar pada giliran-giliran berikutnya TIDAK membawanya,
+   * dan itu disengaja: isi lengkap setiap pembacaan yang pernah terjadi adalah
+   * biaya input yang dibayar berulang untuk data yang sudah selesai dipakai.
+   */
+  resultDigest?: string;
 }
 
 /**
@@ -148,10 +180,24 @@ export function turnsFromChat(entries: readonly ChatBubble[]): Turn[] {
     // Revit sudah menjawab. Angkanya dibawa ke sini apa adanya — itu bedanya
     // antara menjawab "tadi berapa totalnya?" dan menjalankan perintahnya lagi
     // untuk angka yang sudah ada di layar orangnya.
-    if (entry.runStatus === "completed" && entry.summary) {
+    if (entry.runStatus === "completed" && (entry.summary || entry.resultDigest)) {
+      const summary = entry.summary
+        ? ` HASILNYA: ${entry.summary}.`
+        : " Revit menjawab tanpa ringkasan yang bisa dipendekkan dengan jujur.";
+
+      // Isi hasilnya di belakang, di bloknya sendiri, dan diberi nama.
+      //
+      // Tanpa blok ini langkah berikutnya menebak: ringkasan tidak memuat nama
+      // parameter, nama kategori yang lengkap, atau nilai yang dikelompokkan —
+      // dan menebak salah satunya menghasilkan perintah yang berjalan tanpa
+      // galat lalu mengembalikan nol baris.
+      const body = entry.resultDigest
+        ? `\n\nISI HASILNYA (apa adanya dari Revit — pakai nama dan angka dari sini, jangan mengarang):\n${entry.resultDigest}`
+        : "";
+
       return {
         role: "assistant" as const,
-        content: `[CATATAN SISTEM] Kamu memanggil tool ${tool}; sistem menjalankannya di Revit dan Revit sudah menjawab.${asked} HASILNYA: ${entry.summary}. Angka itu datang dari model, jadi jawab pertanyaan lanjutan dari situ — jangan menjalankan perintah yang sama lagi kecuali memang diminta atau modelnya sudah berubah.`,
+        content: `[CATATAN SISTEM] Kamu memanggil tool ${tool}; sistem menjalankannya di Revit dan Revit sudah menjawab.${asked}${summary} Angka itu datang dari model, jadi jawab pertanyaan lanjutan dari situ — jangan menjalankan perintah yang sama lagi kecuali memang diminta atau modelnya sudah berubah.${body}`,
       };
     }
 
