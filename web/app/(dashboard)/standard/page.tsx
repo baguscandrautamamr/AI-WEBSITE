@@ -787,9 +787,19 @@ export default function StandardPage() {
       }
     >
       <div className={`flex flex-wrap items-start justify-between gap-2 ${column}`}>
-        <div>
+        <div className="max-w-2xl">
           <h1 className="text-lg font-medium">{t("standard.title")}</h1>
           <p className="text-sm text-text-secondary">{t("standard.subtitle")}</p>
+          {/* Berdiri terus, bukan sekali lalu bisa ditutup.
+              Halaman ini menjawab nomor pasal dan angka tabel dari ingatan
+              model, tanpa satu pun dokumen standar dibaca — dan jawabannya
+              dipakai memilih pengaman. Peringatan yang bisa ditutup adalah
+              peringatan yang ditutup sekali di hari pertama lalu tidak pernah
+              terlihat lagi oleh orang yang sama, termasuk pada hari ia sedang
+              tergesa. */}
+          <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+            {t("standard.verify")}
+          </p>
         </div>
 
         <div className="flex items-center gap-3">
