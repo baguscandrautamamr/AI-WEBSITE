@@ -8,6 +8,10 @@ Folder ini hanya memuat migrasi yang ditambahkan oleh website, melanjutkan uruta
 |---|---|
 | `0008_web_auth.sql` | Membuat user Supabase Auth bisa memakai `commands_queue` yang sama: `telegram_user_id` jadi nullable, trigger pembuat baris `users` dengan `id = auth.uid()`, dan policy RLS untuk user web. |
 | `0009_web_user_trigger_fix.sql` | Memperbaiki trigger 0008 yang menolak akun tanpa email (pendaftaran gagal total), dan menyusulkan baris `users` untuk akun auth yang terlanjur dibuat sebelum trigger ada. |
+| `0010_access_class.sql` | Kolom `users.access_class` (`full` / `standard_only` / `no_standard`): menentukan **halaman mana** yang boleh dibuka sebuah akun, berdampingan dengan peran proyek yang menentukan apa yang boleh dilakukan **di dalam** sebuah proyek. Ikut memasang policy `standards_threads_self`, karena sampai saat itu halaman Standar berada di luar kedua konsep izin yang ada. |
+| `0011_ai_events.sql` | Tabel `ai_events` — satu baris per pemanggilan model bahasa. Yang disimpan hanya **bentuk** kejadiannya: mode, model yang diminta vs model yang benar-benar menjawab, jumlah token, dan penanda kegagalan yang sebelumnya cuma jadi `console.warn`. Isi pertanyaan, isi jawaban, nama ruangan, dan argumen perintah sengaja tidak ikut. |
+| `0012_ai_events_step.sql` | Kolom `ai_events.step`. Tanpa ini, lima baris dari lima pertanyaan terlihat sama persis dengan lima baris dari **satu** pertanyaan yang memakai empat pembacaan berantai — dan keduanya menuntut kesimpulan yang berlawanan. |
+| `0013_standard_sources.sql` | Perpustakaan dokumen untuk halaman Standar: tabel `standard_docs` dan `standard_chunks`, pencarian full-text `search_standard_chunks()`, dan kolom `ai_events.sources`. **Korpusnya kosong sampai diisi, dan itu bukan sementara** — SNI, PUIL, IEC, dan NEC berhak cipta, jadi tidak ada satu pun salinannya di repo ini. Selama kosong, halaman Standar bekerja persis seperti sebelum migrasi ini ada. |
 
 ## Kenapa `0001_init.sql` dihapus dari repo ini
 
@@ -24,9 +28,13 @@ psql "$DATABASE_URL" -f supabase/migrations/0002_claim_any_project.sql
 # 2. Lalu dukungan login web — dari repo ini
 psql "$DATABASE_URL" -f supabase/migrations/0008_web_auth.sql
 psql "$DATABASE_URL" -f supabase/migrations/0009_web_user_trigger_fix.sql
+psql "$DATABASE_URL" -f supabase/migrations/0010_access_class.sql
+psql "$DATABASE_URL" -f supabase/migrations/0011_ai_events.sql
+psql "$DATABASE_URL" -f supabase/migrations/0012_ai_events_step.sql
+psql "$DATABASE_URL" -f supabase/migrations/0013_standard_sources.sql
 ```
 
-Pada project yang sudah berjalan (kasus saat ini), cukup jalankan `0008` lalu `0009`. Keduanya aman dijalankan berulang.
+Pada project yang sudah berjalan (kasus saat ini), jalankan `0008` sampai `0013` berurutan. Semuanya aman dijalankan berulang: kolom dan indeks dipasang dengan `if not exists`, dan setiap policy didahului `drop policy if exists` — jadi menjalankan ulang satu file yang sudah pernah masuk tidak menggagalkan apa pun dan tidak mengubah apa pun.
 
 ## Memberi akses proyek ke user web
 
