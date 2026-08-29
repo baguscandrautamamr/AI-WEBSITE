@@ -5,11 +5,27 @@ Sisi website-nya sudah selesai dan sudah masuk katalog
 C# di repo [`electrical_ai`](https://github.com/baguscandrautamamr/electrical_ai),
 di `revit-addin/RevitCommandCenter.Electrical`.
 
-**Sampai handler-nya ada, keempat perintah ini berakhir `failed` dengan
-"unknown command".** Bukan menggantung, bukan diam — tapi juga belum berguna.
-Itu keadaan yang disengaja: katalognya lebih dulu supaya form, validasi, dan
-tool AI-nya bisa diuji tanpa Revit, tapi urutan itu berarti ada jendela waktu
-di mana tombolnya ada dan jawabannya belum.
+**Keempat handler-nya sudah dibangun**, di branch `claude/repo-check-pqmdn2` repo
+itu:
+
+| Perintah | Berkas |
+|---|---|
+| `show_element` | `Handlers/ShowElementHandler.cs` |
+| `get_electrical_loads` | `Handlers/ElectricalLoadsHandler.cs` |
+| `get_panel_schedule` | `Handlers/PanelScheduleHandler.cs` |
+| `check_circuit_balance` | `Handlers/CircuitBalanceHandler.cs` |
+| helper bersama | `Utils/CircuitReader.cs` |
+
+Jadi dokumen ini sekarang dua hal sekaligus: spesifikasi yang harus dipenuhi,
+dan catatan tentang apa yang sudah dipenuhi. Yang membuatnya tetap perlu dibaca
+adalah bagiannya yang TIDAK bisa dibaca dari kode — kenapa sebuah nilai boleh
+null, kenapa sebuah asumsi wajib ikut terkirim, dan kenapa satu cabang dari repo
+asalnya sengaja tidak diport.
+
+Perlu diingat keduanya berjalan di tempat yang berbeda: website di Vercel, add-in
+di PC yang menjalankan Revit. Sebuah perintah baru tetap berakhir `failed` dengan
+"unknown command" sampai DLL add-in yang memuat handler-nya benar-benar terpasang
+di PC itu.
 
 ## Dari mana ini datang, dan kenapa tidak bisa disalin begitu saja
 
@@ -198,7 +214,7 @@ tidak ada, dan itu kesalahan yang lebih mahal daripada satu baris berlebih.
   "id": 380011,
   "panel": "PP-1",
   "distribution_system": "400/230 Wye",
-  "mains_a": 100.0,
+  "mains": "100 A",          // teks apa adanya dari parameter Mains, bukan angka
   "mounting": "Surface",
   "circuit_count": 24,
   "used_slots": 30,
