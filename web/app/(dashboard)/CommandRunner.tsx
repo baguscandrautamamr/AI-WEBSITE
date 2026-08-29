@@ -19,9 +19,9 @@ import { autoGrid, awkwardCount, flip, formatGrid, friendlierCounts, gridCount, 
 import { turnsFromChat, type ChatBubble } from "@/lib/chatHistory";
 import { summarizeResult } from "@/lib/resultSummary";
 import { digestResult } from "@/lib/resultDigest";
+import { elementIdsIn } from "@/lib/elementIds";
 import CommandChat, { type ChatBody, type ChatEntry } from "./CommandChat";
 import ResultView from "./ResultView";
-import ShowElement from "./ShowElement";
 
 type QueueStatus = "pending" | "processing" | "completed" | "failed" | "cancelled";
 
@@ -253,20 +253,6 @@ export default function CommandRunner({
     );
   }, [project, groups]);
 
-  /**
-   * Kotak "tunjukkan ID di Revit" hanya di halaman yang memang membaca model.
-   *
-   * Diturunkan dari katalog, bukan dari nama halaman: `show_element`
-   * berkelompok "read", jadi ia muncul di halaman mana pun yang menampilkan
-   * kelompok itu dan hilang sendiri kalau kelompoknya nanti dipindah. Tidak
-   * bisa ikut `available` karena perintahnya `hidden` — dan memang itu yang
-   * diinginkan: ia punya kotaknya sendiri, bukan tombol berformulir.
-   */
-  const canShowElement = useMemo(() => {
-    if (!project) return false;
-    const spec = COMMANDS_BY_NAME.show_element;
-    return groups.includes(spec.group) && canRun(spec, project.role);
-  }, [project, groups]);
 
   // Command yang terpilih ikut disaring ulang saat proyek berganti: peran di
   // proyek baru bisa lebih rendah, dan form yang tertinggal akan selalu ditolak
@@ -624,22 +610,24 @@ export default function CommandRunner({
   /**
    * Menunjukkan elemen ber-ID tertentu di layar Revit.
    *
-   * Dikirim lewat antrean yang sama seperti perintah lain — tidak ada jalan
-   * pintas ke PC Revit, dan memang tidak boleh ada. Yang membedakannya dari
-   * tombol perintah biasa cuma satu: ia tidak melewati formulir, karena
-   * seluruh isiannya satu angka.
-   *
-   * Hasilnya ikut masuk daftar Hasil seperti perintah lain. Itu bukan hiasan:
-   * add-in yang tidak berjalan membuat perintah ini menggantung `pending`
-   * selamanya, dan tanpa barisnya di daftar, yang tampak adalah kotak isian
-   * yang menerima ketikan lalu tidak melakukan apa-apa.
+   * Berangkat lewat `runProposal`, sama seperti perintah yang disusun model —
+   * bukan lewat jalur tersendiri. Itu yang membuat gelembungnya ikut punya
+   * status, id antrean, dan hasil yang datang belakangan: add-in yang tidak
+   * berjalan membuat perintah ini menggantung `pending` selamanya, dan tanpa
+   * gelembung yang mengikutinya, yang tampak adalah kolom tulis yang menerima
+   * ketikan lalu tidak melakukan apa-apa.
    */
   async function showElement(ids: string) {
-    const body = await enqueue("show_element", { ids });
-    setRuns((prev) => [
-      { id: body.id, commandText: body.commandText, status: "pending" },
-      ...prev,
-    ]);
+    const bubble = addChat({
+      role: "proposal",
+      text: t("chat.showElement").replace("{ids}", ids.replace(/,/g, ", ")),
+      commandText: `/show_element ${ids}`,
+      command: "show_element",
+      values: { ids },
+      state: "sending",
+    });
+
+    await runProposal(bubble, COMMANDS_BY_NAME.show_element, { ids });
   }
 
   /**
@@ -1013,6 +1001,30 @@ export default function CommandRunner({
    */
   async function sendChat(message: string) {
     if (!project) return;
+
+    /**
+     * ID elemen yang diketik langsung ditunjukkan, tanpa lewat model bahasa.
+     *
+     * Sebelumnya ini kotak isian tersendiri di atas percakapan, dan itu salah:
+     * halaman ini jadi punya dua kolom yang menerima ketikan, bersebelahan, dan
+     * yang mana yang dipakai harus diputuskan orangnya sebelum ia mengetik.
+     * Bentuk ketikannya sendiri sudah menjawab itu — sebuah angka telanjang
+     * bukan pertanyaan yang punya jawaban.
+     *
+     * Ditaruh SEBELUM gelembung user ditambahkan, supaya showElement yang
+     * menyusun seluruh percakapannya sendiri: satu gelembung perintah yang
+     * mengikuti hasilnya, bukan pertanyaan yang menggantung tanpa jawaban.
+     *
+     * Yang dikenali sengaja sempit (lihat elementIdsIn). Sebuah pertanyaan yang
+     * salah dikenali sebagai ID tidak pernah sampai ke model, dan yang terlihat
+     * orangnya adalah pertanyaan yang dijawab dengan memindahkan layar Revit.
+     */
+    const ids = elementIdsIn(message);
+    if (ids && canRun(COMMANDS_BY_NAME.show_element, project.role)) {
+      addChat({ role: "user", text: message });
+      await showElement(ids);
+      return;
+    }
 
     addChat({ role: "user", text: message });
     setChatBusy(true);
@@ -1476,7 +1488,6 @@ export default function CommandRunner({
           <p className="text-sm opacity-70">{t("command.roleTooLow")}</p>
         )}
 
-        {canShowElement && <ShowElement onShow={showElement} disabled={!project} />}
       </div>
 
       {chat && (

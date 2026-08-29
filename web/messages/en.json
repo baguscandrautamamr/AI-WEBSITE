@@ -339,7 +339,8 @@
     "stopped": "Stopped. Commands already in the Revit queue keep running to completion.",
     "step": "Reading the model… step {n} of {max}",
     "stepLimit": "I read the model {n} times for this question, so I stopped there — the answer may be incomplete. If it is, name the level or room you mean so the reads can be narrower.",
-    "readTimeout": "Revit has not answered this read, so the chain stopped. Make sure Revit is open with the add-in running, then ask again."
+    "readTimeout": "Revit has not answered this read, so the chain stopped. Make sure Revit is open with the add-in running, then ask again.",
+    "showElement": "Show element {ids} in Revit"
   },
   "importExcel": {
     "title": "Import Excel",
@@ -407,14 +408,6 @@
   },
   "inspect": {
     "title": "Inspect Model"
-  },
-  "showElement": {
-    "title": "Show an element in Revit",
-    "placeholder": "Element id — e.g. 384210",
-    "action": "Show",
-    "sending": "Sending…",
-    "sent": "Sent id {ids}. Revit will open a 3D view and highlight it in a few seconds; if it does not, check the Results list below.",
-    "hint": "Several ids, comma separated. Changes nothing in the model — it only moves the view and highlights."
   },
   "access": {
     "deniedTitle": "This page is not part of your account",
