@@ -1,11 +1,11 @@
-# Lima perintah baru untuk add-in `electrical_ai`
+# Enam perintah baru untuk add-in `electrical_ai`
 
 Sisi website-nya sudah selesai dan sudah masuk katalog
 (`web/lib/commands.ts`). Dokumen ini spesifikasi yang harus dipenuhi handler
 C# di repo [`electrical_ai`](https://github.com/baguscandrautamamr/electrical_ai),
 di `revit-addin/RevitCommandCenter.Electrical`.
 
-**Kelima handler-nya sudah dibangun**, di branch `claude/repo-check-pqmdn2` repo
+**Keenam handler-nya sudah dibangun**, di branch `claude/repo-check-pqmdn2` repo
 itu:
 
 | Perintah | Berkas |
@@ -15,6 +15,7 @@ itu:
 | `get_panel_schedule` | `Handlers/PanelScheduleHandler.cs` |
 | `check_circuit_balance` | `Handlers/CircuitBalanceHandler.cs` |
 | `section_box` | `Handlers/SectionBoxHandler.cs` |
+| `connect_circuit` | `Handlers/ConnectCircuitHandler.cs` |
 | helper bersama | `Utils/CircuitReader.cs` |
 
 Jadi dokumen ini sekarang dua hal sekaligus: spesifikasi yang harus dipenuhi,
@@ -70,7 +71,7 @@ kalau ditulis ulang dari nol:
    sebelumnya; `ElectricalHelper.IdValue()` sudah menanganinya dengan
    `#if REVIT2024_OR_GREATER`.
 
-## Kontrak yang berlaku untuk kelimanya
+## Kontrak yang berlaku untuk keenamnya
 
 **Masuk.** Add-in membaca `command_type` (nama di tabel di bawah) dan
 `command_json` (objek payload). Website sudah memvalidasi tipe, rentang, dan
@@ -434,6 +435,71 @@ seperti kerusakan.
 Ruangan yang tidak tertutup tidak punya bounding box sama sekali di Revit.
 Katakan itu apa adanya — itu masalah pemodelan yang bisa diperbaiki, bukan galat
 yang perlu disamarkan.
+
+---
+
+## 6. `connect_circuit`
+
+Membuat sirkuit dari perangkat yang sudah terpasang lalu menugaskannya ke sebuah
+panel. **Mengubah model** — sebuah sirkuit adalah elemen sungguhan. Editor saja.
+
+Ini satu-satunya perintah di sini yang tidak diport dari mana pun; repo MCP tidak
+punya padanannya.
+
+### Payload
+
+| Kunci | Tipe | Default | Arti |
+|---|---|---|---|
+| `panel` | string | **wajib** | Nama panel di model. Cocok sebagian; yang ambigu DITOLAK sambil menyebut kandidatnya. |
+| `room` | string | — | Ruangan, posisional. |
+| `what` | string | `lighting` | `lighting` (OST_LightingFixtures) atau `receptacle` (OST_ElectricalFixtures). Diabaikan kalau `ids` disebut. |
+| `ids` | string | — | Alih-alih ruangan: ID elemen, dipisah koma. Sudah dinormalkan website. |
+| `per_circuit` | int | — | Kosong = SATU sirkuit. Angkanya memecah. |
+| `dry_run` | bool | `false` | Jalankan lalu `transaction.RollBack()`. |
+
+Website menolak perintah tanpa `room` maupun `ids`, dan tanpa `panel`.
+
+### Yang harus dilakukan
+
+1. `ElectricalSystem.Create(doc, ids, ElectricalSystemType.PowerCircuit)`, lalu
+   `system.SelectPanel(panel)` — **dua langkah, dan yang kedua bisa gagal
+   sendiri** setelah sirkuitnya terlanjur ada. Panel yang distribution
+   system-nya tidak cocok ditolak persis di situ. Hapus lagi sirkuit setengah
+   jadinya (`doc.Delete`), atau setiap percobaan gagal meninggalkan sampah.
+2. **Lewati perangkat yang sudah punya sirkuit** — `MEPModel.GetElectricalSystems()`.
+   Menyirkuitkannya lagi membuat satu armatur disuapi dua sirkuit, dan panel
+   schedule menghitung bebannya dua kali.
+3. **Lewati family tanpa connector listrik** —
+   `MEPModel.ConnectorManager?.Connectors`. Parameter watt tidak menjadikan
+   sebuah family bisa disirkuitkan.
+4. **Hitung keduanya dan laporkan.** "12 disirkuitkan" terbaca lengkap; "20
+   ditemukan, 12 disirkuitkan, 8 sudah punya sirkuit" adalah keadaan model — dan
+   itu yang menjelaskan total panel yang lebih kecil dari dugaan.
+5. Hitung `connected` **saat kejadiannya**, bukan disimpulkan dari jumlah grup
+   yang berhasil: kegagalan tidak selalu di ujung.
+6. Jangan mengarang pembagian bawaan. Berapa armatur per breaker adalah
+   keputusan tentang beban terhadap rating; angka yang dipilih di sini terlihat
+   berwibawa sambil tetap tebakan.
+
+### Balikan
+
+```jsonc
+{
+  "kind": "connect_circuit",
+  "panel": "PP-1",
+  "circuits_created": 5,
+  "circuit_numbers": ["1", "3", "5", "7", "9"],
+  "connected": 50,
+  "already_circuited": 0,     // selalu disebut, walau nol
+  "without_connector": 0,     // selalu disebut, walau nol
+  "dry_run": true,            // hanya kalau modelnya tidak diubah
+  "failures": ["..."]
+}
+```
+
+Tidak ada yang bisa disirkuitkan **bukan kegagalan**: modelnya sudah dalam
+keadaan yang diminta, dan mengatakannya lebih baik daripada galat yang harus
+ditafsirkan orangnya.
 
 ---
 
