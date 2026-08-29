@@ -408,6 +408,14 @@
   "inspect": {
     "title": "Inspect Model"
   },
+  "showElement": {
+    "title": "Show an element in Revit",
+    "placeholder": "Element id — e.g. 384210",
+    "action": "Show",
+    "sending": "Sending…",
+    "sent": "Sent id {ids}. Revit will open a 3D view and highlight it in a few seconds; if it does not, check the Results list below.",
+    "hint": "Several ids, comma separated. Changes nothing in the model — it only moves the view and highlights."
+  },
   "access": {
     "deniedTitle": "This page is not part of your account",
     "standardOnly": "Your account class covers the Standards & Regulations page only. Pages that touch the Revit model are not available. If that looks wrong, ask an admin to change your account class.",

@@ -21,6 +21,7 @@ import { summarizeResult } from "@/lib/resultSummary";
 import { digestResult } from "@/lib/resultDigest";
 import CommandChat, { type ChatBody, type ChatEntry } from "./CommandChat";
 import ResultView from "./ResultView";
+import ShowElement from "./ShowElement";
 
 type QueueStatus = "pending" | "processing" | "completed" | "failed" | "cancelled";
 
@@ -250,6 +251,21 @@ export default function CommandRunner({
     return COMMANDS.filter(
       (c) => groups.includes(c.group) && !c.hidden && canRun(c, project.role)
     );
+  }, [project, groups]);
+
+  /**
+   * Kotak "tunjukkan ID di Revit" hanya di halaman yang memang membaca model.
+   *
+   * Diturunkan dari katalog, bukan dari nama halaman: `show_element`
+   * berkelompok "read", jadi ia muncul di halaman mana pun yang menampilkan
+   * kelompok itu dan hilang sendiri kalau kelompoknya nanti dipindah. Tidak
+   * bisa ikut `available` karena perintahnya `hidden` — dan memang itu yang
+   * diinginkan: ia punya kotaknya sendiri, bukan tombol berformulir.
+   */
+  const canShowElement = useMemo(() => {
+    if (!project) return false;
+    const spec = COMMANDS_BY_NAME.show_element;
+    return groups.includes(spec.group) && canRun(spec, project.role);
   }, [project, groups]);
 
   // Command yang terpilih ikut disaring ulang saat proyek berganti: peran di
@@ -603,6 +619,27 @@ export default function CommandRunner({
     } finally {
       setSending(false);
     }
+  }
+
+  /**
+   * Menunjukkan elemen ber-ID tertentu di layar Revit.
+   *
+   * Dikirim lewat antrean yang sama seperti perintah lain — tidak ada jalan
+   * pintas ke PC Revit, dan memang tidak boleh ada. Yang membedakannya dari
+   * tombol perintah biasa cuma satu: ia tidak melewati formulir, karena
+   * seluruh isiannya satu angka.
+   *
+   * Hasilnya ikut masuk daftar Hasil seperti perintah lain. Itu bukan hiasan:
+   * add-in yang tidak berjalan membuat perintah ini menggantung `pending`
+   * selamanya, dan tanpa barisnya di daftar, yang tampak adalah kotak isian
+   * yang menerima ketikan lalu tidak melakukan apa-apa.
+   */
+  async function showElement(ids: string) {
+    const body = await enqueue("show_element", { ids });
+    setRuns((prev) => [
+      { id: body.id, commandText: body.commandText, status: "pending" },
+      ...prev,
+    ]);
   }
 
   /**
@@ -1438,6 +1475,8 @@ export default function CommandRunner({
         {available.length === 0 && (
           <p className="text-sm opacity-70">{t("command.roleTooLow")}</p>
         )}
+
+        {canShowElement && <ShowElement onShow={showElement} disabled={!project} />}
       </div>
 
       {chat && (

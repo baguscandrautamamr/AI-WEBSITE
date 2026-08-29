@@ -125,6 +125,7 @@ export function buildPayload(
   if (spec.name === "modify_devices" && payload.count === undefined && payload.grid === undefined) {
     issues.push("isi salah satu: jumlah baru atau grid baru");
   }
+  normalizeElementIds(spec, payload, issues);
 
   applyGridRules(spec, payload, issues);
 
@@ -141,6 +142,49 @@ export function buildPayload(
   const commandText = `/${spec.name}${positionalText}${rest ? ` ${rest}` : ""}`;
 
   return { payload, commandText };
+}
+
+/**
+ * Daftar ID elemen dibersihkan jadi bentuk yang satu, atau ditolak di sini.
+ *
+ * `ids` bertipe teks karena ia memang beberapa angka sekaligus, dan tipe teks
+ * tidak memeriksa apa pun — jadi tanpa aturan ini "384210, tolong" berangkat
+ * apa adanya ke add-in. Yang terjadi di sana: satu ID terbaca, sisanya jadi
+ * potongan yang tidak berarti apa-apa, dan yang tampak di layar orang adalah
+ * elemen yang tersorot lebih sedikit daripada yang dimintanya — tanpa satu pun
+ * galat yang menyebutkan bahwa ada bagian yang dibuang.
+ *
+ * ElementId Revit adalah bilangan bulat positif. Yang bukan itu ditolak dengan
+ * menyebut potongannya, bukan didiamkan.
+ *
+ * Diperiksa DI SINI, bukan di kotak isiannya, karena inilah satu-satunya jalan
+ * yang dilalui semua pengirim: kotak isian di halaman Baca Model, dan perintah
+ * yang datang lewat /api/commands dari mana pun.
+ */
+function normalizeElementIds(
+  spec: CommandSpec,
+  payload: Record<string, unknown>,
+  issues: string[]
+): void {
+  if (spec.name !== "show_element") return;
+
+  const raw = String(payload.ids ?? "");
+  const parts = raw.split(",").map((p) => p.trim()).filter((p) => p !== "");
+
+  if (!parts.length) {
+    issues.push("ids wajib diisi");
+    return;
+  }
+
+  const bad = parts.filter((p) => !/^\d+$/.test(p) || p === "0");
+  if (bad.length) {
+    issues.push(`ID elemen harus angka: ${bad.join(", ")}`);
+    return;
+  }
+
+  // Duplikat dibuang tapi urutannya dipertahankan: ID yang sama disebut dua
+  // kali bukan galat, dan urutan ketiknya adalah urutan yang dimaksud orangnya.
+  payload.ids = [...new Set(parts)].join(",");
 }
 
 /**

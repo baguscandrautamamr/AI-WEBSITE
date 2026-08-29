@@ -938,6 +938,241 @@ export const COMMANDS: CommandSpec[] = [
     ],
     example: "/inspect what=elements category=lighting room=\"LOUNGE 5\" where=\"Family=ACT_E_DOWNLIGHT 22WATT\" group_by=Type",
   },
+  // --------------------------------------------------------------- kelistrikan
+  //
+  // Tiga perintah di bawah dipindahkan dari repo MCP-SERVER-BAGUS
+  // (`server/src/tools/` + `commandset/`), dan namanya sengaja dipertahankan
+  // persis seperti di sana. Handler C#-nya diport dari repo itu ke add-in
+  // `electrical_ai`, jadi nama yang sama berarti `command.json`, nama kelas
+  // EventHandler, dan kunci payload-nya berbaris satu-satu — satu tempat lebih
+  // sedikit untuk salah ketik. Bentuknya memang beda dari `model_info` dan
+  // `query` di sekitarnya; itu harga yang dibayar untuk ketertelusuran.
+  //
+  // KETIGANYA MEMBACA SAJA: tidak ada transaksi Revit yang dibuka, jadi viewer
+  // boleh menjalankannya — dan itu bukan kelonggaran, itu yang membuat mereka
+  // ikut memenuhi syarat `canAutoRun` di bawah, sehingga sebuah pertanyaan di
+  // percakapan bisa dijawab tanpa seseorang menekan tombol tiga kali.
+  //
+  // Sampai add-in `electrical_ai` mengimplementasikan ketiganya, perintah dari
+  // sini akan berakhir `failed` dengan "unknown command" — bukan menggantung.
+  // Spesifikasi payload dan bentuk jawabannya ada di
+  // `docs/addin-electrical-commands.md`.
+  {
+    name: "get_electrical_loads",
+    label: { id: "Beban Listrik", en: "Electrical Loads" },
+    description: {
+      id: "Mendaftar setiap sirkuit di model beserta beban tersambung, tegangan, arus, rating breaker, dan panel tujuannya — plus total per panel dan per jenis sistem. Sirkuit yang belum punya panel ikut dilaporkan terpisah, karena itu justru yang dicari saat total panel tidak cocok. Beban dilaporkan dalam VA (semu) DAN W (nyata); keduanya berbeda sejauh faktor daya, dan menyebut satu angka saja sebagai \"beban\" adalah cara paling mudah salah ukur breaker. Model yang armaturnya ada tapi belum disirkuitkan menjawab nol di sini — itu jawaban yang benar, bukan galat.",
+      en: "Lists every circuit in the model with its connected load, voltage, current, breaker rating and panel — plus totals per panel and per system type. Circuits with no panel are reported separately, which is exactly what you look for when a panel total does not add up. Loads come in VA (apparent) AND W (true); they differ by the power factor, and calling just one of them \"the load\" is the easiest way to size a breaker wrong. A model whose fixtures exist but are not circuited answers zero here — that is a real answer, not an error.",
+    },
+    role: "viewer",
+    group: "read",
+    positional: {
+      name: "panel",
+      type: "text",
+      label: { id: "Panel (opsional)", en: "Panel (optional)" },
+      hint: {
+        id: "Cocok sebagian nama, tidak peduli huruf besar-kecil — \"pp-1\" kena \"PP-1 LANTAI 2\". Kosongkan untuk seluruh model.",
+        en: "Matches part of the name, case-insensitively — \"pp-1\" hits \"PP-1 LANTAI 2\". Leave empty for the whole model.",
+      },
+    },
+    fields: [
+      {
+        name: "system_type",
+        type: "select",
+        default: "all",
+        // Nilai-nilai ini adalah ElectricalSystemType milik Revit, ditulis
+        // snake_case supaya seragam dengan katalog ini. Pemetaannya balik ke
+        // nama enum Revit dilakukan add-in, dan didaftar di spesifikasi —
+        // bukan di sini, karena yang mengenal enum itu memang cuma add-in.
+        options: [
+          "all",
+          "power",
+          "lighting",
+          "data",
+          "telephone",
+          "security",
+          "fire_alarm",
+          "nurse_call",
+          "communication",
+          "controls",
+        ],
+        label: { id: "Jenis sistem", en: "System type" },
+      },
+      {
+        name: "detail",
+        type: "select",
+        default: "summary",
+        options: ["summary", "list"],
+        label: { id: "Rincian", en: "Detail" },
+        hint: {
+          id: "summary = total per panel dan per jenis sistem. list = setiap sirkuit satu baris.",
+          en: "summary = totals per panel and per system type. list = one row per circuit.",
+        },
+      },
+      {
+        name: "limit",
+        type: "integer",
+        default: 200,
+        min: 1,
+        max: 1000,
+        label: { id: "Batas sirkuit", en: "Circuit limit" },
+        hint: {
+          id: "Membatasi baris yang ditampilkan, BUKAN yang dihitung — totalnya tetap atas seluruh sirkuit yang cocok.",
+          en: "Caps the rows shown, NOT what is counted — the totals still cover every matching circuit.",
+        },
+        showWhen: { field: "detail", is: ["list"] },
+      },
+      {
+        name: "include_element_ids",
+        type: "boolean",
+        default: false,
+        label: { id: "Sertakan ID elemen", en: "Include element IDs" },
+        hint: {
+          id: "ID elemen yang tersambung ke tiap sirkuit. Menggemukkan jawaban; nyalakan kalau ID-nya mau dipakai untuk menyorot di Revit.",
+          en: "The element ids wired to each circuit. It bloats the answer; turn it on when you want to use those ids to highlight in Revit.",
+        },
+        showWhen: { field: "detail", is: ["list"] },
+      },
+    ],
+    example: "/get_electrical_loads PP-1 system_type=power detail=list",
+  },
+  {
+    name: "get_panel_schedule",
+    label: { id: "Skedul Panel", en: "Panel Schedule" },
+    description: {
+      id: "Isi tiap panel: slot mana terpakai dan mana kosong, jumlah pole tiap breaker, beban tersambung per sirkuit, dan keterangan panelnya sendiri (distribution system, mains, pemasangan). MEMBACA data panelnya, bukan membuat view Panel Schedule di Revit. Setiap Electrical Equipment dihitung sebagai calon panel, jadi panel yang belum berisi apa pun tetap muncul — itu disengaja, karena panel kosong yang tidak muncul terbaca seolah tidak ada. `max_slots` dibaca dari family panelnya dan bisa saja tidak ada di sana; kalau begitu, sisa slotnya dilaporkan kosong, bukan ditebak.",
+      en: "What is inside each panel: which slots are used and which are free, how many poles each breaker takes, connected load per circuit, and the panel's own metadata (distribution system, mains, mounting). It READS the panel data; it does not create a Revit Panel Schedule view. Every Electrical Equipment instance counts as a candidate panel, so panels with nothing in them still appear — deliberately, because an empty panel that does not appear reads as a panel that does not exist. `max_slots` is read from the panel family and may simply not be there; when it is missing the free-slot count is reported as unknown rather than guessed.",
+    },
+    role: "viewer",
+    group: "read",
+    positional: {
+      name: "panel",
+      type: "text",
+      label: { id: "Panel (opsional)", en: "Panel (optional)" },
+      hint: {
+        id: "Cocok sebagian nama. Kosongkan untuk semua panel di model.",
+        en: "Matches part of the name. Leave empty for every panel in the model.",
+      },
+    },
+    fields: [
+      {
+        name: "detail",
+        type: "select",
+        default: "summary",
+        options: ["summary", "list"],
+        label: { id: "Rincian", en: "Detail" },
+        hint: {
+          id: "summary = satu baris per panel. list = direktori sirkuitnya, urut nomor slot.",
+          en: "summary = one row per panel. list = its circuit directory, ordered by slot.",
+        },
+      },
+      {
+        name: "include_empty",
+        type: "boolean",
+        default: true,
+        label: { id: "Ikutkan panel kosong", en: "Include empty panels" },
+      },
+      {
+        name: "limit",
+        type: "integer",
+        default: 50,
+        min: 1,
+        max: 200,
+        label: { id: "Batas panel", en: "Panel limit" },
+      },
+    ],
+    example: "/get_panel_schedule PP-1 detail=list",
+  },
+  {
+    name: "check_circuit_balance",
+    label: { id: "Keseimbangan Fasa", en: "Circuit Balance" },
+    description: {
+      id: "Sebaran beban tiga fasa (R-S-T) tiap panel, diukur terhadap toleransi yang kamu sebut. PERLU DIBACA SEBELUM DIPAKAI: beban per fasa TIDAK dibaca dari Revit — Revit tidak menyimpannya. Ia DITURUNKAN: beban semu tiap sirkuit dibagi rata ke fasa yang ditempati breaker-nya, dan fasa awalnya disimpulkan dari nomor slot dengan mengandaikan susunan panelboard baku A-A-B-B-C-C. Panel yang slotnya tidak disusun begitu akan menghasilkan angka yang salah tanpa satu pun galat muncul. Asumsi itu ikut disebut di jawabannya, dan angka di sini adalah petunjuk untuk diperiksa, bukan hasil ukur.",
+      en: "Three-phase load spread (R-S-T) per panel against a tolerance you name. READ BEFORE USING: per-phase load is NOT read from Revit — Revit does not store it. It is DERIVED: each circuit's apparent load is split across the phases its breaker occupies, with the starting phase inferred from the slot number assuming the standard A-A-B-B-C-C panelboard arrangement. A panel whose slots are not arranged that way will produce wrong numbers with no error anywhere. That assumption is echoed in the answer, and the figures here are a lead to check, not a measurement.",
+    },
+    role: "viewer",
+    group: "read",
+    positional: {
+      name: "panel",
+      type: "text",
+      label: { id: "Panel (opsional)", en: "Panel (optional)" },
+      hint: {
+        id: "Cocok sebagian nama. Kosongkan untuk semua panel tiga fasa.",
+        en: "Matches part of the name. Leave empty for every three-phase panel.",
+      },
+    },
+    fields: [
+      {
+        name: "tolerance",
+        type: "number",
+        default: 10,
+        min: 1,
+        max: 50,
+        label: { id: "Toleransi (%)", en: "Tolerance (%)" },
+        hint: {
+          id: "Selisih fasa terberat terhadap rata-rata yang masih dianggap wajar. 10% lazim dipakai; panel di atas itu ditandai.",
+          en: "How far the heaviest phase may sit above the average before it counts as unbalanced. 10% is the common figure; panels above it are flagged.",
+        },
+      },
+      {
+        name: "limit",
+        type: "integer",
+        default: 50,
+        min: 1,
+        max: 200,
+        label: { id: "Batas panel", en: "Panel limit" },
+      },
+    ],
+    example: "/check_circuit_balance PP-1 tolerance=10",
+  },
+  {
+    name: "show_element",
+    label: { id: "Tunjukkan di Revit", en: "Show in Revit" },
+    description: {
+      id: "Membuka view 3D di Revit, memilih elemen yang ID-nya disebut, lalu menggeser layar sampai elemen itu terlihat. Tidak mengubah apa pun di model — tidak ada transaksi, tidak ada section box: yang berubah hanya view yang aktif dan apa yang tersorot di layar PC Revit.",
+      en: "Opens a 3D view in Revit, selects the elements whose ids are given, then moves the screen until they are visible. It changes nothing in the model — no transaction, no section box: all that changes is the active view and what is highlighted on the Revit PC's screen.",
+    },
+    role: "viewer",
+    group: "read",
+    // Tersembunyi, dan bukan karena argumennya sulit diketik.
+    //
+    // `hidden` di sini menahan dua hal sekaligus. Pertama, ia menjaga
+    // `canAutoRun` tetap berarti apa yang dikatakannya: perintah baca yang boleh
+    // berjalan sendiri di tengah satu pertanyaan adalah perintah yang tidak
+    // menimbulkan akibat di PC orang lain. Perintah ini menimbulkan akibat —
+    // view aktif seseorang berpindah — jadi ia tidak boleh berangkat tanpa
+    // orang itu yang memintanya. Kedua, halaman Baca Model menyediakan alurnya
+    // sendiri (satu kotak isian ID), persis seperti import_excel: sebuah tombol
+    // berformulir di deretan atas hanya akan jadi jalan kedua ke hal yang sama.
+    //
+    // Tetap terdaftar di katalog karena /api/commands hanya menerima nama yang
+    // ada di sini, dan validasi ID-nya berlaku di server, bukan cuma di layar.
+    hidden: true,
+    positional: {
+      name: "ids",
+      type: "text",
+      required: true,
+      label: { id: "ID elemen", en: "Element IDs" },
+      hint: {
+        id: "Satu ID, atau beberapa dipisah koma — mis. 384210 atau 384210,384215.",
+        en: "One id, or several separated by commas — e.g. 384210 or 384210,384215.",
+      },
+    },
+    fields: [
+      {
+        name: "view",
+        type: "select",
+        default: "3d",
+        options: ["3d", "current"],
+        label: { id: "Tampilkan di", en: "Show in" },
+        hint: {
+          id: "3d = pindah ke view 3D (dibuat kalau model belum punya). current = biarkan view yang sedang aktif; elemen di luar view itu tidak akan terlihat.",
+          en: "3d = switch to a 3D view (created if the model has none). current = leave the active view alone; elements outside it will not become visible.",
+        },
+      },
+    ],
+    example: "/show_element 384210 view=3d",
+  },
   {
     name: "list_sheets",
     label: { id: "Daftar Sheet", en: "List Sheets" },

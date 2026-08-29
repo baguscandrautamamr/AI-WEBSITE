@@ -145,6 +145,36 @@ describe("buildPayload — aturan antar-field", () => {
   });
 });
 
+describe("buildPayload — ID elemen show_element", () => {
+  it("angka dipisah koma diterima, spasinya dirapikan", () => {
+    const { payload } = buildPayload(spec("show_element"), { ids: " 384210 , 384215 " });
+    expect(payload.ids).toBe("384210,384215");
+  });
+
+  it("ID yang sama dua kali cukup disebut sekali, urutannya tetap", () => {
+    const { payload } = buildPayload(spec("show_element"), { ids: "5,3,5,9,3" });
+    expect(payload.ids).toBe("5,3,9");
+  });
+
+  it("yang bukan angka ditolak, dan potongannya disebut", () => {
+    // Yang berbahaya bukan penolakannya — itu justru yang benar. Yang berbahaya
+    // adalah kalau potongan ini lolos: add-in menyorot satu elemen, orangnya
+    // meminta dua, dan tidak ada apa pun yang menyebutkan sisanya dibuang.
+    expect(issuesOf("show_element", { ids: "384210, tolong" })).toContain(
+      "ID elemen harus angka: tolong"
+    );
+    expect(issuesOf("show_element", { ids: "12.5" })).toContain("ID elemen harus angka: 12.5");
+    expect(issuesOf("show_element", { ids: "-4" })).toContain("ID elemen harus angka: -4");
+    // ElementId 0 bukan elemen; di Revit ia InvalidElementId.
+    expect(issuesOf("show_element", { ids: "0" })).toContain("ID elemen harus angka: 0");
+  });
+
+  it("kosong ditolak, termasuk yang isinya cuma koma", () => {
+    expect(issuesOf("show_element", { ids: " , , " })).toContain("ids wajib diisi");
+    expect(issuesOf("show_element", {})).toContain("ids wajib diisi");
+  });
+});
+
 describe("buildPayload — grid diturunkan dari jumlah", () => {
   // Ini aturan yang menentukan gambarnya benar atau tidak. "10 lampu" tanpa grid
   // membuat add-in mencari grid yang CUKUP memuat sepuluh — 4x3, dua belas titik,
