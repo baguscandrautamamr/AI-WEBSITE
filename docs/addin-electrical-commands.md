@@ -1,11 +1,11 @@
-# Empat perintah baru untuk add-in `electrical_ai`
+# Lima perintah baru untuk add-in `electrical_ai`
 
 Sisi website-nya sudah selesai dan sudah masuk katalog
 (`web/lib/commands.ts`). Dokumen ini spesifikasi yang harus dipenuhi handler
 C# di repo [`electrical_ai`](https://github.com/baguscandrautamamr/electrical_ai),
 di `revit-addin/RevitCommandCenter.Electrical`.
 
-**Keempat handler-nya sudah dibangun**, di branch `claude/repo-check-pqmdn2` repo
+**Kelima handler-nya sudah dibangun**, di branch `claude/repo-check-pqmdn2` repo
 itu:
 
 | Perintah | Berkas |
@@ -14,6 +14,7 @@ itu:
 | `get_electrical_loads` | `Handlers/ElectricalLoadsHandler.cs` |
 | `get_panel_schedule` | `Handlers/PanelScheduleHandler.cs` |
 | `check_circuit_balance` | `Handlers/CircuitBalanceHandler.cs` |
+| `section_box` | `Handlers/SectionBoxHandler.cs` |
 | helper bersama | `Utils/CircuitReader.cs` |
 
 Jadi dokumen ini sekarang dua hal sekaligus: spesifikasi yang harus dipenuhi,
@@ -69,7 +70,7 @@ kalau ditulis ulang dari nol:
    sebelumnya; `ElectricalHelper.IdValue()` sudah menanganinya dengan
    `#if REVIT2024_OR_GREATER`.
 
-## Kontrak yang berlaku untuk keempatnya
+## Kontrak yang berlaku untuk kelimanya
 
 **Masuk.** Add-in membaca `command_type` (nama di tabel di bawah) dan
 `command_json` (objek payload). Website sudah memvalidasi tipe, rentang, dan
@@ -344,6 +345,11 @@ perintah lainnya.
 Jadi: **tanpa transaksi sama sekali.** `ActiveView`, `Selection`, dan
 `ShowElements` ketiganya tidak menuntut satu pun.
 
+Section box-nya sendiri tetap dibangun — sebagai perintah **terpisah**,
+`/section_box`, berperan `editor` dan berkelompok `layout`. Yang ditolak di atas
+bukan fiturnya, melainkan menaruhnya di dalam perintah yang berjanji tidak
+mengubah apa pun. Lihat bagian 5 di bawah.
+
 ### Balikan
 
 Bentuk `rows`/`total` tidak berlaku di sini — tidak ada yang dibaca.
@@ -369,11 +375,72 @@ situ berarti kotak isiannya tidak berguna pada model yang justru paling awal.
 
 ---
 
+## 5. `section_box`
+
+Mengurung view 3D pada satu ruangan atau sekumpulan elemen. **Bukan** read-only:
+ia membuka transaksi, dan itulah sebabnya ia perintah tersendiri dan bukan sebuah
+opsi di `/show_element`.
+
+### Payload
+
+| Kunci | Tipe | Default | Arti |
+|---|---|---|---|
+| `room` | string | — | Nama ruangan, posisional. Room maupun Space MEP. |
+| `ids` | string | — | Alih-alih ruangan: ID elemen, dipisah koma. Sudah dinormalkan website. |
+| `margin` | number | 500 | Milimeter di sekeliling kotaknya. |
+| `view` | string | `3d` | `3d` atau `current`. `current` harus SUDAH berupa view 3D. |
+| `off` | bool | `false` | Mematikan section box. Tidak butuh `room` maupun `ids`. |
+
+Website menolak perintah yang tidak menyebut `room`, `ids`, maupun `off` — kotak
+yang tidak tahu harus mengurung apa hanya punya dua akhir, dan keduanya terlihat
+seperti kerusakan.
+
+### Yang harus dilakukan
+
+1. Tentukan view-nya **lebih dulu**, sebelum apa pun diukur. Berpindah view bukan
+   transaksi, jadi gagal menemukan view 3D tidak meninggalkan apa pun setengah
+   jadi.
+2. `view=current` yang bukan `View3D` **ditolak dengan menyebut nama view-nya**.
+   Denah tidak punya section box; mengalihkannya diam-diam ke view lain yang
+   tidak sedang dilihat orangnya lebih buruk daripada menolak.
+3. Ruangan diukur sebagai **dirinya**, bukan sebagai isinya. Mengurung isinya
+   membuat dinding, lantai, dan plafon jatuh di luar potongan.
+4. `element.get_BoundingBox(null)` — **null**, bukan view. `get_BoundingBox(view)`
+   mengembalikan kotak SEBAGAIMANA TERPOTONG oleh view itu, sehingga section
+   box-nya menyusut jadi sebatas yang sudah terlihat.
+5. Salin ke `BoundingBoxXYZ` **baru**, jangan ubah yang dibaca di tempat: kotak
+   dari sebuah elemen membawa `Transform` elemen itu, dan mengembalikannya
+   dengan rotasi masih menempel menaruh potongannya bukan di tempat ia diukur.
+6. `SetSectionBox` lalu `IsSectionBoxActive = true`, di dalam satu transaksi.
+7. `ShowElements` sesudah transaksinya commit — tanpa itu potongannya benar dan
+   layarnya tetap di tempat lama, yang terbaca persis seperti perintah yang tidak
+   melakukan apa-apa. Dialognya dijawab seperti pada `/show_element`.
+
+### Balikan
+
+```jsonc
+{
+  "kind": "section_box",
+  "active": true,           // disebut walau false: menyetel dan mematikan
+                            // adalah perintah yang sama
+  "view": "{3D}",
+  "target": "room 'LOUNGE 5'",
+  "element_count": 1,
+  "margin_mm": 500,
+  "size_m": { "x": 8.2, "y": 6.4, "z": 3.5 }
+}
+```
+
+Ruangan yang tidak tertutup tidak punya bounding box sama sekali di Revit.
+Katakan itu apa adanya — itu masalah pemodelan yang bisa diperbaiki, bukan galat
+yang perlu disamarkan.
+
+---
+
 ## Urutan pengerjaan yang disarankan
 
 1. `ElectricalHelper.cs` + `CircuitRecord.cs` — semua yang lain bergantung ke sini.
-2. `show_element` — paling kecil, dan langsung terasa: kotak isiannya sudah ada
-   di halaman Baca Model dan sekarang masih akan menjawab "unknown command".
+2. `show_element` — paling kecil, dan langsung terasa.
 3. `get_electrical_loads` — `get_panel_schedule` memakai kembali `BuildRecord`-nya.
 4. `get_panel_schedule`.
 5. `check_circuit_balance` — paling akhir, karena asumsinya paling menuntut

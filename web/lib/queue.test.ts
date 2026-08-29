@@ -175,6 +175,49 @@ describe("buildPayload — ID elemen show_element", () => {
   });
 });
 
+describe("buildPayload — section_box", () => {
+  it("ruangan saja cukup", () => {
+    const { payload, commandText } = buildPayload(spec("section_box"), {
+      room: "LOUNGE 5",
+      margin: 500,
+    });
+    expect(payload).toEqual({ room: "LOUNGE 5", margin: 500 });
+    expect(commandText).toBe('/section_box "LOUNGE 5" margin=500');
+  });
+
+  it("ID saja cukup, dan ikut dinormalkan", () => {
+    const { payload } = buildPayload(spec("section_box"), { ids: " 384210 , 384215 " });
+    expect(payload.ids).toBe("384210,384215");
+  });
+
+  it("off saja cukup — mematikan tidak butuh sasaran", () => {
+    const { payload } = buildPayload(spec("section_box"), { off: true });
+    expect(payload).toEqual({ off: true });
+  });
+
+  it("tanpa ruangan, ID, maupun off ditolak", () => {
+    // Kotak yang tidak tahu harus mengurung apa hanya punya dua akhir: mengurung
+    // seluruh model (yang sama dengan tidak melakukan apa-apa) atau mengurung
+    // titik nol (yang mengosongkan layar). Keduanya terlihat seperti kerusakan.
+    expect(issuesOf("section_box", { margin: 500 })).toContain(
+      "sebut ruangannya, atau ID elemennya — atau pakai off untuk mematikannya"
+    );
+  });
+
+  it("ids kosong tidak ikut berangkat sebagai kunci kosong", () => {
+    // Add-in membedakan "tidak disebut" dari "disebut lalu kosong"; formulir yang
+    // kolom ID-nya dibiarkan kosong tidak boleh berarti yang kedua.
+    const { payload } = buildPayload(spec("section_box"), { room: "LOUNGE 5", ids: "" });
+    expect(payload).not.toHaveProperty("ids");
+  });
+
+  it("ID yang bukan angka tetap ditolak di sini", () => {
+    expect(issuesOf("section_box", { ids: "384210, tolong" })).toContain(
+      "ID elemen harus angka: tolong"
+    );
+  });
+});
+
 describe("buildPayload — grid diturunkan dari jumlah", () => {
   // Ini aturan yang menentukan gambarnya benar atau tidak. "10 lampu" tanpa grid
   // membuat add-in mencari grid yang CUKUP memuat sepuluh — 4x3, dua belas titik,
