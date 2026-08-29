@@ -13,7 +13,7 @@ import { COMMANDS, COMMANDS_BY_NAME, canAutoRun, canRun } from "./commands";
  * mengubah satu baris pun di fungsi itu. Yang menangkapnya harus tes ini.
  */
 describe("canAutoRun", () => {
-  it("tepat dua perintah, dan keduanya memang membaca", () => {
+  it("tepat lima perintah, dan kelimanya memang membaca", () => {
     const auto = COMMANDS.filter(canAutoRun).map((c) => c.name).sort();
 
     // Daftar HARFIAH, bukan sebuah aturan yang dihitung ulang di sini.
@@ -22,7 +22,36 @@ describe("canAutoRun", () => {
     // fungsi yang sama, yang tidak menguji apa pun. Yang harus gagal adalah
     // perubahan katalog yang MENAMBAH sesuatu ke daftar ini tanpa ada yang
     // memutuskannya — dan yang membuatnya gagal cuma daftar yang ditulis tangan.
-    expect(auto).toEqual(["inspect", "query"]);
+    //
+    // Bertambah tiga pada pemindahan perintah kelistrikan dari repo
+    // MCP-SERVER-BAGUS, dan itu keputusan yang diambil sadar: ketiganya tidak
+    // membuka transaksi Revit dan tidak meninggalkan apa pun di PC-nya — yang
+    // mereka lakukan hanya membaca sirkuit, panel, dan sebaran fasa. Sebuah
+    // pertanyaan seperti "panel mana yang paling berat" memang menuntut dua
+    // pembacaan berurutan, dan yang menjalankan keduanya adalah sistem.
+    expect(auto).toEqual([
+      "check_circuit_balance",
+      "get_electrical_loads",
+      "get_panel_schedule",
+      "inspect",
+      "query",
+    ]);
+  });
+
+  it("show_element tidak, karena ia menimbulkan akibat di PC Revit", () => {
+    // Lolos tiga syarat pertama — group "read", viewer, tanpa confirm — dan
+    // ditolak oleh `hidden`, yang di sana dipasang justru untuk ini.
+    //
+    // Sebabnya sama dengan sebab print_pdf ditolak: yang ditinggalkannya bukan
+    // jawaban, melainkan akibat pada komputer orang lain. View aktif seseorang
+    // berpindah dan pilihannya berganti — di tengah ia menggambar, dipicu oleh
+    // sebuah kalimat yang tidak pernah memintanya. Perintah ini berangkat hanya
+    // kalau orangnya sendiri yang mengetik ID-nya.
+    const spec = COMMANDS_BY_NAME.show_element;
+    expect(spec.group).toBe("read");
+    expect(spec.role).toBe("viewer");
+    expect(spec.hidden).toBe(true);
+    expect(canAutoRun(spec)).toBe(false);
   });
 
   it("tidak satu pun perintah yang mengubah model", () => {
