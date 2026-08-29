@@ -125,6 +125,12 @@ export function buildPayload(
   if (spec.name === "modify_devices" && payload.count === undefined && payload.grid === undefined) {
     issues.push("isi salah satu: jumlah baru atau grid baru");
   }
+  if (spec.name === "section_box"
+      && payload.off !== true
+      && payload.room === undefined
+      && payload.ids === undefined) {
+    issues.push("sebut ruangannya, atau ID elemennya — atau pakai off untuk mematikannya");
+  }
   normalizeElementIds(spec, payload, issues);
 
   applyGridRules(spec, payload, issues);
@@ -158,21 +164,27 @@ export function buildPayload(
  * menyebut potongannya, bukan didiamkan.
  *
  * Diperiksa DI SINI, bukan di kotak isiannya, karena inilah satu-satunya jalan
- * yang dilalui semua pengirim: kotak isian di halaman Baca Model, dan perintah
- * yang datang lewat /api/commands dari mana pun.
+ * yang dilalui semua pengirim: kolom tulis di halaman Baca Model, formulir
+ * /section_box, dan perintah yang datang lewat /api/commands dari mana pun.
  */
 function normalizeElementIds(
   spec: CommandSpec,
   payload: Record<string, unknown>,
   issues: string[]
 ): void {
-  if (spec.name !== "show_element") return;
+  // Dipakai dua perintah, dan kewajibannya berbeda: /show_element tidak berarti
+  // apa-apa tanpa ID, sementara /section_box boleh menyebut ruangan saja.
+  const required = spec.name === "show_element";
+  if (!required && spec.name !== "section_box") return;
 
   const raw = String(payload.ids ?? "");
   const parts = raw.split(",").map((p) => p.trim()).filter((p) => p !== "");
 
   if (!parts.length) {
-    issues.push("ids wajib diisi");
+    if (required) issues.push("ids wajib diisi");
+    // Kosong pada /section_box bukan galat, tapi kunci kosong tidak boleh ikut
+    // berangkat: add-in membedakan "tidak disebut" dari "disebut lalu kosong".
+    else delete payload.ids;
     return;
   }
 

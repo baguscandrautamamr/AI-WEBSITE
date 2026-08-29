@@ -611,6 +611,70 @@ export const COMMANDS: CommandSpec[] = [
     example: "/create_cable_tray CT-A1 follow=\"Thin Lines\" size=300x300",
   },
   {
+    name: "section_box",
+    label: { id: "Section Box", en: "Section Box" },
+    description: {
+      id: "Mengurung view 3D pada satu ruangan atau sekumpulan elemen — sisanya model disembunyikan sampai section box-nya dimatikan lagi. Sebut ruangannya, atau ID elemennya. Beda dari perintah lain di kelompok ini: yang berubah adalah tampilan, bukan modelnya — tidak ada elemen yang dipasang, dipindahkan, atau dihapus. Tapi section box TERSIMPAN di view, jadi orang lain yang membuka view 3D itu sesudahnya akan melihat model yang terpotong. Karena itu ia menuntut peran editor, dan bisa dikembalikan dengan `off=true`.",
+      en: "Boxes a 3D view onto one room or a set of elements — the rest of the model is hidden until the section box is switched off again. Name the room, or the element ids. Unlike everything else in this group what changes is the view, not the model: nothing is placed, moved, or deleted. But a section box is SAVED in the view, so whoever opens that 3D view afterwards sees a cut-down model. That is why it needs the editor role, and why `off=true` puts it back.",
+    },
+    role: "editor",
+    group: "layout",
+    positional: {
+      name: "room",
+      type: "text",
+      label: { id: "Ruangan", en: "Room" },
+      hint: {
+        id: "Tulis persis seperti di gambar — mis. \"LOUNGE 5\". Room maupun Space MEP sama-sama bisa. Kosongkan kalau menyebut ID elemen, atau kalau hanya mau mematikannya.",
+        en: "Type it exactly as on the drawing — e.g. \"LOUNGE 5\". Either a Room or an MEP Space works. Leave empty when naming element ids instead, or when only switching it off.",
+      },
+    },
+    fields: [
+      {
+        name: "ids",
+        type: "text",
+        label: { id: "ID elemen", en: "Element IDs" },
+        hint: {
+          id: "Alih-alih ruangan: satu ID, atau beberapa dipisah koma. Kotaknya dibuat sebesar gabungan elemen-elemen itu.",
+          en: "Instead of a room: one id, or several separated by commas. The box is sized to hold all of them together.",
+        },
+      },
+      {
+        name: "margin",
+        type: "number",
+        default: 500,
+        min: 0,
+        max: 10000,
+        label: { id: "Jarak tepi (mm)", en: "Margin (mm)" },
+        hint: {
+          id: "Ruang tambahan di sekeliling kotaknya. Nol berarti kotaknya tepat menempel, dan dinding ruangan sendiri bisa ikut terpotong.",
+          en: "Extra room around the box. Zero means it hugs the extent exactly, and the room's own walls can end up sliced.",
+        },
+      },
+      {
+        name: "view",
+        type: "select",
+        default: "3d",
+        options: ["3d", "current"],
+        label: { id: "Kenakan pada", en: "Apply to" },
+        hint: {
+          id: "3d = pindah ke view 3D (dibuat kalau model belum punya). current = view yang sedang aktif, dan ia HARUS view 3D — section box tidak ada di denah.",
+          en: "3d = switch to a 3D view (created if the model has none). current = whatever view is active, and it MUST be a 3D view — plans have no section box.",
+        },
+      },
+      {
+        name: "off",
+        type: "boolean",
+        default: false,
+        label: { id: "Matikan section box", en: "Switch the section box off" },
+        hint: {
+          id: "Mengembalikan view 3D jadi utuh lagi. Tidak butuh ruangan maupun ID.",
+          en: "Puts the 3D view back to the whole model. Needs neither a room nor ids.",
+        },
+      },
+    ],
+    example: "/section_box \"LOUNGE 5\" margin=500",
+  },
+  {
     name: "add_hangers",
     label: { id: "Tambah Hanger", en: "Add Hangers" },
     description: { id: "Menggantung tray yang sudah ada. Mesin sama, tanpa routing.", en: "Hangs a tray that already exists. Same engine, no routing." },
