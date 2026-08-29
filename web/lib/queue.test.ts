@@ -175,6 +175,50 @@ describe("buildPayload — ID elemen show_element", () => {
   });
 });
 
+describe("buildPayload — connect_circuit", () => {
+  it("ruangan + panel cukup", () => {
+    const { payload, commandText } = buildPayload(spec("connect_circuit"), {
+      room: "LOUNGE 5",
+      panel: "PP-1",
+      what: "lighting",
+    });
+    expect(payload).toEqual({ room: "LOUNGE 5", panel: "PP-1", what: "lighting" });
+    expect(commandText).toBe('/connect_circuit "LOUNGE 5" panel=PP-1 what=lighting');
+  });
+
+  it("panel wajib — tanpa itu tidak ada tujuan sama sekali", () => {
+    expect(issuesOf("connect_circuit", { room: "LOUNGE 5" })).toContain("panel wajib diisi");
+  });
+
+  it("tanpa ruangan maupun ID ditolak", () => {
+    expect(issuesOf("connect_circuit", { panel: "PP-1" })).toContain(
+      "sebut ruangannya, atau ID elemennya"
+    );
+  });
+
+  it("ID dinormalkan sama seperti perintah lain yang menerimanya", () => {
+    const { payload } = buildPayload(spec("connect_circuit"), {
+      panel: "PP-1",
+      ids: " 384210 , 384210 , 384215 ",
+    });
+    expect(payload.ids).toBe("384210,384215");
+  });
+
+  it("ID yang bukan angka ditolak", () => {
+    expect(issuesOf("connect_circuit", { panel: "PP-1", ids: "384210, semua" })).toContain(
+      "ID elemen harus angka: semua"
+    );
+  });
+
+  it("per_circuit yang di luar batas ditolak", () => {
+    // Nol sirkuit tidak berarti apa-apa, dan seratus armatur pada satu sirkuit
+    // bukan angka yang bisa diketik tanpa sengaja lalu terkirim.
+    expect(issuesOf("connect_circuit", { room: "X", panel: "PP-1", per_circuit: 0 })).toContain(
+      "per_circuit minimal 1"
+    );
+  });
+});
+
 describe("buildPayload — section_box", () => {
   it("ruangan saja cukup", () => {
     const { payload, commandText } = buildPayload(spec("section_box"), {

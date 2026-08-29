@@ -611,6 +611,84 @@ export const COMMANDS: CommandSpec[] = [
     example: "/create_cable_tray CT-A1 follow=\"Thin Lines\" size=300x300",
   },
   {
+    name: "connect_circuit",
+    label: { id: "Sambung ke Panel", en: "Circuit to Panel" },
+    description: {
+      id: "Membuat sirkuit dari perangkat yang sudah terpasang lalu menugaskannya ke sebuah panel — inilah yang membuat beban ruangan muncul di panel schedule. Sebut ruangannya dan kategorinya (armatur atau stop kontak), atau sebut ID elemennya langsung. Perangkat yang SUDAH punya sirkuit dilewati, bukan disirkuitkan dua kali. Panelnya harus cocok tegangannya; yang tidak cocok ditolak Revit dengan menyebut sebabnya, bukan disambung diam-diam.",
+      en: "Builds circuits from devices already placed and assigns them to a panel — this is what makes a room's load appear in the panel schedule. Name the room and the category (fixtures or receptacles), or name the element ids directly. Devices that ALREADY have a circuit are skipped rather than circuited twice. The panel has to match on voltage; one that does not is refused by Revit with its reason, not wired up quietly.",
+    },
+    role: "editor",
+    group: "layout",
+    positional: {
+      name: "room",
+      type: "text",
+      label: { id: "Ruangan", en: "Room" },
+      hint: {
+        id: "Tulis persis seperti di gambar — mis. \"LOUNGE 5\". Kosongkan kalau menyebut ID elemen.",
+        en: "Type it exactly as on the drawing — e.g. \"LOUNGE 5\". Leave empty when naming element ids instead.",
+      },
+    },
+    fields: [
+      {
+        name: "panel",
+        type: "text",
+        required: true,
+        // Sengaja kotak teks, bukan dropdown. Daftar yang dikirim `model_info`
+        // berisi nama FamilySymbol — tipe family — sementara nama panel adalah
+        // nama INSTANCE ("PP-1"), yang tidak ada di daftar itu dan tidak bisa
+        // ada di sana. Yang menutup celahnya add-in: nama panel yang tidak ada
+        // ditolak sambil menyebut nama panel yang memang ada.
+        label: { id: "Panel tujuan", en: "Target panel" },
+        hint: {
+          id: "Nama panelnya seperti di model — mis. PP-1. Cocok sebagian nama, tapi kalau lebih dari satu panel cocok, perintahnya ditolak dan menyebutkan yang mana saja.",
+          en: "The panel's name as in the model — e.g. PP-1. Partial names match, but when more than one panel matches the command is refused and says which ones.",
+        },
+      },
+      {
+        name: "what",
+        type: "select",
+        default: "lighting",
+        options: ["lighting", "receptacle"],
+        label: { id: "Kategori", en: "What" },
+        hint: {
+          id: "Armatur (Lighting Fixtures) atau stop kontak (Electrical Fixtures). Tidak berlaku kalau ID elemen yang disebut.",
+          en: "Fixtures (Lighting Fixtures) or receptacles (Electrical Fixtures). Ignored when element ids are given.",
+        },
+      },
+      {
+        name: "ids",
+        type: "text",
+        label: { id: "ID elemen", en: "Element IDs" },
+        hint: {
+          id: "Alih-alih ruangan: satu ID, atau beberapa dipisah koma. Kategorinya diabaikan — yang disirkuitkan persis elemen ini.",
+          en: "Instead of a room: one id, or several separated by commas. The category is ignored — exactly these elements are circuited.",
+        },
+      },
+      {
+        name: "per_circuit",
+        type: "integer",
+        min: 1,
+        max: 100,
+        label: { id: "Perangkat per sirkuit", en: "Devices per circuit" },
+        hint: {
+          id: "Kosong = semuanya jadi SATU sirkuit. Isi angkanya untuk memecah — mis. 12 berarti 50 armatur jadi lima sirkuit. Add-in tidak menghitung sendiri berapa yang aman; itu keputusanmu terhadap rating breaker.",
+          en: "Empty = all of them on ONE circuit. Give a number to split — 12 turns 50 fixtures into five circuits. The add-in does not work out a safe number for you; that is your call against the breaker rating.",
+        },
+      },
+      {
+        name: "dry_run",
+        type: "boolean",
+        default: false,
+        label: { id: "Uji coba saja", en: "Dry run" },
+        hint: {
+          id: "Jalankan lalu batalkan — lihat berapa sirkuit yang akan terbentuk dan perangkat mana yang dilewati, tanpa mengubah model.",
+          en: "Run then roll back — see how many circuits would be made and which devices would be skipped, without changing the model.",
+        },
+      },
+    ],
+    example: "/connect_circuit \"LOUNGE 5\" panel=PP-1 what=lighting per_circuit=12",
+  },
+  {
     name: "section_box",
     label: { id: "Section Box", en: "Section Box" },
     description: {
