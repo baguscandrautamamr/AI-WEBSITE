@@ -11,6 +11,8 @@ import {
   fieldApplies,
   modifyCategoryFor,
   modifyValuesFrom,
+  placeCommandFor,
+  placeValuesFrom,
   type CommandField,
   type CommandSpec,
 } from "@/lib/commands";
@@ -529,6 +531,34 @@ export default function CommandRunner({
         }
       }
 
+      // Arah sebaliknya, dan ia tidak diperiksa sampai sekarang: menata ulang
+      // ruangan yang ternyata SUDAH KOSONG.
+      //
+      // Ini yang terjadi sesudah orangnya menghapus isi ruangan itu sendiri di
+      // Revit. Riwayat percakapan masih menyebutnya penuh — riwayat memang tidak
+      // bisa tahu — jadi model bahasa memilih modify_devices persis seperti yang
+      // diajarkan kepadanya untuk ruangan berisi. Yang sampai ke Revit adalah
+      // perintah menata ulang sesuatu yang tidak ada lagi: berangkat, tidak ada
+      // galat, dan tidak satu pun armatur terpasang.
+      //
+      // Ditukar tanpa bertanya, dan itu disengaja. Persimpangan yang satu lagi
+      // ada karena kedua jawabannya masuk akal — menumpuk atau menata ulang.
+      // Di sini tidak ada dua jawaban: menata ulang ruangan kosong bukan pilihan
+      // yang lebih hati-hati, ia perintah yang tidak bisa berhasil.
+      if (name === "modify_devices" && model) {
+        const what = String(payload.what ?? "").trim();
+        const target = what ? placeCommandFor(what) : null;
+        const modifyRoom = String(payload.room ?? "").trim();
+
+        if (target && modifyRoom && canRun(target, project?.role ?? "viewer")) {
+          const found = await readRoom(modifyRoom, what);
+          if (found && found.count === 0) {
+            name = target.name;
+            payload = placeValuesFrom(target, payload);
+          }
+        }
+      }
+
       const body = await enqueue(name, payload);
 
       // Modelnya berubah sesudah ini, jadi yang kita ketahui tentang isi ruangan
@@ -541,7 +571,7 @@ export default function CommandRunner({
       ]);
       return body;
     },
-    [enqueue, model, readRoom]
+    [enqueue, model, readRoom, project]
   );
 
   async function send() {

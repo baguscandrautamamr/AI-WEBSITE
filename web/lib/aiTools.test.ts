@@ -72,6 +72,35 @@ describe("toolsForRole", () => {
 });
 
 describe("ELECTRICAL_SYSTEM_PROMPT", () => {
+  it("menyatakan bahwa catatan hasil adalah masa lalu, bukan keadaan model", () => {
+    // Tanpa ini model memperlakukan riwayat percakapan sebagai isi model
+    // sekarang. Sepuluh downlight yang sudah dihapus orangnya tetap "terpasang"
+    // menurut chat, dan permintaan memasangnya lagi dijawab dengan penolakan.
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/SATU SAAT DI MASA LALU/i);
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/Ctrl\+Z/);
+  });
+
+  it("permintaan menjalankan selalu menang atas catatan", () => {
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/MEMINTA SESUATU DIJALANKAN, JALANKAN/i);
+    // Kata-kata yang benar-benar diketik orangnya saat model sudah berubah.
+    for (const phrase of ["Pasang lagi", "coba lagi", "sudah saya hapus"]) {
+      expect(ELECTRICAL_SYSTEM_PROMPT, phrase).toContain(phrase);
+    }
+  });
+
+  it("menolak karena catatan menyebut hasilnya sudah ada dilarang tegas", () => {
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(
+      /jangan pernah menolak karena catatan sistem menyebut hasilnya\s+sudah ada/i
+    );
+  });
+
+  it("membatasi panjang jawaban sesudah tool dipanggil", () => {
+    // Keluhannya harfiah: "jawaban ai tidak to the point terlalu banyak balasan".
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/SATU KALIMAT, LALU BERHENTI/i);
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/JANGAN menuliskan ulang isi catatan sistem/i);
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/JANGAN menawarkan langkah berikutnya/i);
+  });
+
   it("menyatakan bahwa menulis teks tidak mengirim apa pun", () => {
     expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/TIDAK mengirim apa pun/);
   });

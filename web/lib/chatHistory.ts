@@ -1,3 +1,5 @@
+import { COMMANDS_BY_NAME } from "./commands";
+
 /** Berapa giliran percakapan yang ikut dikirim sebagai konteks. */
 export const MAX_HISTORY = 12;
 
@@ -101,6 +103,55 @@ export interface ChatBubble {
 }
 
 /**
+ * Kalimat yang menempel di setiap catatan hasil, dan bunyinya berbeda untuk
+ * perintah yang MEMBACA dan perintah yang MENGUBAH.
+ *
+ * Satu kalimat yang sama untuk keduanya adalah sebab dari dua kegagalan yang
+ * dilaporkan bersamaan. Bunyinya dulu "jangan menjalankan perintah yang sama
+ * lagi kecuali memang diminta atau modelnya sudah berubah", dan dua bagian dari
+ * kalimat itu tidak bisa dipenuhi siapa pun:
+ *
+ * "modelnya sudah berubah" adalah sesuatu yang catatan ini TIDAK BISA TAHU.
+ * Antara giliran itu dan giliran ini, orangnya bisa menghapus yang baru
+ * dipasang, menekan Ctrl+Z, atau rekannya mengubah model yang sama. Catatan ini
+ * merekam SATU SAAT DI MASA LALU, bukan keadaan model sekarang — dan tidak ada
+ * apa pun di sistem ini yang memberitahunya kalau saat itu sudah lewat.
+ *
+ * "kecuali memang diminta" tenggelam. Yang dibaca model adalah larangannya,
+ * dan larangan yang lebih dekat di konteks mengalahkan aturan di prompt sistem
+ * yang berbunyi sebaliknya ("JANGAN pernah menolak mengirim dengan alasan sudah
+ * dikirim"). Dua instruksi yang bertentangan, dan yang menang bukan yang benar.
+ *
+ * Akibatnya persis seperti yang dilaporkan: sepuluh downlight dihapus orangnya,
+ * ia minta dipasang lagi, dan yang ia dapat adalah kalimat bahwa lampunya sudah
+ * terpasang — dari catatan tentang armatur yang sudah tidak ada di model.
+ *
+ * Maka: untuk perintah baca, larangannya dipertahankan tapi disempitkan pada
+ * apa yang memang dimaksud — menjawab pertanyaan lanjutan dari angka yang sudah
+ * ada, bukan menahan permintaan baru. Untuk perintah yang mengubah model,
+ * larangan itu dibuang sama sekali; di sana tidak ada angka untuk dijawab
+ * ulang, jadi satu-satunya yang bisa dimaksud orangnya adalah menjalankannya
+ * lagi.
+ */
+function staleness(tool: string): string {
+  const spec = COMMANDS_BY_NAME[tool];
+
+  // Perintah yang tidak dikenal katalog diperlakukan sebagai pengubah model:
+  // menahan sesuatu yang seharusnya berangkat lebih mahal daripada mengirim
+  // sesuatu dua kali.
+  const reads = spec?.group === "read" && spec.role === "viewer";
+
+  const past =
+    "Catatan ini merekam satu saat di masa lalu, BUKAN keadaan model sekarang — " +
+    "sejak itu modelnya bisa saja sudah diubah, dihapus, atau di-undo tanpa kamu tahu. " +
+    "Kalau orangnya meminta dijalankan lagi, jalankan lagi; jangan menjawab bahwa itu sudah dikerjakan.";
+
+  return reads
+    ? `Angka itu datang dari model, jadi pertanyaan LANJUTAN tentang angka yang sudah ada di catatan ini dijawab dari sini, tanpa memanggil tool lagi. ${past}`
+    : past;
+}
+
+/**
  * Riwayat percakapan sebagaimana model harus melihatnya.
  *
  * Gelembung `proposal` — perintah yang disusun model lalu berangkat ke Revit —
@@ -197,7 +248,7 @@ export function turnsFromChat(entries: readonly ChatBubble[]): Turn[] {
 
       return {
         role: "assistant" as const,
-        content: `[CATATAN SISTEM] Kamu memanggil tool ${tool}; sistem menjalankannya di Revit dan Revit sudah menjawab.${asked}${summary} Angka itu datang dari model, jadi jawab pertanyaan lanjutan dari situ — jangan menjalankan perintah yang sama lagi kecuali memang diminta atau modelnya sudah berubah.${body}`,
+        content: `[CATATAN SISTEM] Kamu memanggil tool ${tool}; sistem menjalankannya di Revit dan Revit sudah menjawab.${asked}${summary} ${staleness(tool)}${body}`,
       };
     }
 
