@@ -339,7 +339,8 @@
     "stopped": "Dihentikan. Perintah yang sudah masuk antrean Revit tetap berjalan sampai selesai.",
     "step": "Membaca model… langkah {n} dari {max}",
     "stepLimit": "Sudah {n} kali saya membaca model untuk pertanyaan ini, jadi saya berhenti di sini — jawabannya mungkin belum lengkap. Kalau begitu, sebutkan lantai atau ruangan yang dimaksud supaya pembacaannya lebih sempit.",
-    "readTimeout": "Revit belum menjawab pembacaan ini, jadi rantainya berhenti. Pastikan Revit terbuka dengan add-in berjalan, lalu tanyakan lagi."
+    "readTimeout": "Revit belum menjawab pembacaan ini, jadi rantainya berhenti. Pastikan Revit terbuka dengan add-in berjalan, lalu tanyakan lagi.",
+    "showElement": "Tunjukkan elemen {ids} di Revit"
   },
   "importExcel": {
     "title": "Import Excel",
@@ -407,14 +408,6 @@
   },
   "inspect": {
     "title": "Baca Model"
-  },
-  "showElement": {
-    "title": "Tunjukkan elemen di Revit",
-    "placeholder": "ID elemen — mis. 384210",
-    "action": "Tunjukkan",
-    "sending": "Mengirim…",
-    "sent": "ID {ids} dikirim. Revit akan membuka view 3D dan menyorotnya beberapa detik lagi; kalau tidak terjadi, lihat daftar Hasil di bawah.",
-    "hint": "Beberapa ID dipisah koma. Tidak mengubah model — hanya memindahkan view dan menyorot."
   },
   "access": {
     "deniedTitle": "Halaman ini bukan bagian dari akunmu",
