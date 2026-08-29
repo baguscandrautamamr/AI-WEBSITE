@@ -1532,6 +1532,53 @@ export function modifyCategoryFor(commandName: string): string | null {
 }
 
 /**
+ * Perintah `place_*` yang setara dengan sebuah kategori /modify_devices —
+ * arah kebalikan dari `modifyCategoryFor`.
+ *
+ * Ada karena pemeriksaan isi ruangan sebelumnya hanya berjalan SATU ARAH:
+ * `place_*` di ruangan berisi ditawarkan jadi modifikasi, tapi `modify_devices`
+ * di ruangan KOSONG berangkat apa adanya. Dan arah kedua itu justru yang terjadi
+ * sesudah orangnya menghapus isinya sendiri di Revit: riwayat percakapan masih
+ * menyebut ruangan itu penuh, model bahasa memilih modify seperti yang memang
+ * diajarkan kepadanya, dan yang sampai ke Revit adalah perintah menata ulang
+ * sesuatu yang sudah tidak ada.
+ *
+ * Yang dialami orangnya sama persis dengan gejala yang lain: perintahnya
+ * berangkat, tidak ada galat, dan tidak ada satu pun armatur yang terpasang.
+ */
+export function placeCommandFor(category: string): CommandSpec | null {
+  return COMMANDS_BY_NAME[`place_${category}`] ?? null;
+}
+
+/**
+ * Nilai /modify_devices diterjemahkan balik jadi nilai `place_*`.
+ *
+ * Hanya kolom yang benar-benar dideklarasikan perintah tujuannya yang ikut.
+ * `fixture_type` berarti sesuatu untuk /place_lighting dan tidak ada sama sekali
+ * di /place_receptacle, dan argumen yang tidak dikenal adalah cara lain untuk
+ * gagal di Revit sesudah menunggu.
+ */
+export function placeValuesFrom(
+  spec: CommandSpec,
+  values: Record<string, unknown>
+): Record<string, unknown> {
+  const declared = new Set([
+    spec.positional?.name,
+    ...spec.fields.map((f) => f.name),
+  ]);
+
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(values)) {
+    // `what` adalah kategori — ia yang MEMILIH perintahnya, bukan argumen di
+    // dalamnya.
+    if (key === "what") continue;
+    if (declared.has(key) && value !== undefined && value !== "") out[key] = value;
+  }
+
+  return out;
+}
+
+/**
  * Nilai formulir sebuah perintah `place_*` diterjemahkan jadi nilai
  * /modify_devices yang setara.
  *

@@ -147,7 +147,51 @@ describe("turnsFromChat", () => {
     ]);
 
     expect(turn.content).toContain("Cable tray: 37 (128.4 m)");
-    expect(turn.content).toMatch(/jangan menjalankan perintah yang sama lagi/i);
+    // Untuk perintah BACA, larangan mengulangnya dipertahankan — tapi disempitkan
+    // pada apa yang memang dimaksud: menjawab pertanyaan lanjutan dari angka yang
+    // sudah ada, bukan menahan permintaan baru.
+    expect(turn.content).toMatch(/pertanyaan LANJUTAN.*dijawab dari sini/i);
+  });
+
+  it("catatan hasil menyebut dirinya masa lalu, bukan keadaan model sekarang", () => {
+    // Ini yang dulu salah, dan salahnya mahal. Kalimatnya berbunyi "jangan
+    // menjalankan perintah yang sama lagi kecuali memang diminta atau modelnya
+    // sudah berubah" — dan "modelnya sudah berubah" adalah sesuatu yang catatan
+    // ini tidak bisa tahu. Sepuluh downlight dihapus orangnya, ia minta dipasang
+    // lagi, dan yang ia dapat adalah kalimat bahwa lampunya sudah terpasang.
+    for (const command of ["query", "place_lighting", "section_box"]) {
+      const [turn] = turnsFromChat([
+        {
+          role: "proposal",
+          text: "",
+          command,
+          commandText: `/${command} "LOUNGE 5"`,
+          runStatus: "completed",
+          summary: "50 lighting(s) placed",
+        },
+      ]);
+
+      expect(turn.content, command).toMatch(/BUKAN keadaan model sekarang/i);
+      expect(turn.content, command).toMatch(/meminta dijalankan lagi, jalankan lagi/i);
+    }
+  });
+
+  it("perintah yang MENGUBAH model tidak membawa larangan mengulang sama sekali", () => {
+    // Di sana tidak ada angka untuk dijawab ulang, jadi satu-satunya yang bisa
+    // dimaksud orangnya dengan meminta lagi adalah menjalankannya lagi.
+    const [turn] = turnsFromChat([
+      {
+        role: "proposal",
+        text: "",
+        command: "place_lighting",
+        commandText: '/place_lighting "LOUNGE 5" count=50',
+        runStatus: "completed",
+        summary: "50 lighting(s) placed",
+      },
+    ]);
+
+    expect(turn.content).not.toMatch(/pertanyaan LANJUTAN/i);
+    expect(turn.content).not.toMatch(/tanpa memanggil tool lagi/i);
   });
 
   it("menyebut kegagalan Revit sebagai kegagalan", () => {
