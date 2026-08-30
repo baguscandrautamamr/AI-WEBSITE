@@ -324,7 +324,7 @@
     "sendingToRevit": "Mengirim ke antrean Revit…",
     "notSent": "TIDAK terkirim",
     "held": "Ditahan — tidak ada yang dikirim ke Revit.",
-    "nothingSent": "Tidak ada perintah yang dikirim ke Revit oleh giliran ini. Kalau memang mau dijalankan, minta sekali lagi dengan lebih tegas.",
+    "nothingSent": "Tidak ada perintah yang dikirim ke Revit oleh giliran ini. Perintahnya ada sebagai tombol di atas — kirim dari situ kalau memang mau dijalankan sekarang.",
     "chooseFamily": "Family {what} mana yang dipakai?",
     "chooseGuessed": "(yang saya isi tadi, “{name}”, tidak ada di model)",
     "chooseDefault": "Biarkan add-in yang pilih",
