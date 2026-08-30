@@ -276,27 +276,28 @@ Riwayat dan disalin ulang ke Telegram.
 
 ## Berapa lama asisten menjawab, dan apa yang memendekkannya
 
-Tiga hal, dan tak satu pun dari ketiganya menukar ketepatan dengan kecepatan.
+Yang paling besar sekarang bukan setelan model, melainkan tidak memanggilnya:
+lihat "Kalimat perintah yang lugas tidak menunggu model sama sekali" di atas.
 
-**Prompt sistem dan katalog tool di-cache.** Cache Anthropic mencocokkan
-prefiks — urutannya `tools`, `system`, lalu `messages` — jadi penanda cache di
-ujung blok sistem pertama membekukan seluruh katalog (dua puluh delapan tool
-dengan skema lengkapnya) beserta seluruh aturan prompt. Keduanya sama persis di
-setiap giliran dan setiap pengguna. Yang berubah — daftar family dan ruangan di
-model yang sedang terbuka — dipisah ke blok kedua, SESUDAH penandanya
-(`modelContextBlock` di `web/lib/aiTools.ts`). Sebelum dipisah ia menempel di
-ujung prompt, membuat setiap proyek punya prefiks yang berbeda, dan tidak ada
-satu pun giliran yang bisa kena cache.
+**DUA PENGUNGKIT HILANG saat pindah ke Chat Completions**, dan sebaiknya
+diketahui sebelum ada yang mencari-cari kenapa jawabannya melambat:
 
-**`effort` diturunkan dari `high` ke `medium`.** Giliran mode Electrical memilih
-satu tool dari katalog yang sudah menyebutkan setiap argumen dan rentangnya,
-lalu hasilnya divalidasi ulang di `buildPayload` dan `resolveFamilies` sebelum
-berangkat ke mana pun. Bawaan API `high` menambahkan detik-detik, bukan
-ketepatan. **`medium`, bukan `low`** — dan itu langkah mundur yang disengaja
-dari nilai yang sempat dipasang: pada `low` model lebih banyak mencocokkan pola
-daripada memilih, dan pola terdekat yang tersedia baginya adalah giliran asisten
-terakhir di riwayat, yang berupa catatan sistem. `AI_EFFORT` mengubahnya tanpa
-deploy.
+- **Prompt caching.** `cache_control` milik Anthropic; Chat Completions tidak
+  punya padanan yang bisa disetel dari sini. Katalog tool (dua puluh delapan
+  tool dengan skema lengkapnya) dan seluruh aturan prompt dibayar penuh di
+  setiap giliran. Urutan penyusunannya tetap dipertahankan — yang tidak berubah
+  lebih dulu, daftar family dan ruangan di belakang — karena sebagian penyedia
+  melakukan caching prefiks sendiri tanpa diminta, dan urutan itu yang
+  membuatnya mungkin kalau memang ada. Kalau iya, angkanya masuk ke
+  `cache_read_tokens` di `ai_events`; null di kolom itu sekarang berarti "tidak
+  dilaporkan", bukan "tidak kena cache".
+- **`effort`.** Juga milik Anthropic. Kedalaman berpikir model sekarang di luar
+  kendali repo ini, jadi `AI_EFFORT` sudah tidak ada.
+
+**Catatan riwayat dipendekkan.** 553 → 231 karakter per catatan, sampai dua
+belas catatan per giliran. Lihat "Jawaban yang meniru catatan sistem" di atas —
+pemendekannya bukan cuma soal biaya input, dan sejak caching hilang ia jadi
+satu-satunya pengurangan token yang tersisa.
 
 **Catatan riwayat dipendekkan.** 553 → 231 karakter per catatan, sampai dua
 belas catatan per giliran. Lihat "Jawaban yang meniru catatan sistem" di atas —
@@ -375,13 +376,16 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 
 AI_GATEWAY_API_KEY=
-AI_GATEWAY_BASE_URL=https://gateway.olagon.site/anthropic
-AI_MODEL=claude-sonnet-5
-# Seberapa dalam model berpikir sebelum menjawab: low|medium|high|xhigh|max.
-# Kosong = medium. Bawaan API `high` berlebihan untuk memilih satu tool dari
-# katalog; `low` terlalu jauh — model jadi lebih banyak meniru pola terdekat di
-# riwayat daripada memilih.
-AI_EFFORT=medium
+# WAJIB memuat `/v1` — SDK menambahkan `/chat/completions` di belakangnya.
+AI_GATEWAY_BASE_URL=https://api.vikey.ai/v1
+AI_MODEL=openai/gpt-5.6-luna
+# Batas token jawaban. KOSONG = tidak dikirim sama sekali, dan itu bawaannya:
+# penyedia yang berbeda menerima nama medan yang berbeda untuk batas ini
+# (`max_tokens` vs `max_completion_tokens`), dan menebak yang salah tidak
+# menghasilkan jawaban yang lebih pendek — ia menghasilkan 400 pada SETIAP
+# permintaan.
+AI_MAX_TOKENS=
+AI_MAX_TOKENS_STANDARD=
 
 # Hanya dipakai /api/files/upload (belum ada halaman yang memanggilnya —
 # lihat "Yang belum ada").
@@ -390,9 +394,19 @@ CLOUDINARY_API_KEY=
 CLOUDINARY_API_SECRET=
 ```
 
-`AI_GATEWAY_BASE_URL` menunjuk gateway pihak ketiga, bukan endpoint resmi
-Anthropic. Pastikan kamu percaya operatornya sebelum mengirim data proyek lewat
-sana. API key hanya boleh dibaca di server, tidak pernah di browser.
+`AI_GATEWAY_BASE_URL` menunjuk penyedia pihak ketiga. Pastikan kamu percaya
+operatornya sebelum mengirim data proyek lewat sana. API key hanya boleh dibaca
+di server, tidak pernah di browser.
+
+**Mengganti penyedia bukan sekadar mengganti ketiga nilai itu.** Yang dipakai
+sekarang Chat Completions (bentuk OpenAI, `/v1/chat/completions`); repo ini
+sebelumnya memakai Anthropic Messages API (`/v1/messages`). Keduanya berbeda
+seluruhnya — tool dideklarasikan sebagai `function` alih-alih `input_schema`,
+argumennya kembali sebagai STRING JSON yang harus di-parse, `system` jadi sebuah
+pesan alih-alih medan tersendiri, gambar jadi data URL alih-alih blok base64,
+dan `finish_reason` menggantikan `stop_reason`. Mengarahkan `AI_GATEWAY_BASE_URL`
+ke penyedia yang bicara protokol lain membuat SETIAP permintaan gagal, bukan
+sebagian.
 
 ## Jalanin lokal
 
@@ -666,9 +680,9 @@ Kapan menjalankannya:
 - **sebelum menaikkan `AI_MODEL`** — ini sebab utama suite ini ada;
 - saat sebuah laporan pengguna mengarah ke perilaku model, bukan ke kode.
 
-Yang kedua perlu diulang: `claude-sonnet-5` adalah ID lengkap tanpa varian
-bertanggal, jadi tidak ada versi yang bisa dikunci, dan pergeseran perilaku tidak
-akan datang bersama sebuah commit. Yang tetap memberi tahu tanpa perlu
+Yang kedua perlu diulang: tidak ada versi model yang bisa dikunci dari sini —
+yang menjawab ada di belakang gateway pihak ketiga yang katalognya bisa berubah
+kapan saja — jadi pergeseran perilaku tidak akan datang bersama sebuah commit. Yang tetap memberi tahu tanpa perlu
 dijalankan siapa pun: kolom `model_served` di `ai_events`, dan kueri nomor 6 di
 `supabase/queries/ai_health.sql`. Eval adalah peringatan yang lebih awal;
 telemetri adalah peringatan yang tidak bisa lupa dijalankan.
@@ -742,8 +756,8 @@ Jadi ia perlu dipasang **dua kali**, di dua tempat, untuk dua tujuan:
 | GitHub → Settings → Secrets and variables → **Actions** | eval nightly memeriksa perilakunya |
 
 Yang wajib di Actions cuma `AI_GATEWAY_API_KEY`. `AI_GATEWAY_BASE_URL` dan
-`AI_MODEL` hanya perlu kalau nilainya berbeda dari bawaan di
-`web/lib/anthropic.ts` — kalau sama, biarkan kosong dan bawaannya yang dipakai.
+`AI_MODEL` hanya perlu kalau nilainya berbeda dari bawaan di `web/lib/llm.ts` —
+kalau sama, biarkan kosong dan bawaannya yang dipakai.
 
 **Menjalankan lokal:** `npm run eval` membaca `web/.env.local` (dan `.env`)
 sendiri. Vitest tidak melakukannya — diuji, dan tanpa penanganan itu seluruh
@@ -785,12 +799,12 @@ membuktikan bahwa perbaikan berikutnya memperbaiki sesuatu.
 
 Dua kolom model, dan bedanya justru intinya. `model_requested` adalah isi env
 `AI_MODEL`; `model_served` adalah yang benar-benar menjawab, dari `response.model`.
-Dipisah karena **`claude-sonnet-5` sudah ID yang lengkap dan eksak** — tidak ada
-varian bertanggal untuk "mengunci" versinya, dan sufiks tanggal seperti
-`claude-sonnet-5-20251114` adalah ID yang tidak ada, bukan versi yang terkunci.
-Karena hampir setiap aturan di kedua prompt panjang itu di-tuning terhadap
-kebiasaan satu model tertentu, penjagaannya jadi pengamatan, bukan pinning:
-pergantian model terlihat di kolom itu, bukan di laporan pengguna.
+Dipisah karena **tidak ada versi yang bisa dikunci dari sini**: yang menjawab
+ada di belakang gateway pihak ketiga, dan nama model yang sama bisa dilayani
+build yang berbeda tanpa pemberitahuan. Karena hampir setiap aturan di kedua
+prompt panjang itu di-tuning terhadap kebiasaan satu model tertentu,
+penjagaannya jadi pengamatan, bukan pinning: pergantian model terlihat di kolom
+itu, bukan di laporan pengguna.
 
 Kolom `step` (migrasi `0012`) membedakan lima baris dari lima pertanyaan dengan
 lima baris dari SATU pertanyaan yang memakai empat pembacaan. Tanpa itu keduanya
@@ -938,9 +952,9 @@ berdampingan dengan yang baru, tanpa apa pun yang membedakannya.
 
 ### Kenapa full-text search, bukan vektor
 
-Gateway di `AI_GATEWAY_BASE_URL` adalah proxy Anthropic, dan Messages API tidak
-punya endpoint embeddings. Pencarian semantik berarti **vendor kedua** — kunci
-baru, egress baru, biaya baru — dan itu keputusan pemilik sistem.
+Pencarian semantik butuh endpoint embeddings, dan belum tentu penyedia di
+`AI_GATEWAY_BASE_URL` menyediakannya — kalau tidak, ia berarti **vendor kedua**:
+kunci baru, egress baru, biaya baru. Itu keputusan pemilik sistem.
 
 Untuk pertanyaan standar, FTS bukan pilihan kedua. Kueri di halaman itu penuh hal
 yang harus cocok **persis**: "PUIL", "IEC 60364", "KHA", nomor pasal, nama tabel.

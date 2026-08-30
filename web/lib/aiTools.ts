@@ -3,7 +3,7 @@ import { COMMANDS, canRun, type CommandField, type CommandSpec, type Role } from
 import { familyNameOf } from "./families";
 
 /**
- * Katalog command diubah jadi tool Anthropic.
+ * Katalog command diubah jadi tool Chat Completions.
  *
  * Sengaja diturunkan dari `COMMANDS`, bukan ditulis ulang: parameter, pilihan,
  * dan batas nilainya sudah didefinisikan di sana untuk membangun form. Menyalin
@@ -64,17 +64,30 @@ function num(field: CommandField) {
   return out;
 }
 
-export interface AnthropicTool {
-  name: string;
-  description: string;
-  input_schema: {
-    type: "object";
-    properties: Record<string, JsonSchemaProperty>;
-    required?: string[];
+/**
+ * Satu tool dalam bentuk Chat Completions.
+ *
+ * Bentuknya berbeda dari Anthropic dalam dua hal yang keduanya pernah jadi
+ * sumber galat saat perpindahan: skema argumennya bernama `parameters`, bukan
+ * `input_schema`, dan seluruhnya dibungkus di dalam `function` di bawah sebuah
+ * `type: "function"`. Yang salah satu di antaranya berarti tool itu tidak
+ * pernah ditawarkan sama sekali — tanpa galat, karena penyedia hanya
+ * mengabaikan yang tidak dikenalinya.
+ */
+export interface LlmTool {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: {
+      type: "object";
+      properties: Record<string, JsonSchemaProperty>;
+      required?: string[];
+    };
   };
 }
 
-function toolFor(spec: CommandSpec): AnthropicTool {
+function toolFor(spec: CommandSpec): LlmTool {
   const properties: Record<string, JsonSchemaProperty> = {};
   const required: string[] = [];
 
@@ -85,18 +98,21 @@ function toolFor(spec: CommandSpec): AnthropicTool {
   }
 
   return {
-    name: spec.name,
-    description: `${spec.description.id} Contoh perintah setara: ${spec.example}`,
-    input_schema: {
-      type: "object",
-      properties,
-      ...(required.length ? { required } : {}),
+    type: "function",
+    function: {
+      name: spec.name,
+      description: `${spec.description.id} Contoh perintah setara: ${spec.example}`,
+      parameters: {
+        type: "object",
+        properties,
+        ...(required.length ? { required } : {}),
+      },
     },
   };
 }
 
 /** Tool untuk command yang boleh dijalankan peran ini pada proyek terpilih. */
-export function toolsForRole(role: Role): AnthropicTool[] {
+export function toolsForRole(role: Role): LlmTool[] {
   // Command tersembunyi tidak ditawarkan: argumennya URL file yang baru ada
   // setelah pengguna mengunggah sesuatu, jadi model tidak mungkin mengisinya.
   return COMMANDS.filter((c) => !c.hidden && canRun(c, role)).map(toolFor);

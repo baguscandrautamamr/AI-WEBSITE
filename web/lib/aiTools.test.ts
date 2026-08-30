@@ -186,14 +186,14 @@ describe("mentionsCommand", () => {
 
 describe("toolsForRole", () => {
   it("viewer tidak pernah ditawari perintah yang mengubah model", () => {
-    const names = toolsForRole("viewer").map((tool) => tool.name);
+    const names = toolsForRole("viewer").map((tool) => tool.function.name);
     expect(names).toContain("query");
     expect(names).not.toContain("place_lighting");
     expect(names).not.toContain("delete_devices");
   });
 
   it("editor mendapat perintah perangkat, tanpa yang tersembunyi", () => {
-    const names = toolsForRole("editor").map((tool) => tool.name);
+    const names = toolsForRole("editor").map((tool) => tool.function.name);
     expect(names).toContain("place_lighting");
     expect(names).toContain("modify_devices");
     // Argumennya URL berkas yang baru ada setelah unggahan; model tidak mungkin
@@ -203,9 +203,9 @@ describe("toolsForRole", () => {
 
   it("tidak menawarkan enum kosong, yang tidak bisa dipenuhi apa pun", () => {
     for (const tool of toolsForRole("admin")) {
-      for (const [name, prop] of Object.entries(tool.input_schema.properties)) {
+      for (const [name, prop] of Object.entries(tool.function.parameters.properties)) {
         if (prop.enum) {
-          expect(prop.enum.length, `${tool.name}.${name}`).toBeGreaterThan(0);
+          expect(prop.enum.length, `${tool.function.name}.${name}`).toBeGreaterThan(0);
         }
       }
     }
@@ -333,7 +333,7 @@ describe("withModelContext", () => {
 
 describe("katalog inspect — jalan menuju \"baca apa pun\"", () => {
   const inspect = () => {
-    const tool = toolsForRole("viewer").find((t) => t.name === "inspect");
+    const tool = toolsForRole("viewer").find((t) => t.function.name === "inspect");
     if (!tool) throw new Error("inspect tidak ditawarkan ke viewer");
     return tool;
   };
@@ -343,7 +343,7 @@ describe("katalog inspect — jalan menuju \"baca apa pun\"", () => {
   });
 
   it("punya ketiga modenya", () => {
-    expect(inspect().input_schema.properties.what.enum).toEqual([
+    expect(inspect().function.parameters.properties.what.enum).toEqual([
       "categories",
       "parameters",
       "elements",
@@ -351,7 +351,7 @@ describe("katalog inspect — jalan menuju \"baca apa pun\"", () => {
   });
 
   it("menawarkan penjumlahan, penyaringan, dan pengelompokan", () => {
-    const properties = inspect().input_schema.properties;
+    const properties = inspect().function.parameters.properties;
     for (const name of ["category", "params", "where", "total", "group_by", "limit"]) {
       expect(properties[name], name).toBeTruthy();
     }
@@ -368,9 +368,9 @@ describe("katalog inspect — jalan menuju \"baca apa pun\"", () => {
     // Tanpa ini, "berapa downlight 22W di lantai 1" dijawab dengan jumlah SELURUH
     // armatur di lantai 1 — angka yang benar untuk pertanyaan yang tidak
     // ditanyakan siapa pun, dan yang terbaca persis seperti jawabannya.
-    const query = toolsForRole("viewer").find((t) => t.name === "query");
-    expect(query?.input_schema.properties.family).toBeTruthy();
-    expect(query?.description).toMatch(/family/);
+    const query = toolsForRole("viewer").find((t) => t.function.name === "query");
+    expect(query?.function.parameters.properties.family).toBeTruthy();
+    expect(query?.function.description).toMatch(/family/);
   });
 
   it("prompt menyuruh menyaring pertanyaan yang menyebut nama family", () => {
