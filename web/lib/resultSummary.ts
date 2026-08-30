@@ -115,10 +115,30 @@ function summarize(result: Dict, t: (key: string) => string): string {
   if (placed !== null) {
     const where = str(result.room);
     const family = str(result.family_used);
+
+    // Titik yang jatuh di luar batas ruangan lalu dibuang add-in.
+    //
+    // Ini yang membuat angka pertamanya bisa dipercaya. Grid dibentangkan pada
+    // KOTAK ruangan, dan ruangan berbentuk L punya kotak yang mencakup bagian
+    // yang bukan miliknya — jadi "pasang 40" di ruangan begitu memang berakhir
+    // sebagai kurang dari 40 armatur, dan itu benar. Yang salah adalah
+    // melaporkannya sebagai 40, atau melaporkannya sebagai 34 tanpa
+    // menyebutkan ke mana enam sisanya pergi: yang pertama adalah angka yang
+    // tidak cocok dengan gambar, yang kedua terbaca sebagai add-in yang gagal
+    // separuh jalan.
+    //
+    // Hanya disebut kalau add-in benar-benar mengirimkannya. Versi lama tidak
+    // memeriksa batas ruangan sama sekali, dan "0 di luar batas" dari add-in
+    // yang tidak pernah melihat batasnya adalah kalimat yang salah.
+    const outside = num(result.outside_boundary);
+
     return [
       `${placed} ${t("result.devices_placed").toLowerCase()}`,
       where && `${t("result.room").toLowerCase()} ${where}`,
       family,
+      outside !== null && outside > 0
+        ? `${outside} ${t("result.outside_boundary").toLowerCase()}`
+        : "",
     ]
       .filter(Boolean)
       .join(" · ");

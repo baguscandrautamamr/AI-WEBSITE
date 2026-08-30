@@ -28,6 +28,14 @@ Katalog perintah di `web/lib/commands.ts` menyalin `docs/COMMANDS.md` di repo
 `electrical_ai`. Kalau add-in menambah perintah baru, file itu yang diperbarui —
 form di UI dibangun otomatis dari sana.
 
+Arah sebaliknya ada di folder `docs/` repo ini: apa yang harus dipenuhi handler
+C# supaya sesuatu di sini berguna.
+
+| Dokumen | Isinya |
+|---|---|
+| `docs/addin-electrical-commands.md` | Enam perintah kelistrikan — beban, panel schedule, keseimbangan fasa, tunjukkan elemen, section box, sambung sirkuit. |
+| `docs/addin-dokumen-aktif-dan-batas-ruangan.md` | Dokumen aktif diambil saat perintahnya jalan (dan disebut di setiap balikan), serta armatur yang di luar batas ruangan dibuang, bukan dipasang. |
+
 ## Halaman
 
 | Halaman | Isi |
@@ -35,12 +43,12 @@ form di UI dibangun otomatis dari sana.
 | `/electrical` | Perintah yang mengubah model (place_*, cable tray, equip_room, modify, delete, undo). Butuh peran `editor`. |
 | `/export-import` | `list_sheets`, `print_pdf`, `export`. Boleh untuk `viewer`. |
 | `/standard` | Tanya jawab standar (SNI/PUIL/IEC), boleh dengan lampiran gambar. Tidak pernah menyentuh `commands_queue`. Riwayatnya di `standards_threads`, sama dengan bot Telegram. |
-| `/history` | 50 perintah terakhir milik sendiri dari `commands_queue`, beserta status dan hasilnya. |
+| `/history` | 50 perintah terakhir milik sendiri dari `commands_queue`, beserta status dan hasilnya. Tanpa `model_info`: itu dikirim halaman perintah sendiri, berkala, dan akan mendorong keluar setiap perintah yang benar-benar dikirim orangnya. |
 | `/admin/users` | Memberi/mencabut akses proyek (`user_project_access`). Anggota proyek boleh melihat; yang memberi hanya admin proyek. Membuat proyek hanya admin sistem. |
 
 ## Aturan yang menentukan gambarnya benar atau tidak
 
-Empat hal di bawah bukan kenyamanan. Masing-masing pernah menghasilkan gambar
+Yang di bawah bukan kenyamanan. Masing-masing pernah menghasilkan gambar
 yang salah tanpa satu pun galat muncul di mana pun.
 
 **Grid diturunkan dari jumlah** (`web/lib/grid.ts`, dipakai `buildPayload`).
@@ -136,6 +144,40 @@ daftarnya mengikuti kolom "Kategori" di sebelahnya. `fixture_type` juga tidak
 lagi punya default `LED_15W`: nilai itu terisi otomatis di form dan karenanya
 ikut terkirim setiap kali orang tidak menyentuh kolomnya, membawa nama family
 yang tidak ada di model mana pun.
+
+**Nama file .rvt yang tampil diperiksa lagi, bukan dibaca sekali.** Berganti
+file di Revit terjadi di luar website: tidak ada klik, tidak ada perintah, tidak
+ada jawaban yang berubah bunyinya. Dulu `model_info` dibaca sekali per proyek
+terpilih — dengan alasan yang benar, setiap pembacaan adalah satu baris antrean —
+dan akibatnya panel tetap menyebut file yang lama sampai halamannya dimuat ulang,
+sementara perintah berikutnya berangkat ke file yang sedang terbuka. Sekarang
+dibaca lagi saat panelnya kembali terlihat atau dapat fokus, berkala satu menit
+sekali selama terlihat, dan seketika saat sebuah hasil menyebut dokumen lain
+(medan `document`, gratis: hasilnya sudah di tangan). Yang ikut basi bersamanya
+dikosongkan di saat yang sama — daftar ruangan, daftar sheet, isi ruangan yang
+sudah dihitung — dan pergantiannya dikatakan, karena dropdown yang tiba-tiba
+kosong tanpa sebab terbaca sebagai kerusakan. Pemeriksaan yang tidak dijawab
+TIDAK menghapus nama yang sudah benar: Revit yang sedang menghitung bukan Revit
+yang tertutup, jadi yang tampil tetap nama terakhir yang dijawab, ditandai belum
+dipastikan lagi. `model_info` sendiri dikeluarkan dari Riwayat dan dari daftar
+"sedang berjalan" — tidak ada orang yang menjalankannya, dan lima puluh baris
+riwayat yang terisi olehnya adalah riwayat tanpa satu pun perintah sungguhan.
+
+**Armatur yang jatuh di luar batas ruangan dibuang, dan selisihnya disebut.**
+Grid dibentangkan pada KOTAK ruangan; ruangan berbentuk L punya kotak yang
+mencakup takik yang bukan miliknya. "Pasang 40 lampu di LOUNGE 5" pada ruangan
+begitu meletakkan enam di antaranya di MEETING 2 — ikut terhitung sebagai beban
+LOUNGE, dan ditumpuki lagi saat MEETING 2 sendiri dipasangi lampu. Ujinya milik
+add-in (`Room.IsPointInRoom`, spesifikasinya di
+`docs/addin-dokumen-aktif-dan-batas-ruangan.md`); yang ada di sini adalah
+pelaporannya. `devices_placed` adalah yang benar-benar berdiri di model, dan
+`outside_boundary` yang dibuang, jadi ringkasannya berbunyi "34 perangkat
+dipasang · ruangan LOUNGE 5 · 6 di luar batas ruangan". Tanpa medan kedua itu,
+34 untuk permintaan 40 terbaca sebagai add-in yang gagal separuh jalan, dan yang
+membacanya akan mengirimkan enam lagi. Nol tidak disebut, dan medan yang tidak
+ada sama sekali juga tidak: add-in versi lama tidak pernah melihat batas
+ruangan, dan "0 di luar batas" dari add-in yang tidak memeriksanya adalah
+pernyataan yang tidak ada yang memeriksanya.
 
 **Nama ruangan bersepasi dikutip di `command_text`.** Argumen bernama sudah
 dikutip sejak awal; yang posisional tidak — dan di situlah nama ruangan berada.

@@ -31,6 +31,23 @@ const IN_FLIGHT = ["pending", "processing"] as const;
  */
 const MAX_ROWS = 30;
 
+/**
+ * Perintah yang dijalankan halaman, bukan orangnya.
+ *
+ * Daftar ini menjawab satu pertanyaan — siapa sedang menjalankan apa, supaya
+ * dua orang tidak mencetak sheet yang sama — dan `model_info` bukan jawaban
+ * untuk itu: ia dikirim panel perintah sendiri, berkala, untuk memastikan nama
+ * file .rvt yang tampil masih nama file yang benar-benar terbuka. Menampilkan
+ * "bagus sedang menjalankan /model_info" melatih orang mengabaikan daftar ini
+ * persis pada saat daftar ini penting.
+ *
+ * Tetap dihitung untuk `busy` dan `lastSeen` di bawah: add-in yang sedang
+ * memegang model_info memang sedang sibuk, dan model_info yang selesai memang
+ * bukti bahwa add-in itu hidup — bukti yang paling sering ada, karena ia yang
+ * paling sering berjalan.
+ */
+const PLUMBING = ["model_info"];
+
 export async function GET(req: Request) {
   const supabase = await createClient();
 
@@ -107,16 +124,18 @@ export async function GET(req: Request) {
       busy: queue.some((row) => row.status === "processing"),
       lastSeen: (lastDone?.completed_at as string | null) ?? null,
     },
-    commands: queue.map((row) => ({
-      id: row.id,
-      commandType: row.command_type,
-      commandText: row.command_text,
-      status: row.status,
-      queuedAt: row.queued_at,
-      // Perintah dari bot Telegram tidak punya baris users yang cocok; itu
-      // bukan kesalahan, jadi namanya dikosongkan dan UI menyebutnya "lain".
-      who: row.user_id ? (names.get(row.user_id) ?? "") : "",
-      mine: row.user_id === user.id,
-    })),
+    commands: queue
+      .filter((row) => !PLUMBING.includes(row.command_type))
+      .map((row) => ({
+        id: row.id,
+        commandType: row.command_type,
+        commandText: row.command_text,
+        status: row.status,
+        queuedAt: row.queued_at,
+        // Perintah dari bot Telegram tidak punya baris users yang cocok; itu
+        // bukan kesalahan, jadi namanya dikosongkan dan UI menyebutnya "lain".
+        who: row.user_id ? (names.get(row.user_id) ?? "") : "",
+        mine: row.user_id === user.id,
+      })),
   });
 }
