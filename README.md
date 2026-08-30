@@ -34,7 +34,7 @@ C# supaya sesuatu di sini berguna.
 | Dokumen | Isinya |
 |---|---|
 | `docs/addin-electrical-commands.md` | Enam perintah kelistrikan — beban, panel schedule, keseimbangan fasa, tunjukkan elemen, section box, sambung sirkuit. |
-| `docs/addin-dokumen-aktif-dan-batas-ruangan.md` | Dokumen aktif diambil saat perintahnya jalan (dan disebut di setiap balikan), serta armatur yang di luar batas ruangan dibuang, bukan dipasang. |
+| `docs/addin-dokumen-aktif-dan-batas-ruangan.md` | Dokumen yang dikerjakan disebut di setiap balikan, dan armatur yang jatuh di luar batas ruangan dibuang alih-alih dipasang. Sudah dibangun; dokumennya menyimpan alasannya. |
 
 ## Halaman
 
@@ -168,8 +168,8 @@ Grid dibentangkan pada KOTAK ruangan; ruangan berbentuk L punya kotak yang
 mencakup takik yang bukan miliknya. "Pasang 40 lampu di LOUNGE 5" pada ruangan
 begitu meletakkan enam di antaranya di MEETING 2 — ikut terhitung sebagai beban
 LOUNGE, dan ditumpuki lagi saat MEETING 2 sendiri dipasangi lampu. Ujinya milik
-add-in (`Room.IsPointInRoom`, spesifikasinya di
-`docs/addin-dokumen-aktif-dan-batas-ruangan.md`); yang ada di sini adalah
+add-in — `Room.IsPointInRoom`, sudah dibangun, alasannya di
+`docs/addin-dokumen-aktif-dan-batas-ruangan.md` — dan yang ada di sini adalah
 pelaporannya. `devices_placed` adalah yang benar-benar berdiri di model, dan
 `outside_boundary` yang dibuang, jadi ringkasannya berbunyi "34 perangkat
 dipasang · ruangan LOUNGE 5 · 6 di luar batas ruangan". Tanpa medan kedua itu,

@@ -13,15 +13,35 @@ gambar yang salah tanpa satu pun galat muncul di mana pun:
    ruangan orang lain, ikut terhitung sebagai beban LOUNGE, dan tidak ada satu
    pun angka di hasilnya yang menyebutkan itu.
 
-Yang pertama separuh diperbaiki di repo ini, separuh lagi hanya bisa di add-in.
-Yang kedua seluruhnya di add-in — repo ini cuma bisa melaporkan angkanya dengan
-jujur, dan itu sudah dilakukan.
+Yang pertama separuh diperbaiki di repo ini, separuh lagi di add-in. Yang kedua
+seluruhnya di add-in — repo ini cuma bisa melaporkan angkanya dengan jujur.
+Keduanya sudah dikerjakan; lihat tabel di bawah.
 
 Seperti `docs/addin-electrical-commands.md`, yang ditulis di sini adalah
-spesifikasinya, bukan tempelan pada kode yang sudah ada: handler C#-nya hidup di
+spesifikasinya: handler C#-nya hidup di
 [`electrical_ai`](https://github.com/baguscandrautamamr/electrical_ai), di
 `revit-addin/RevitCommandCenter.Electrical`, dan sebuah perubahan di sini tidak
 mengubah apa pun di PC yang menjalankan Revit sampai DLL-nya diganti.
+
+**Sisi add-in-nya sudah dibangun**, di branch `claude/dokumen-boundary-lampu-kx4mcv`
+repo itu:
+
+| Yang diminta | Di mana |
+|---|---|
+| Penyaringan batas ruangan untuk grid yang disebut | `Utils/RevitUtils.cs` — `GenerateCeilingGrid`, `CanTestBoundary` |
+| Satu jalan untuk ketiga perangkat plafon | `Handlers/DevicePlacementHandler.cs` — `CeilingGridFor` |
+| `outside_boundary` / `requested` / `boundary_checked` di balikan | `Models/DomainModels.cs` — `PlacementResultDto`, `CeilingGrid` |
+| Angkanya dititipkan per eksekusi | `Handlers/ICommandHandler.cs` — `HandlerContext.ReportBoundary` |
+| `document` di setiap balikan | `Queue/CommandProcessor.cs` — `WithDocument` |
+
+Jadi dokumen ini sekarang dua hal sekaligus: apa yang diminta, dan mengapa —
+bagiannya yang tidak bisa dibaca dari kode. Yang berubah dari rencana awal
+disebutkan di tempatnya masing-masing di bawah, dan satu di antaranya cukup
+besar untuk disebut di sini: **butir 1a ternyata sudah benar sejak awal.**
+`CommandQueueWorker.Execute` sudah mengambil `app.ActiveUIDocument?.Document`
+pada saat perintahnya dijalankan, bukan menyimpannya di sebuah field. Add-in
+tidak pernah mengerjakan dokumen yang salah; yang salah cuma nama yang tampil di
+panel, dan itu seluruhnya di sisi website.
 
 ---
 
@@ -76,6 +96,9 @@ terbuka.
 ### Yang harus dipenuhi add-in
 
 **a. Dokumen ditentukan saat perintahnya dijalankan, bukan saat add-in dimuat.**
+**Sudah begitu** — `CommandQueueWorker.Execute` mengambilnya di dalam
+`ExternalEvent`, sekali per perintah. Tidak ada yang perlu diubah; yang di bawah
+adalah alasan mengapa itu benar, supaya ia tidak berubah nanti.
 
 `OnStartup` berjalan sekali; dockable pane dibuat sekali; `Document` yang
 disimpan di sebuah field pada salah satu dari keduanya akan tetap ada di field
@@ -99,7 +122,8 @@ daftar ruangan, daftar print setup — kuncinya harus dokumen itu
 isinya dibuang saat dokumennya berganti. Cache yang tidak berkunci dokumen adalah
 bentuk lain dari bug yang sama: nama file yang benar, isi yang milik file lain.
 
-**b. `model_info` harus murah, karena sekarang ia sering.**
+**b. `model_info` harus murah, karena sekarang ia sering.** *(Belum dikerjakan —
+ini soal ongkos, bukan soal benar.)*
 
 Sekali per menit selama panelnya terlihat. Yang dikirimnya sekarang bukan cuma
 judul: `family_types` dan `rooms` masing-masing sebuah `FilteredElementCollector`
@@ -118,7 +142,8 @@ akan menolak seluruh perintahnya, dan itu berarti fitur yang sekarang jalan
 berhenti jalan di setiap PC yang DLL-nya belum diganti. Bentuk kawatnya tetap
 persis seperti sebelumnya: `/model_info` tanpa argumen.
 
-**c. Setiap hasil menyebut dokumen yang dikerjakannya.**
+**c. Setiap hasil menyebut dokumen yang dikerjakannya.** *(Sudah dibangun:
+`CommandProcessor.WithDocument`.)*
 
 Satu medan, di balikan **setiap** perintah — baca maupun tulis:
 
@@ -290,16 +315,12 @@ tersambung ke sirkuit apa pun.
 
 ---
 
-## Urutan pengerjaan yang disarankan
+## Apa yang sudah, dan apa yang belum
 
-1. **Dokumen aktif diambil di dalam `Execute`** (1a). Paling kecil, dan ia yang
-   membuat sisanya bisa dipercaya — termasuk butir 2, karena ruangan yang dicari
-   di dokumen yang salah tidak akan ketemu sama sekali.
-2. **`document` di setiap balikan** (1c). Satu baris per handler, dan pemicu
-   pergantian dokumen yang paling tepat waktunya.
-3. **Uji batas ruangan di `place_lighting`** (2a–2c). Di situ ia dilaporkan, dan
-   ruangan berbentuk L paling sering ditemui pada armatur.
-4. **Uji yang sama di tujuh `place_*` lainnya dan di `modify_devices`.**
-5. **Cache `model_info` per dokumen** (1b). Paling akhir: ia soal ongkos, bukan
-   soal benar — dan sampai ia dikerjakan, yang terjadi hanya Revit yang bekerja
-   lebih keras sekali semenit.
+| | Keadaan |
+|---|---|
+| 1a — dokumen diambil di dalam `Execute` | Sudah begitu sejak awal; yang ditulis di sini alasannya, bukan perubahannya. |
+| 1b — `model_info` di-cache per dokumen | **Belum.** Soal ongkos, bukan soal benar: sampai dikerjakan, yang terjadi hanya Revit membaca ulang daftar family dan ruangan sekali semenit selama panelnya terlihat. Yang paling mudah salah kalau dikerjakan terburu-buru adalah kuncinya — cache yang tidak berkunci dokumen menghasilkan nama file yang benar dengan isi milik file lain, yaitu bug yang sama dalam bentuk lain. |
+| 1c — `document` di setiap balikan | Sudah. |
+| 2a–2c — uji batas ruangan pada grid | Sudah, untuk ketiga perangkat plafon (armatur, detektor, speaker) lewat satu jalan. |
+| 2 pada perangkat dinding | **Tidak perlu.** Stop kontak, saklar, jack telepon dan LAN ditempatkan dari segmen batas ruangan itu sendiri (`RoomPerimeter`), jadi titiknya tidak pernah keluar dari ruangannya. Uji tambahan di situ hanya menambah cara baru untuk salah. |
