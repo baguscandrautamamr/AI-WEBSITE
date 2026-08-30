@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_HISTORY, MAX_TURN_CHARS, buildMessages, turnsFromChat } from "./chatHistory";
+import { MARK, MAX_HISTORY, MAX_TURN_CHARS, buildMessages, turnsFromChat } from "./chatHistory";
 
 const user = (content: string) => ({ role: "user", content });
 const assistant = (content: string) => ({ role: "assistant", content });
@@ -121,13 +121,14 @@ describe("turnsFromChat", () => {
       },
     ]);
 
-    expect(turn.content).toContain("[CATATAN SISTEM]");
-    expect(turn.content).toContain("memanggil tool place_lighting");
-    // Yang paling penting: dikatakan terus terang bahwa menulis teks tidak
-    // mengirim apa pun.
-    expect(turn.content).toMatch(/tidak mengirim apa pun/i);
-    // Dan barisnya tidak lagi berdiri sendiri di awal sebagai jawaban.
+    expect(turn.content).toContain(MARK);
+    expect(turn.content).toContain("place_lighting");
+    // Barisnya tidak berdiri sendiri di awal sebagai jawaban.
     expect(turn.content.startsWith("/place_lighting")).toBe(false);
+    // Yang dulu dikatakan di setiap catatan — bahwa menulis teks tidak
+    // mengirim apa pun — sekarang berdiri SEKALI di prompt sistem, bukan
+    // diulang dua belas kali sebagai kalimat yang bisa ditiru. Diuji di
+    // aiTools.test.ts.
   });
 
   it("membawa jawaban Revit ke dalam riwayat, bukan cuma kabar bahwa perintahnya dikirim", () => {
@@ -147,10 +148,9 @@ describe("turnsFromChat", () => {
     ]);
 
     expect(turn.content).toContain("Cable tray: 37 (128.4 m)");
-    // Untuk perintah BACA, larangan mengulangnya dipertahankan — tapi disempitkan
-    // pada apa yang memang dimaksud: menjawab pertanyaan lanjutan dari angka yang
-    // sudah ada, bukan menahan permintaan baru.
-    expect(turn.content).toMatch(/pertanyaan LANJUTAN.*dijawab dari sini/i);
+    // Aturan tentang bagaimana angka ini boleh dipakai — dijawab dari sini
+    // untuk pertanyaan lanjutan, dijalankan lagi untuk permintaan baru — ada di
+    // prompt sistem, sekali. Diuji di aiTools.test.ts.
   });
 
   it("catatan hasil menyebut dirinya masa lalu, bukan keadaan model sekarang", () => {
@@ -171,8 +171,11 @@ describe("turnsFromChat", () => {
         },
       ]);
 
-      expect(turn.content, command).toMatch(/BUKAN keadaan model sekarang/i);
-      expect(turn.content, command).toMatch(/meminta dijalankan lagi, jalankan lagi/i);
+      // Catatannya sendiri tidak lagi berceramah; yang tersisa di sini cuma
+      // fakta. Ceramahnya — bahwa ini masa lalu dan permintaan baru dijalankan
+      // lagi — berdiri sekali di prompt sistem, diuji di aiTools.test.ts.
+      expect(turn.content, command).toContain("HASILNYA: 50 lighting(s) placed");
+      expect(turn.content, command).not.toMatch(/BUKAN keadaan model sekarang/i);
     }
   });
 
@@ -259,7 +262,7 @@ describe("turnsFromChat", () => {
       },
     ]);
 
-    expect(turn.content).toMatch(/Revit sudah menjawab/);
+    expect(turn.content).toMatch(/query dijalankan/);
     expect(turn.content).toContain("aneh: 1");
     expect(turn.content).not.toMatch(/belum tentu ada di giliran ini/);
   });
@@ -288,7 +291,7 @@ describe("turnsFromChat", () => {
     const [turn] = turnsFromChat([
       { role: "proposal", text: "", commandText: "/modify_devices Lounge grid=2x5" },
     ]);
-    expect(turn.content).toContain("memanggil tool modify_devices");
+    expect(turn.content).toContain("modify_devices");
   });
 
   it("mencatat pertanyaan family beserta jawabannya", () => {
@@ -305,7 +308,7 @@ describe("turnsFromChat", () => {
     ]);
 
     expect(turn.role).toBe("assistant");
-    expect(turn.content).toContain("TIDAK dikirim");
+    expect(turn.content).toContain("DITAHAN");
     expect(turn.content).toContain("downlight");
     expect(turn.content).toContain("ACT_E_DOWNLIGHT 22WATT");
   });

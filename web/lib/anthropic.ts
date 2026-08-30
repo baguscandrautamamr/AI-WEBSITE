@@ -36,16 +36,25 @@ export const MODEL = process.env.AI_MODEL ?? "claude-sonnet-5";
 /**
  * Seberapa dalam model boleh berpikir sebelum menjawab.
  *
- * `low`, karena giliran mode Electrical adalah penerjemahan: satu kalimat jadi
- * satu panggilan tool, dengan katalog yang sudah menyebutkan setiap argumen dan
- * rentangnya, dan hasilnya divalidasi ulang di `buildPayload` dan
- * `resolveFamilies` sebelum berangkat ke mana pun. Bawaan API adalah `high`, dan
- * pada giliran seperti ini yang ditambahkannya bukan ketepatan melainkan
- * detik-detik yang dihabiskan orangnya menatap "Menyusun perintah…".
+ * Bawaan API adalah `high`, dan itu berlebihan di sini: giliran mode Electrical
+ * memilih SATU tool dari katalog yang sudah menyebutkan setiap argumen dan
+ * rentangnya, lalu hasilnya divalidasi ulang di `buildPayload` dan
+ * `resolveFamilies` sebelum berangkat ke mana pun. Yang ditambahkan `high`
+ * bukan ketepatan, melainkan detik-detik yang dihabiskan orangnya menatap
+ * "Menyusun perintah…".
+ *
+ * `medium`, bukan `low`, dan itu langkah mundur yang disengaja dari nilai
+ * sebelumnya. Pada `low` model lebih banyak mencocokkan pola daripada memilih —
+ * dan pola terdekat yang tersedia baginya adalah giliran asisten terakhir di
+ * riwayat, yang berupa CATATAN SISTEM. Yang keluar bukan pilihan tool,
+ * melainkan tiruan catatan itu, lengkap dengan angka yang tidak pernah datang
+ * dari Revit. Penjagaannya sudah ada di `propose` dan tiruan itu tidak lagi
+ * pernah sampai ke layar, tapi penjagaan yang sering terpakai berarti pilihan
+ * yang salah di hulu.
  *
  * Env, bukan konstanta, karena satu-satunya cara mengetahui bahwa sebuah bentuk
  * permintaan menuntut lebih adalah menemukannya — dan menemukannya tidak boleh
  * berarti menunggu deploy.
  */
 export const EFFORT =
-  (process.env.AI_EFFORT as "low" | "medium" | "high" | "xhigh" | "max" | undefined) ?? "low";
+  (process.env.AI_EFFORT as "low" | "medium" | "high" | "xhigh" | "max" | undefined) ?? "medium";
