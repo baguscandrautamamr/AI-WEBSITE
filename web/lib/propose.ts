@@ -9,7 +9,8 @@ import {
   toolsForRole,
 } from "./aiTools";
 import { buildMessages } from "./chatHistory";
-import { COMMANDS_BY_NAME, canAutoRun, canRun, type Role } from "./commands";
+import { directCommand } from "./directCommand";
+import { COMMANDS_BY_NAME, canAutoRun, canRun, type CommandSpec, type Role } from "./commands";
 import { resolveFamilies } from "./familyChoice";
 import { CommandValidationError, buildPayload } from "./queue";
 import { expandRooms } from "./roomList";
@@ -133,41 +134,18 @@ export async function propose(input: {
 
   const startedAt = Date.now();
 
-  let response;
-  try {
-    response = await ask(false);
-  } catch (err) {
-    console.error("[propose] gateway call failed", err);
-    return {
-      ok: false,
-      status: 502,
-      error: "asisten sedang tidak bisa dihubungi",
-      event: {
-        outcome: "error",
-        tool: null,
-        latency_ms: Date.now() - startedAt,
-        error: "gateway_unreachable",
-      },
-    };
-  }
-
-  let toolUse = response.content.find((b) => b.type === "tool_use");
-  let text = textOf(response.content);
-
-  let stats = statsOf(response);
+  // Dideklarasikan sebelum panggilan model, bukan sesudahnya, karena jalur
+  // langsung di bawah menyelesaikan sebuah perintah TANPA memanggil model —
+  // dan ia tetap harus lewat `done` yang sama supaya telemetrinya tidak punya
+  // cabang tersendiri yang bisa ketinggalan.
+  let stats: ReturnType<typeof statsOf> = {
+    model_served: null,
+    stop_reason: null,
+    input_tokens: null,
+    output_tokens: null,
+    cache_read_tokens: null,
+  };
   let forcedRetry = false;
-
-  /**
-   * Pemaksaan yang dijalankan lalu tetap tidak menghasilkan panggilan tool.
-   *
-   * Dicatat karena tanpa ini ia tidak bisa dibedakan dari pemaksaan yang tidak
-   * pernah dijalankan: `forced_retry` sama-sama true, dan hasilnya sama-sama
-   * sebuah balasan teks. Padahal keduanya menuntut perbaikan yang berbeda —
-   * yang satu di deteksinya, yang satu lagi di jalur panggilannya (permintaan
-   * ini lewat gateway pihak ketiga, dan `tool_choice` termasuk yang bisa tidak
-   * diteruskan utuh). Satu kolom di `ai_events` menggantikan satu sesi menebak.
-   */
-  let forceFailed: string | null = null;
 
   /**
    * Satu-satunya jalan keluar, supaya tidak ada cabang yang lupa mencatat.
@@ -189,6 +167,203 @@ export async function propose(input: {
       ...event,
     },
   });
+
+  /**
+   * Nilai sebuah perintah — dari mana pun asalnya — diselesaikan jadi jawaban.
+   *
+   * Satu ekor untuk DUA jalur masuk: panggilan tool dari model, dan kalimat yang
+   * dibaca `directCommand` tanpa model sama sekali. Dipisah jadi fungsi persis
+   * supaya keduanya tidak bisa berbeda: pemeriksaan family, pemekaran "semua
+   * ruangan", dan validasi `buildPayload` berlaku sama untuk keduanya. Sebuah
+   * jalur pintas yang melewatkan salah satunya adalah perintah yang salah
+   * dikirim ke model Revit orang.
+   */
+  const settle = (
+    spec: CommandSpec,
+    values: Record<string, unknown>,
+    note: string | null
+  ): ProposeResult => {
+    // Divalidasi dengan aturan yang sama persis dengan form, supaya usulan yang
+    // pasti ditolak server ketahuan di sini — lengkap dengan alasannya, sehingga
+    // pengguna bisa melengkapinya di form tanpa menebak.
+    try {
+      // Nama family yang ditebak diperiksa terhadap isi model yang sebenarnya
+      // SEBELUM perintahnya boleh berangkat. "Lampu downlight" tidak menyebut
+      // family mana pun; model memilih yang paling masuk akal, dan yang paling
+      // masuk akal bukan selalu yang benar. Add-in tidak pernah mengeluh soal nama
+      // yang tidak ketemu — ia memakai bawaannya dan melaporkan sukses.
+      const resolved = resolveFamilies(spec, values, context?.familyTypes);
+
+      if (resolved.question) {
+        // Ditahan, dan daftarnya ditawarkan di percakapan — satu ketukan, bukan
+        // mengisi ulang formulir.
+        return done(
+          {
+            kind: "choose",
+            command: spec.name,
+            values: resolved.values,
+            note,
+            ...resolved.question,
+          },
+          { outcome: "choose", tool: spec.name }
+        );
+      }
+
+      // "Semua ruangan" dimekarkan jadi satu perintah per ruangan.
+      //
+      // Add-in mengerjakan satu ruangan per perintah, jadi yang tersisa cuma
+      // pertanyaan siapa yang menyalinnya lima kali. Dimekarkan di sini, bukan
+      // dengan meminta model memanggil tool lima kali: model yang diminta begitu
+      // akan memanggilnya empat kali pada percobaan yang lain, dan tidak ada yang
+      // menyadarinya kecuali dari gambar yang kurang satu ruangan.
+      const roomField = spec.positional?.name;
+      const rooms = roomField
+        ? expandRooms(resolved.values[roomField], context?.rooms ?? [])
+        : null;
+
+      if (rooms) {
+        if (rooms.length === 0) {
+          return done(
+            {
+              kind: "reply",
+              text:
+                note ||
+                "Daftar ruangan belum terbaca dari Revit, jadi \"semua ruangan\" belum bisa saya jabarkan. Buka Revit dengan add-in berjalan, atau sebutkan nama ruangannya.",
+            },
+            { outcome: "reply", tool: spec.name }
+          );
+        }
+
+        const items = rooms.map((room) => {
+          const perRoom = { ...resolved.values, [roomField as string]: room };
+          return { room, values: perRoom, commandText: buildPayload(spec, perRoom).commandText };
+        });
+
+        return done(
+          {
+            kind: "batch",
+            command: spec.name,
+            items,
+            confirm: Boolean(spec.confirm),
+            note,
+          },
+          { outcome: "batch", tool: spec.name }
+        );
+      }
+
+      const { commandText } = buildPayload(spec, resolved.values);
+      return done(
+        {
+          kind: "command",
+          command: spec.name,
+          values: resolved.values,
+          commandText,
+          confirm: Boolean(spec.confirm),
+          note,
+          /**
+           * Perintah ini boleh dijalankan sistem sendiri, dan hasilnya boleh
+           * dikembalikan kepada model sebagai langkah berikutnya.
+           *
+           * Dijawab SERVER, dari katalog (lihat canAutoRun), bukan disimpulkan
+           * browser dari nama perintahnya. Bukan sebagai pagar keamanan — sebuah
+           * client memang bisa memanggil /api/commands sendiri untuk apa pun yang
+           * perannya izinkan — melainkan supaya jawaban atas "perintah mana yang
+           * boleh berjalan tanpa ditunggui" hanya ada di satu tempat. Dua tempat
+           * berarti dua jawaban, dan yang kedua ketinggalan saat katalognya berubah.
+           *
+           * Yang MENGHITUNG langkahnya tetap client: ia yang melingkar, jadi ia
+           * yang tahu sudah berapa kali. Server hanya menolak yang melewati batas.
+           */
+          autoRun: canAutoRun(spec),
+        },
+        { outcome: "command", tool: spec.name }
+      );
+    } catch (err) {
+      if (err instanceof CommandValidationError) {
+        return done(
+          {
+            kind: "incomplete",
+            command: spec.name,
+            values,
+            issues: err.issues,
+            note,
+          },
+          { outcome: "incomplete", tool: spec.name }
+        );
+      }
+
+      console.error("[propose] buildPayload failed", err);
+      return {
+        ok: false,
+        status: 500,
+        error: "gagal menyusun perintah",
+        event: {
+          ...stats,
+          outcome: "error",
+          tool: spec.name,
+          latency_ms: Date.now() - startedAt,
+          forced_retry: forcedRetry,
+          error: "build_payload_failed",
+        },
+      };
+    }
+  };
+
+  /**
+   * KALIMAT PERINTAH YANG LUGAS TIDAK MENUNGGU MODEL SAMA SEKALI.
+   *
+   * "pasang lampu recessed di meeting 2 5x3 tinggi 3 meter" memuat setiap
+   * argumen yang dibutuhkan. Melemparkannya ke model menambahkan satu
+   * ketergantungan yang tidak memberi apa-apa — dan ketergantungan itulah yang
+   * dilaporkan rusak: balasan teks berkali-kali berturut-turut, tanpa satu pun
+   * perintah berangkat, bahkan setelah `tool_choice: any` dipaksakan.
+   *
+   * Yang dibaca di sini bukan tebakan. Nama ruangan dan nama family DICARI di
+   * daftar yang dilaporkan add-in lewat `model_info`; kalau salah satunya tidak
+   * ketemu, `directCommand` menjawab null dan giliran ini berjalan persis
+   * seperti sebelumnya. Dan yang ketemu tetap lewat `settle` — jalur validasi
+   * yang sama dengan usulan model, tanpa satu langkah pun dilewati.
+   *
+   * Efek sampingnya: nol panggilan API, nol detik menunggu, untuk kalimat yang
+   * paling sering diketik orang di panel ini.
+   */
+  const direct = directCommand(message, role, context);
+  if (direct) return settle(direct.spec, direct.values, null);
+
+  let response;
+  try {
+    response = await ask(false);
+  } catch (err) {
+    console.error("[propose] gateway call failed", err);
+    return {
+      ok: false,
+      status: 502,
+      error: "asisten sedang tidak bisa dihubungi",
+      event: {
+        outcome: "error",
+        tool: null,
+        latency_ms: Date.now() - startedAt,
+        error: "gateway_unreachable",
+      },
+    };
+  }
+
+  let toolUse = response.content.find((b) => b.type === "tool_use");
+  let text = textOf(response.content);
+
+  stats = statsOf(response);
+
+  /**
+   * Pemaksaan yang dijalankan lalu tetap tidak menghasilkan panggilan tool.
+   *
+   * Dicatat karena tanpa ini ia tidak bisa dibedakan dari pemaksaan yang tidak
+   * pernah dijalankan: `forced_retry` sama-sama true, dan hasilnya sama-sama
+   * sebuah balasan teks. Padahal keduanya menuntut perbaikan yang berbeda —
+   * yang satu di deteksinya, yang satu lagi di jalur panggilannya (permintaan
+   * ini lewat gateway pihak ketiga, dan `tool_choice` termasuk yang bisa tidak
+   * diteruskan utuh). Satu kolom di `ai_events` menggantikan satu sesi menebak.
+   */
+  let forceFailed: string | null = null;
 
   /**
    * Jawaban yang MENULIS perintahnya alih-alih memanggil tool-nya, dicoba sekali
@@ -356,132 +531,7 @@ export async function propose(input: {
     );
   }
 
-  const values = (toolUse.input ?? {}) as Record<string, unknown>;
-
-  // Divalidasi dengan aturan yang sama persis dengan form, supaya usulan yang
-  // pasti ditolak server ketahuan di sini — lengkap dengan alasannya, sehingga
-  // pengguna bisa melengkapinya di form tanpa menebak.
-  try {
-    // Nama family yang ditebak diperiksa terhadap isi model yang sebenarnya
-    // SEBELUM perintahnya boleh berangkat. "Lampu downlight" tidak menyebut
-    // family mana pun; model memilih yang paling masuk akal, dan yang paling
-    // masuk akal bukan selalu yang benar. Add-in tidak pernah mengeluh soal nama
-    // yang tidak ketemu — ia memakai bawaannya dan melaporkan sukses.
-    const resolved = resolveFamilies(spec, values, context?.familyTypes);
-
-    if (resolved.question) {
-      // Ditahan, dan daftarnya ditawarkan di percakapan — satu ketukan, bukan
-      // mengisi ulang formulir.
-      return done(
-        {
-          kind: "choose",
-          command: spec.name,
-          values: resolved.values,
-          note: text || null,
-          ...resolved.question,
-        },
-        { outcome: "choose", tool: spec.name }
-      );
-    }
-
-    // "Semua ruangan" dimekarkan jadi satu perintah per ruangan.
-    //
-    // Add-in mengerjakan satu ruangan per perintah, jadi yang tersisa cuma
-    // pertanyaan siapa yang menyalinnya lima kali. Dimekarkan di sini, bukan
-    // dengan meminta model memanggil tool lima kali: model yang diminta begitu
-    // akan memanggilnya empat kali pada percobaan yang lain, dan tidak ada yang
-    // menyadarinya kecuali dari gambar yang kurang satu ruangan.
-    const roomField = spec.positional?.name;
-    const rooms = roomField
-      ? expandRooms(resolved.values[roomField], context?.rooms ?? [])
-      : null;
-
-    if (rooms) {
-      if (rooms.length === 0) {
-        return done(
-          {
-            kind: "reply",
-            text:
-              text ||
-              "Daftar ruangan belum terbaca dari Revit, jadi \"semua ruangan\" belum bisa saya jabarkan. Buka Revit dengan add-in berjalan, atau sebutkan nama ruangannya.",
-          },
-          { outcome: "reply", tool: spec.name }
-        );
-      }
-
-      const items = rooms.map((room) => {
-        const perRoom = { ...resolved.values, [roomField as string]: room };
-        return { room, values: perRoom, commandText: buildPayload(spec, perRoom).commandText };
-      });
-
-      return done(
-        {
-          kind: "batch",
-          command: spec.name,
-          items,
-          confirm: Boolean(spec.confirm),
-          note: text || null,
-        },
-        { outcome: "batch", tool: spec.name }
-      );
-    }
-
-    const { commandText } = buildPayload(spec, resolved.values);
-    return done(
-      {
-        kind: "command",
-        command: spec.name,
-        values: resolved.values,
-        commandText,
-        confirm: Boolean(spec.confirm),
-        note: text || null,
-        /**
-         * Perintah ini boleh dijalankan sistem sendiri, dan hasilnya boleh
-         * dikembalikan kepada model sebagai langkah berikutnya.
-         *
-         * Dijawab SERVER, dari katalog (lihat canAutoRun), bukan disimpulkan
-         * browser dari nama perintahnya. Bukan sebagai pagar keamanan — sebuah
-         * client memang bisa memanggil /api/commands sendiri untuk apa pun yang
-         * perannya izinkan — melainkan supaya jawaban atas "perintah mana yang
-         * boleh berjalan tanpa ditunggui" hanya ada di satu tempat. Dua tempat
-         * berarti dua jawaban, dan yang kedua ketinggalan saat katalognya berubah.
-         *
-         * Yang MENGHITUNG langkahnya tetap client: ia yang melingkar, jadi ia
-         * yang tahu sudah berapa kali. Server hanya menolak yang melewati batas.
-         */
-        autoRun: canAutoRun(spec),
-      },
-      { outcome: "command", tool: spec.name }
-    );
-  } catch (err) {
-    if (err instanceof CommandValidationError) {
-      return done(
-        {
-          kind: "incomplete",
-          command: spec.name,
-          values,
-          issues: err.issues,
-          note: text || null,
-        },
-        { outcome: "incomplete", tool: spec.name }
-      );
-    }
-
-    console.error("[propose] buildPayload failed", err);
-    return {
-      ok: false,
-      status: 500,
-      error: "gagal menyusun perintah",
-      event: {
-        ...stats,
-        outcome: "error",
-        tool: spec.name,
-        latency_ms: Date.now() - startedAt,
-        forced_retry: forcedRetry,
-        error: "build_payload_failed",
-      },
-    };
-  }
+  return settle(spec, (toolUse.input ?? {}) as Record<string, unknown>, text || null);
 }
 
 /** Bagian teks dari sebuah jawaban, digabung. */
