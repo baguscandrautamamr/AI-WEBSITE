@@ -166,6 +166,35 @@ describe("summarizeResult — perintah yang mengubah model", () => {
     );
   });
 
+  it("saklar yang tidak kebagian pintu disebut, beserta jaraknya", () => {
+    // Ini yang dilaporkan sebagai "kenapa jaraknya 3.570 mm, bukan 300 mm".
+    // Penempatan berbasis pintu gagal, sisanya disebar rata di keliling
+    // ruangan — dan jumlahnya tetap cocok, jadi catatan "kurang dari yang
+    // diminta" tidak menyala. Tanpa baris ini tidak ada satu pun angka di layar
+    // yang menyebutkannya.
+    expect(
+      summarizeResult(
+        {
+          devices_placed: 1,
+          room: "OFFICE",
+          beside_door: 0,
+          away_from_door: 1,
+          door_distance_mm: [3570],
+        },
+        t
+      )
+    ).toBe("1 perangkat dipasang · ruangan OFFICE · 1 tidak di samping pintu (3570 mm)");
+  });
+
+  it("semua kebagian pintu: tidak ada yang perlu dijelaskan", () => {
+    expect(
+      summarizeResult(
+        { devices_placed: 2, room: "OFFICE", beside_door: 2, away_from_door: 0 },
+        t
+      )
+    ).toBe("2 perangkat dipasang · ruangan OFFICE");
+  });
+
   it("add-in yang tidak memeriksa batas tidak dibuatkan kalimatnya", () => {
     // Medannya tidak ada sama sekali di add-in versi lama. Menampilkan "0 di
     // luar batas ruangan" untuk hasil yang batasnya tidak pernah dilihat

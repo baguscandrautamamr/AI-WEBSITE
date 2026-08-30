@@ -132,12 +132,35 @@ function summarize(result: Dict, t: (key: string) => string): string {
     // yang tidak pernah melihat batasnya adalah kalimat yang salah.
     const outside = num(result.outside_boundary);
 
+    /**
+     * Saklar yang tidak bisa ditempatkan di samping pintu.
+     *
+     * Ini yang dilaporkan sebagai "kenapa jaraknya 3.570 mm, bukan 300 mm".
+     * Penempatan berbasis pintu gagal — ruangan tanpa pintu di peta batasnya,
+     * kedua sisi terhalang, atau tidak ada dinding di bawah titik yang
+     * seharusnya — dan sisanya disebar rata di keliling ruangan, yang tidak
+     * tahu apa-apa soal pintu. Perintahnya tetap sukses, jumlahnya tetap cocok,
+     * dan tidak ada satu pun angka di layar yang menyebutkannya.
+     *
+     * Jaraknya ikut disebut kalau add-in mengukurnya: satu angka menghemat
+     * perjalanan menarik dimensi sendiri di Revit.
+     */
+    const away = num(result.away_from_door);
+    const distances = Array.isArray(result.door_distance_mm)
+      ? result.door_distance_mm.filter((d): d is number => typeof d === "number")
+      : [];
+    const farthest = distances.length ? Math.max(...distances) : null;
+
     return [
       `${placed} ${t("result.devices_placed").toLowerCase()}`,
       where && `${t("result.room").toLowerCase()} ${where}`,
       family,
       outside !== null && outside > 0
         ? `${outside} ${t("result.outside_boundary").toLowerCase()}`
+        : "",
+      away !== null && away > 0
+        ? `${away} ${t("result.away_from_door").toLowerCase()}` +
+          (farthest && farthest > 0 ? ` (${format(farthest)} mm)` : "")
         : "",
     ]
       .filter(Boolean)
