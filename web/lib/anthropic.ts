@@ -32,3 +32,20 @@ export const anthropic = new Anthropic({
 // request ini lewat gateway pihak ketiga di atas, jadi yang menjawab tidak
 // sepenuhnya di bawah kendali repo ini.
 export const MODEL = process.env.AI_MODEL ?? "claude-sonnet-5";
+
+/**
+ * Seberapa dalam model boleh berpikir sebelum menjawab.
+ *
+ * `low`, karena giliran mode Electrical adalah penerjemahan: satu kalimat jadi
+ * satu panggilan tool, dengan katalog yang sudah menyebutkan setiap argumen dan
+ * rentangnya, dan hasilnya divalidasi ulang di `buildPayload` dan
+ * `resolveFamilies` sebelum berangkat ke mana pun. Bawaan API adalah `high`, dan
+ * pada giliran seperti ini yang ditambahkannya bukan ketepatan melainkan
+ * detik-detik yang dihabiskan orangnya menatap "Menyusun perintah…".
+ *
+ * Env, bukan konstanta, karena satu-satunya cara mengetahui bahwa sebuah bentuk
+ * permintaan menuntut lebih adalah menemukannya — dan menemukannya tidak boleh
+ * berarti menunggu deploy.
+ */
+export const EFFORT =
+  (process.env.AI_EFFORT as "low" | "medium" | "high" | "xhigh" | "max" | undefined) ?? "low";

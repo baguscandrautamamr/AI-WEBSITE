@@ -1,5 +1,12 @@
-import { anthropic, MODEL } from "./anthropic";
-import { ELECTRICAL_SYSTEM_PROMPT, mentionsCommand, toolsForRole, withModelContext } from "./aiTools";
+import { anthropic, EFFORT, MODEL } from "./anthropic";
+import {
+  ELECTRICAL_SYSTEM_PROMPT,
+  asksToRun,
+  mentionsCommand,
+  modelContextBlock,
+  refusesAsAlreadyDone,
+  toolsForRole,
+} from "./aiTools";
 import { buildMessages } from "./chatHistory";
 import { COMMANDS_BY_NAME, canAutoRun, canRun, type Role } from "./commands";
 import { resolveFamilies } from "./familyChoice";
@@ -69,12 +76,51 @@ export async function propose(input: {
 
   const tools = toolsForRole(role);
   const messages = buildMessages(history, message);
-  const system = withModelContext(ELECTRICAL_SYSTEM_PROMPT, context);
+
+  /**
+   * Prompt sistem dalam DUA blok, dan urutannya yang menentukan.
+   *
+   * Cache Anthropic mencocokkan prefiks — `tools`, lalu `system`, lalu
+   * `messages` — jadi penanda cache di ujung blok pertama membekukan seluruh
+   * katalog tool BESERTA seluruh aturan prompt. Keduanya sama persis di setiap
+   * giliran dan setiap pengguna, dan keduanya besar: dua puluh delapan tool
+   * dengan skema lengkapnya, plus prompt yang panjangnya ratusan baris.
+   *
+   * Yang berubah — daftar family dan ruangan di model yang sedang terbuka —
+   * duduk di blok kedua, SESUDAH penandanya, jadi ia tidak ikut membatalkan
+   * apa pun. Sebelum dipisah, blok itu menempel di ujung prompt dan membuat
+   * setiap giliran punya prefiks yang berbeda: tidak ada satu pun yang bisa
+   * kena cache, dan yang dibayar penuh adalah bagian yang justru tidak pernah
+   * berubah.
+   */
+  const context_ = modelContextBlock(context);
+  const system = [
+    {
+      type: "text" as const,
+      text: ELECTRICAL_SYSTEM_PROMPT,
+      cache_control: { type: "ephemeral" as const },
+    },
+    ...(context_ ? [{ type: "text" as const, text: context_ }] : []),
+  ];
 
   const ask = (force: boolean) =>
     anthropic.messages.create({
       model: MODEL,
       max_tokens: MAX_TOKENS,
+      /**
+       * Seberapa dalam model boleh berpikir sebelum menjawab.
+       *
+       * Giliran ini menerjemahkan SATU kalimat jadi SATU panggilan tool, dengan
+       * katalog yang sudah menyebutkan setiap argumen dan rentangnya, dan
+       * hasilnya divalidasi lagi di `buildPayload` dan `resolveFamilies` sebelum
+       * berangkat ke mana pun. Berpikir panjang di sini tidak membuat
+       * jawabannya lebih benar; yang ia tambahkan cuma detik-detik yang
+       * ditunggu orangnya sambil melihat "Menyusun perintah…".
+       *
+       * Bisa dinaikkan lewat env tanpa deploy ulang kalau ternyata ada bentuk
+       * permintaan yang menuntut lebih — itu sebabnya ia env, bukan konstanta.
+       */
+      output_config: { effort: EFFORT },
       system,
       tools: tools as never,
       // `any` = wajib memakai salah satu tool. Dipakai hanya pada percobaan
@@ -147,8 +193,35 @@ export async function propose(input: {
    * penjagaan lapis kedua: maksudnya sudah jelas, jadi yang kurang cuma
    * panggilan tool-nya.
    */
-  if (!toolUse && tools.length > 0 && mentionsCommand(text)) {
-    console.warn("[propose] jawaban menulis perintah tanpa memanggil tool — dipaksa");
+  //
+  // Bentuk KEDUA yang dipaksa, dan sebabnya berbeda.
+  //
+  // Yang di atas: model bermaksud mengirim, cuma salah bentuk. Yang ini: model
+  // bermaksud TIDAK mengirim, karena riwayat memuat catatan bahwa perintah
+  // serupa pernah berangkat, dan ia menyimpulkan pekerjaannya sudah selesai.
+  // Catatan itu merekam satu saat di masa lalu; yang melihat keadaan model
+  // SEKARANG hanya orang yang sedang menatap layar Revit — dan ia sedang
+  // menatapnya, melihat lampunya belum berganti, dan meminta lagi.
+  //
+  // Yang dialaminya tanpa penjagaan ini: permintaan yang sama, jawaban yang
+  // sama, berapa kali pun. Prompt sistem sudah melarangnya ("JANGAN pernah
+  // menolak mengirim dengan alasan sudah dikirim"), dan larangan yang lebih
+  // dekat di konteks — dua belas catatan hasil — mengalahkan aturan yang lebih
+  // jauh. Jadi larangannya ditegakkan di sini, bukan diharapkan dipatuhi.
+  //
+  // DUA syarat, dan keduanya wajib. `refusesAsAlreadyDone` sendirian tidak
+  // cukup: sebuah pertanyaan yang dijawab "sudah terpasang enam armatur" adalah
+  // jawaban yang benar, dan memaksanya jadi perintah berarti memasang sesuatu
+  // yang tidak diminta siapa pun. Yang membuatnya aman adalah `asksToRun` —
+  // pesan terakhir orangnya memang menyuruh menjalankan.
+  const refusedButAsked = asksToRun(message) && refusesAsAlreadyDone(text);
+
+  if (!toolUse && tools.length > 0 && (mentionsCommand(text) || refusedButAsked)) {
+    console.warn(
+      refusedButAsked
+        ? "[propose] jawaban menolak dengan alasan sudah dikerjakan — dipaksa"
+        : "[propose] jawaban menulis perintah tanpa memanggil tool — dipaksa"
+    );
     forcedRetry = true;
     try {
       const forced = await ask(true);
@@ -208,7 +281,7 @@ export async function propose(input: {
         // Jawaban yang menyebut sebuah perintah padahal tidak ada yang dikirim
         // ditandai, supaya panel chat mengatakannya terus terang alih-alih
         // membiarkan kalimat model berdiri sebagai laporan.
-        nothingSent: mentionsCommand(text),
+        nothingSent: mentionsCommand(text) || refusedButAsked,
       },
       { outcome: "reply", tool: null, wrote_command_as_text: mentionsCommand(text) }
     );

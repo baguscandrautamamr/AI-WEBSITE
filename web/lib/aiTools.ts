@@ -122,6 +122,74 @@ export function mentionsCommand(text: string): boolean {
   return COMMANDS.some((c) => new RegExp(`(^|[^a-z_])/${c.name}\\b`, "i").test(text));
 }
 
+/**
+ * Kalimat yang MENYURUH menjalankan sesuatu, bukan bertanya.
+ *
+ * Dipakai berpasangan dengan `refusesAsAlreadyDone` di bawah, dan hanya
+ * berpasangan: sendirian ia terlalu longgar untuk jadi dasar memaksa sebuah
+ * perintah berangkat.
+ *
+ * Kata kerjanya diperiksa di AWAL kalimat atau setelah tanda baca, bukan di mana
+ * saja. "Apakah lampunya sudah dipasang?" memuat kata "pasang" dan bukan
+ * perintah; "pasang 6 lampu di Meeting 1" memuatnya sebagai kata pertama dan
+ * memang perintah. Kalimat tanya dikeluarkan seluruhnya.
+ */
+export function asksToRun(text: string): boolean {
+  const trimmed = (text ?? "").trim();
+  if (!trimmed) return false;
+
+  // Tanda tanya di ujung: itu pertanyaan, apa pun kata kerjanya.
+  if (trimmed.endsWith("?")) return false;
+
+  return /(^|[.,;\n]\s*)(tolong\s+)?(pasang|pasangkan|tambah|tambahkan|ganti|gantikan|ubah|modifikasi|modif|tata\s*ulang|hapus|buang|jalankan|kirim|eksekusi|place|add|change|modify|replace|delete|remove|run|send)\b/i.test(
+    trimmed
+  );
+}
+
+/**
+ * Balasan yang MENOLAK mengerjakan karena mengira sudah dikerjakan.
+ *
+ * Bentuk kegagalan kedua di mode ini, dan yang paling melelahkan bagi yang
+ * mengalaminya: orangnya melihat Revit, lampunya belum berganti, ia meminta
+ * lagi, dan yang ia dapat adalah kalimat bahwa itu sudah dilakukan. Berapa kali
+ * pun ia meminta. Riwayat memang memuat catatan bahwa perintah serupa pernah
+ * berangkat — tapi catatan itu merekam satu saat di masa lalu, dan yang melihat
+ * keadaan model SEKARANG hanya orang yang sedang menatap layar Revit.
+ *
+ * Bedanya dari `mentionsCommand`: di sana model bermaksud mengirim dan cuma
+ * salah bentuk, jadi memaksa tool-nya jelas benar. Di sini model bermaksud
+ * TIDAK mengirim. Karena itu ia tidak pernah cukup sendirian — `propose` hanya
+ * memaksa kalau pesan terakhir orangnya memang menyuruh menjalankan
+ * (`asksToRun`). Sebuah pertanyaan yang dijawab "sudah terpasang enam" tetap
+ * dijawab, tidak diubah jadi perintah.
+ */
+export function refusesAsAlreadyDone(text: string): boolean {
+  const body = (text ?? "").trim();
+  if (!body) return false;
+
+  // Balasan yang MEMUAT pertanyaan tidak pernah dihitung sebagai penolakan.
+  //
+  // Ini pagar yang menahan satu-satunya cara penjagaan ini bisa merugikan.
+  // "Pasang 6 lampu di Meeting 1" dijawab "ruangan itu sudah terpasang 9
+  // armatur — mau ditata ulang atau ditambah?" memuat kedua penandanya:
+  // orangnya menyuruh, dan balasannya berbunyi "sudah terpasang". Tanpa pagar
+  // ini perintahnya akan dipaksa berangkat, dengan jawaban yang belum diberikan
+  // siapa pun atas pertanyaan yang baru saja diajukan.
+  //
+  // Sebuah penolakan yang benar-benar menolak tidak bertanya apa-apa; ia
+  // menyatakan. Dan kalaupun ada penolakan yang kebetulan diakhiri "ada lagi?",
+  // yang hilang cuma pemaksaannya — tombol perintahnya tetap ada, dan itu arah
+  // salah yang jauh lebih murah daripada memasang sesuatu yang tidak diminta.
+  if (body.includes("?")) return false;
+
+  return /\b(sudah|telah)\s+(saya\s+)?(di)?(pasang|kirim|jalan|laksana|kerja|lakuk|selesai|tata|ubah|ganti|modifikasi|terpasang|terkirim|dieksekusi)/i.test(
+    body
+  )
+    || /\balready\b[\s\w]{0,20}?\b(placed|sent|run|executed|done|modified|changed|updated|installed)\b/i.test(body)
+    || /\b(has|have|was|were)\s+been\s+(placed|sent|run|executed|done|modified|changed|updated|installed)\b/i.test(body)
+    || /\btidak perlu (di)?(ulang|kirim ulang|jalankan lagi)/i.test(body);
+}
+
 export const ELECTRICAL_SYSTEM_PROMPT = `Kamu Revit Command Center — asisten yang
 menerjemahkan permintaan insinyur MEP jadi perintah untuk add-in Revit. Kalau
 ditanya siapa kamu, sebut nama itu.
@@ -325,7 +393,30 @@ export function withModelContext(
   prompt: string,
   context?: { familyTypes?: Record<string, string[]>; rooms?: string[] }
 ): string {
-  if (!context) return prompt;
+  const block = modelContextBlock(context);
+  return block ? `${prompt}\n\n${block}` : prompt;
+}
+
+/**
+ * Bagian prompt yang BERUBAH tiap proyek dan tiap model Revit yang terbuka,
+ * berdiri sendiri supaya sisanya bisa di-cache.
+ *
+ * Ini yang membuat prompt caching mungkin. Cache Anthropic mencocokkan
+ * PREFIKS: urutannya `tools` → `system` → `messages`, dan satu byte yang
+ * berbeda di dalam prefiks membatalkan seluruh yang sesudahnya. Selama daftar
+ * family dan ruangan ikut menempel di ujung prompt sistem, tidak ada satu pun
+ * giliran yang bisa memakai cache — daftar itu berbeda antar proyek, dan
+ * berubah setiap kali seseorang menambah satu ruangan.
+ *
+ * Dipisah begini, blok statisnya (katalog tool + seluruh aturan) jadi prefiks
+ * yang sama persis di setiap giliran dan setiap pengguna, dan yang berubah
+ * duduk SESUDAH penanda cache-nya. Yang dibayar penuh cuma bagian yang memang
+ * berbeda.
+ */
+export function modelContextBlock(
+  context?: { familyTypes?: Record<string, string[]>; rooms?: string[] }
+): string {
+  if (!context) return "";
 
   const lines: string[] = [];
 
@@ -345,7 +436,7 @@ export function withModelContext(
   const rooms = context.rooms?.slice(0, 200) ?? [];
   if (rooms.length) lines.push(`- ruangan (Room dan Space MEP): ${rooms.join(" | ")}`);
 
-  if (!lines.length) return prompt;
+  if (!lines.length) return "";
 
   // Nama TIPE, di bloknya sendiri.
   //
@@ -385,8 +476,6 @@ NAMA TIPE DI MODEL — dipakai HANYA untuk where="Type=…" pada inspect, JANGAN
 ${typeLines.join("\n")}`
     : "";
 
-  return `${prompt}
-
-YANG ADA DI MODEL YANG SEDANG TERBUKA (pilih dari sini, jangan mengarang):
+  return `YANG ADA DI MODEL YANG SEDANG TERBUKA (pilih dari sini, jangan mengarang):
 ${lines.join("\n")}${types}`;
 }

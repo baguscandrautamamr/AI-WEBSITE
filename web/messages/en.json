@@ -324,7 +324,7 @@
     "sendingToRevit": "Sending to the Revit queue…",
     "notSent": "NOT sent",
     "held": "Held — nothing was sent to Revit.",
-    "nothingSent": "This turn sent no command to Revit. If you do want it run, ask once more, plainly.",
+    "nothingSent": "This turn sent no command to Revit. The commands are buttons above — send it from there if you want it run now.",
     "chooseFamily": "Which {what} family should be used?",
     "chooseGuessed": "(the one I filled in, “{name}”, is not in the model)",
     "chooseDefault": "Let the add-in pick",

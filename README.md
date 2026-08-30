@@ -34,7 +34,7 @@ C# supaya sesuatu di sini berguna.
 | Dokumen | Isinya |
 |---|---|
 | `docs/addin-electrical-commands.md` | Enam perintah kelistrikan — beban, panel schedule, keseimbangan fasa, tunjukkan elemen, section box, sambung sirkuit. |
-| `docs/addin-dokumen-aktif-dan-batas-ruangan.md` | Dokumen aktif diambil saat perintahnya jalan (dan disebut di setiap balikan), serta armatur yang di luar batas ruangan dibuang, bukan dipasang. |
+| `docs/addin-dokumen-aktif-dan-batas-ruangan.md` | Dokumen yang dikerjakan disebut di setiap balikan, dan armatur yang jatuh di luar batas ruangan dibuang alih-alih dipasang. Sudah dibangun; dokumennya menyimpan alasannya. |
 
 ## Halaman
 
@@ -145,6 +145,44 @@ lagi punya default `LED_15W`: nilai itu terisi otomatis di form dan karenanya
 ikut terkirim setiap kali orang tidak menyentuh kolomnya, membawa nama family
 yang tidak ada di model mana pun.
 
+**Modifikasi berangkat apa adanya, tanpa dibaca dulu.** `/modify_devices` dulu
+ditahan sebentar: isi ruangannya ditanyakan ke Revit, dan kalau jawabannya nol
+perintahnya DITUKAR jadi `place_*`. Ketiga bagian dari itu salah. Tidak perlu —
+add-in menjalankan delete lalu place, dan delete pada ruangan kosong
+mengembalikan "0 dihapus", bukan galat, jadi modify di ruangan kosong sudah sama
+hasilnya dengan place. Berbahaya — "ganti" dan "tambah" adalah dua perintah yang
+berbeda, dan satu `/query` yang melaporkan nol untuk ruangan yang sebenarnya
+berisi menukar "ganti enam lampu" jadi "tambah enam lampu": dua belas armatur di
+plafon yang sama, dan lampu yang diminta tidak pernah berganti. Dan lambat —
+satu pembacaan adalah satu baris antrean, ditunggu sampai enam belas detik,
+sebelum perintah yang diminta orangnya berangkat. Yang tahu keadaan model
+sekarang adalah orang yang sedang menatap layar Revit; ia sudah melihatnya, dan
+ia sudah mengetik apa yang ia mau.
+
+**Penolakan "sudah dikerjakan" dipaksa jadi perintah.** Riwayat memuat catatan
+bahwa perintah serupa pernah berangkat, dan dari situ model menyimpulkan
+pekerjaannya selesai — lalu menjawab begitu, tanpa memanggil tool apa pun.
+Orangnya melihat Revit, lampunya belum berganti, ia meminta lagi, dan jawabannya
+sama. Berapa kali pun. Prompt sistem sudah melarangnya, dan larangan yang lebih
+dekat di konteks — dua belas catatan hasil — mengalahkan aturan yang lebih jauh;
+jadi larangan itu sekarang ditegakkan di kode, bukan diharapkan dipatuhi.
+`propose` mengulang panggilannya dengan `tool_choice: any` begitu balasan
+menolak dengan alasan sudah dikerjakan DAN pesan terakhir orangnya memang
+menyuruh menjalankan (`asksToRun` + `refusesAsAlreadyDone` di `web/lib/aiTools.ts`).
+Dua syarat, dan keduanya wajib: "sudah terpasang enam armatur" adalah jawaban
+yang benar untuk sebuah pertanyaan, dan memaksanya jadi perintah berarti
+memasang sesuatu yang tidak diminta siapa pun.
+
+**`fixture_type` adalah nama family, bukan tebakan.** Ini separuh di add-in.
+`type=dome`, `type=smoke` adalah terkaan sistem ini tentang apa yang dinamai
+sebuah kantor untuk family-nya, jadi jatuh ke family pertama di kategorinya
+memang benar di situ. `fixture_type` datang dari daftar yang dilaporkan add-in
+sendiri lewat `model_info` — dan untuk itu tidak ada yang namanya hampir cocok.
+Selama ia diperlakukan sebagai tebakan, "modifikasi lampu downlight" yang
+namanya meleset satu spasi memasang ACT_E_LIGHTING RECESSED, melaporkan sukses,
+dan lampunya tidak berganti. Sekarang ia ditolak dengan menyebut family apa saja
+yang ada.
+
 **Nama file .rvt yang tampil diperiksa lagi, bukan dibaca sekali.** Berganti
 file di Revit terjadi di luar website: tidak ada klik, tidak ada perintah, tidak
 ada jawaban yang berubah bunyinya. Dulu `model_info` dibaca sekali per proyek
@@ -168,8 +206,8 @@ Grid dibentangkan pada KOTAK ruangan; ruangan berbentuk L punya kotak yang
 mencakup takik yang bukan miliknya. "Pasang 40 lampu di LOUNGE 5" pada ruangan
 begitu meletakkan enam di antaranya di MEETING 2 — ikut terhitung sebagai beban
 LOUNGE, dan ditumpuki lagi saat MEETING 2 sendiri dipasangi lampu. Ujinya milik
-add-in (`Room.IsPointInRoom`, spesifikasinya di
-`docs/addin-dokumen-aktif-dan-batas-ruangan.md`); yang ada di sini adalah
+add-in — `Room.IsPointInRoom`, sudah dibangun, alasannya di
+`docs/addin-dokumen-aktif-dan-batas-ruangan.md` — dan yang ada di sini adalah
 pelaporannya. `devices_placed` adalah yang benar-benar berdiri di model, dan
 `outside_boundary` yang dibuang, jadi ringkasannya berbunyi "34 perangkat
 dipasang · ruangan LOUNGE 5 · 6 di luar batas ruangan". Tanpa medan kedua itu,
@@ -185,6 +223,32 @@ dikutip sejak awal; yang posisional tidak — dan di situlah nama ruangan berada
 sebuah "5" yang menggantung oleh parser mana pun yang memecah per spasi.
 `command_json`-nya memang selalu benar, tapi teks itu yang dibaca orang di
 Riwayat dan disalin ulang ke Telegram.
+
+## Berapa lama asisten menjawab, dan apa yang memendekkannya
+
+Tiga hal, dan tak satu pun dari ketiganya menukar ketepatan dengan kecepatan.
+
+**Prompt sistem dan katalog tool di-cache.** Cache Anthropic mencocokkan
+prefiks — urutannya `tools`, `system`, lalu `messages` — jadi penanda cache di
+ujung blok sistem pertama membekukan seluruh katalog (dua puluh delapan tool
+dengan skema lengkapnya) beserta seluruh aturan prompt. Keduanya sama persis di
+setiap giliran dan setiap pengguna. Yang berubah — daftar family dan ruangan di
+model yang sedang terbuka — dipisah ke blok kedua, SESUDAH penandanya
+(`modelContextBlock` di `web/lib/aiTools.ts`). Sebelum dipisah ia menempel di
+ujung prompt, membuat setiap proyek punya prefiks yang berbeda, dan tidak ada
+satu pun giliran yang bisa kena cache.
+
+**`effort` rendah.** Giliran mode Electrical menerjemahkan satu kalimat jadi
+satu panggilan tool, dengan katalog yang sudah menyebutkan setiap argumen dan
+rentangnya, dan hasilnya divalidasi ulang di `buildPayload` dan
+`resolveFamilies` sebelum berangkat ke mana pun. Bawaan API adalah `high`, dan
+di sini yang ditambahkannya bukan ketepatan melainkan detik-detik yang
+dihabiskan orangnya menatap "Menyusun perintah…". `AI_EFFORT` menaikkannya lagi
+tanpa deploy kalau ternyata ada bentuk permintaan yang menuntut lebih.
+
+**Satu pembacaan Revit yang dibuang.** Lihat "Modifikasi berangkat apa adanya"
+di atas: sampai enam belas detik, di depan perintah yang paling sering diulang
+justru karena hasilnya belum terlihat.
 
 ## Kalau chat mengaku sudah mengirim padahal tidak
 
@@ -257,6 +321,11 @@ SUPABASE_SERVICE_ROLE_KEY=
 AI_GATEWAY_API_KEY=
 AI_GATEWAY_BASE_URL=https://gateway.olagon.site/anthropic
 AI_MODEL=claude-sonnet-5
+# Seberapa dalam model berpikir sebelum menjawab: low|medium|high|xhigh|max.
+# Kosong = low, karena giliran mode Electrical adalah penerjemahan satu
+# kalimat jadi satu perintah, bukan penalaran. Naikkan kalau ada bentuk
+# permintaan yang ternyata menuntut lebih.
+AI_EFFORT=low
 
 # Hanya dipakai /api/files/upload (belum ada halaman yang memanggilnya —
 # lihat "Yang belum ada").

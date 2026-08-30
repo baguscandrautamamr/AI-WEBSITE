@@ -4,8 +4,6 @@ import {
   COMMANDS_BY_NAME,
   canAutoRun,
   canRun,
-  placeCommandFor,
-  placeValuesFrom,
 } from "./commands";
 
 /**
@@ -108,58 +106,3 @@ describe("canAutoRun", () => {
   });
 });
 
-/**
- * Arah kebalikan dari modifyCategoryFor: menata ulang ruangan yang ternyata
- * sudah kosong harus jadi pemasangan, bukan perintah yang berangkat lalu tidak
- * memasang apa pun.
- */
-describe("placeCommandFor / placeValuesFrom", () => {
-  it("setiap kategori modify punya perintah place-nya", () => {
-    for (const category of COMMANDS_BY_NAME.modify_devices.fields
-      .find((f) => f.name === "what")!
-      .options!.filter((o) => o !== "all")) {
-      expect(placeCommandFor(category), category).not.toBeNull();
-    }
-  });
-
-  it("kategori yang tidak punya padanan mengembalikan null", () => {
-    expect(placeCommandFor("all")).toBeNull();
-    expect(placeCommandFor("mengarang")).toBeNull();
-  });
-
-  it("hanya kolom yang dideklarasikan perintah tujuannya yang ikut", () => {
-    // fixture_type berarti sesuatu untuk place_lighting...
-    const lighting = placeCommandFor("lighting")!;
-    expect(
-      placeValuesFrom(lighting, {
-        room: "LOUNGE 5",
-        what: "lighting",
-        count: 50,
-        grid: "10x5",
-        height: 3,
-        fixture_type: "ACT_E_DOWNLIGHT 22WATT",
-      })
-    ).toEqual({
-      room: "LOUNGE 5",
-      count: 50,
-      grid: "10x5",
-      height: 3,
-      fixture_type: "ACT_E_DOWNLIGHT 22WATT",
-    });
-
-    // ...dan tidak ada sama sekali di place_security. Argumen yang tidak dikenal
-    // adalah cara lain untuk gagal di Revit sesudah menunggu.
-    const security = placeCommandFor("security")!;
-    expect(placeValuesFrom(security, {
-      room: "LOUNGE 5",
-      what: "security",
-      count: 2,
-      fixture_type: "ACT_E_DOWNLIGHT 22WATT",
-    })).toEqual({ room: "LOUNGE 5", count: 2 });
-  });
-
-  it("`what` tidak ikut sebagai argumen — ia yang memilih perintahnya", () => {
-    const lighting = placeCommandFor("lighting")!;
-    expect(placeValuesFrom(lighting, { what: "lighting", room: "X" })).not.toHaveProperty("what");
-  });
-});

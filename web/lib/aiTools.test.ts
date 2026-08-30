@@ -1,10 +1,99 @@
 import { describe, expect, it } from "vitest";
 import {
   ELECTRICAL_SYSTEM_PROMPT,
+  asksToRun,
   mentionsCommand,
+  modelContextBlock,
+  refusesAsAlreadyDone,
   toolsForRole,
   withModelContext,
 } from "./aiTools";
+
+/**
+ * Penjaga terhadap loop yang dilaporkan dari pemakaian sungguhan: orangnya
+ * menatap Revit, lampunya belum berganti, ia meminta lagi — dan yang ia dapat
+ * adalah kalimat bahwa itu sudah dikerjakan. Berapa kali pun.
+ *
+ * Kedua fungsi ini dipakai BERPASANGAN di `propose`, dan pasangannya yang
+ * membuatnya aman: penolakan saja tidak cukup untuk memaksa sebuah perintah
+ * berangkat, karena "sudah terpasang enam armatur" adalah jawaban yang benar
+ * untuk sebuah pertanyaan.
+ */
+describe("asksToRun / refusesAsAlreadyDone", () => {
+  it("kalimat yang menyuruh dikenali", () => {
+    for (const line of [
+      "modifikasi lampu downlight 3x2 di receptionist 3 meter",
+      "pasang 6 lampu di Meeting 1 tinggi 3 meter",
+      "tolong ganti armaturnya jadi downlight",
+      "hapus stop kontak di pantry",
+      "place 4 receptacles in Office",
+    ]) {
+      expect(asksToRun(line), line).toBe(true);
+    }
+  });
+
+  it("pertanyaan tidak dianggap suruhan", () => {
+    // Ini yang membuat pemaksaan aman. Sebuah pertanyaan yang dijawab "sudah
+    // terpasang enam" adalah jawaban, bukan penolakan — dan mengubahnya jadi
+    // perintah berarti memasang sesuatu yang tidak diminta siapa pun.
+    for (const line of [
+      "apakah lampunya sudah dipasang?",
+      "di receptionist ada berapa lampu?",
+      "kenapa jumlahnya cuma 34?",
+    ]) {
+      expect(asksToRun(line), line).toBe(false);
+    }
+  });
+
+  it("penolakan dengan alasan sudah dikerjakan dikenali", () => {
+    for (const line of [
+      "Lampu downlight 3x2 di RECEPTIONIST sudah dipasang di langkah sebelumnya.",
+      "Perintahnya sudah saya kirim tadi, jadi tidak perlu diulang.",
+      "Modifikasinya sudah dijalankan.",
+      "That layout has already been placed.",
+    ]) {
+      expect(refusesAsAlreadyDone(line), line).toBe(true);
+    }
+  });
+
+  it("jawaban biasa tidak dianggap penolakan", () => {
+    for (const line of [
+      "Baik, 6 lampu di Meeting 1 sudah saya catat. Tingginya berapa meter?",
+      "Mau saya kirim sekarang?",
+      "Ruangan itu berisi 6 armatur.",
+      // Inilah pagar yang paling menentukan: kedua penandanya ada — orangnya
+      // menyuruh, balasannya berbunyi "sudah terpasang" — dan ia tetap sebuah
+      // pertanyaan. Memaksanya berangkat berarti menjawab sendiri pertanyaan
+      // yang baru saja diajukan kepada orangnya.
+      "Ruangan itu sudah terpasang 9 armatur — mau ditata ulang atau ditambah?",
+    ]) {
+      expect(refusesAsAlreadyDone(line), line).toBe(false);
+    }
+  });
+});
+
+describe("modelContextBlock", () => {
+  // Blok inilah yang harus berdiri sendiri supaya prompt statisnya bisa
+  // di-cache: cache mencocokkan prefiks, dan daftar family yang menempel di
+  // ujung prompt membuat setiap proyek punya prefiks yang berbeda.
+  it("kosong kalau tidak ada yang bisa disebut", () => {
+    expect(modelContextBlock(undefined)).toBe("");
+    expect(modelContextBlock({})).toBe("");
+    expect(modelContextBlock({ familyTypes: {}, rooms: [] })).toBe("");
+  });
+
+  it("tidak memuat prompt sistemnya sendiri", () => {
+    const block = modelContextBlock({ rooms: ["LOUNGE 5", "MEETING 2"] });
+    expect(block).toContain("LOUNGE 5");
+    expect(block).not.toContain(ELECTRICAL_SYSTEM_PROMPT.slice(0, 60));
+  });
+
+  it("withModelContext tetap menggabungkan keduanya", () => {
+    const joined = withModelContext(ELECTRICAL_SYSTEM_PROMPT, { rooms: ["PANTRY"] });
+    expect(joined.startsWith(ELECTRICAL_SYSTEM_PROMPT)).toBe(true);
+    expect(joined).toContain("PANTRY");
+  });
+});
 
 describe("mentionsCommand", () => {
   // Ini penjaga terhadap satu bentuk kegagalan yang terlihat persis seperti

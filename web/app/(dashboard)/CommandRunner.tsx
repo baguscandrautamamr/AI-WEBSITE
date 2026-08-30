@@ -11,8 +11,6 @@ import {
   fieldApplies,
   modifyCategoryFor,
   modifyValuesFrom,
-  placeCommandFor,
-  placeValuesFrom,
   type CommandField,
   type CommandSpec,
 } from "@/lib/commands";
@@ -612,33 +610,33 @@ export default function CommandRunner({
         }
       }
 
-      // Arah sebaliknya, dan ia tidak diperiksa sampai sekarang: menata ulang
-      // ruangan yang ternyata SUDAH KOSONG.
+      // MODIFIKASI BERANGKAT APA ADANYA — tidak dibaca dulu, tidak ditukar.
       //
-      // Ini yang terjadi sesudah orangnya menghapus isi ruangan itu sendiri di
-      // Revit. Riwayat percakapan masih menyebutnya penuh — riwayat memang tidak
-      // bisa tahu — jadi model bahasa memilih modify_devices persis seperti yang
-      // diajarkan kepadanya untuk ruangan berisi. Yang sampai ke Revit adalah
-      // perintah menata ulang sesuatu yang tidak ada lagi: berangkat, tidak ada
-      // galat, dan tidak satu pun armatur terpasang.
+      // Di sini dulu ada pembacaan kedua: /modify_devices ditahan, isi ruangannya
+      // ditanyakan ke Revit, dan kalau jawabannya nol perintahnya DITUKAR jadi
+      // place_*. Maksudnya baik — menata ulang ruangan kosong dianggap perintah
+      // yang tidak bisa berhasil — dan ketiga bagiannya ternyata salah.
       //
-      // Ditukar tanpa bertanya, dan itu disengaja. Persimpangan yang satu lagi
-      // ada karena kedua jawabannya masuk akal — menumpuk atau menata ulang.
-      // Di sini tidak ada dua jawaban: menata ulang ruangan kosong bukan pilihan
-      // yang lebih hati-hati, ia perintah yang tidak bisa berhasil.
-      if (name === "modify_devices" && model) {
-        const what = String(payload.what ?? "").trim();
-        const target = what ? placeCommandFor(what) : null;
-        const modifyRoom = String(payload.room ?? "").trim();
-
-        if (target && modifyRoom && canRun(target, project?.role ?? "viewer")) {
-          const found = await readRoom(modifyRoom, what);
-          if (found && found.count === 0) {
-            name = target.name;
-            payload = placeValuesFrom(target, payload);
-          }
-        }
-      }
+      // Ia tidak perlu. `ModifyDevicesHandler` di add-in menjalankan
+      // delete_devices lalu place_*; delete pada ruangan kosong mengembalikan
+      // "0 dihapus" dan bukan galat, jadi modify di ruangan kosong SUDAH sama
+      // persis hasilnya dengan place. Tidak ada yang perlu ditolong.
+      //
+      // Ia berbahaya. "Ganti" dan "tambah" adalah dua perintah yang berbeda, dan
+      // yang membedakannya cuma satu pembacaan yang bisa salah — /query yang
+      // melaporkan nol untuk ruangan yang sebenarnya berisi menukar "ganti enam
+      // lampu" jadi "tambah enam lampu", dan yang terlihat di Revit adalah dua
+      // belas armatur di plafon yang sama. Persis keluhannya: lampunya tidak
+      // berganti.
+      //
+      // Ia lambat. Satu pembacaan adalah satu baris antrean yang harus diambil
+      // add-in, ditunggu sampai enam belas detik, SEBELUM perintah yang diminta
+      // orangnya berangkat — pada perintah yang paling sering diminta berulang
+      // kali justru karena hasilnya belum terlihat.
+      //
+      // Dan ia melihat masa lalu untuk menjawab pertanyaan tentang sekarang.
+      // Yang tahu keadaan model sekarang adalah orang yang sedang menatap layar
+      // Revit. Ia sudah melihatnya, dan ia sudah mengetik apa yang ia mau.
 
       const body = await enqueue(name, payload);
 
@@ -652,7 +650,7 @@ export default function CommandRunner({
       ]);
       return body;
     },
-    [enqueue, model, readRoom, project]
+    [enqueue, model, readRoom]
   );
 
   async function send() {
