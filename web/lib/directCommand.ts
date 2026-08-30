@@ -39,6 +39,17 @@ const PLACE = /\b(pasang|pasangkan|tambah|tambahkan|kasih|taruh|letakkan|place|a
 const MODIFY = /\b(modifikasi|modif|ganti|gantikan|ubah|tata\s*ulang|atur\s*ulang|modify|replace)\b/i;
 
 /**
+ * Kata kerja yang berarti "geser yang sudah ada ke tempat yang benar".
+ *
+ * Dibedakan dari MODIFY, dan bedanya besar di model Revit: menggeser
+ * mempertahankan elemennya — mark, sirkuit yang menyambungnya, tag yang
+ * menempel padanya — sementara memodifikasi menghapus lalu memasang ulang.
+ * Untuk saklar yang cuma salah koordinat, yang kedua membuang pekerjaan yang
+ * tidak salah.
+ */
+const MOVE = /\b(geser|gesar|pindah|pindahkan|dekatkan|move|shift)\b/i;
+
+/**
  * Kata yang menyebut kategori perangkat, dan perintah `place_*` miliknya.
  *
  * Diurutkan dari yang paling panjang saat dicocokkan, supaya "stop kontak"
@@ -70,10 +81,18 @@ export function directCommand(
   // Pertanyaan dan kalimat bersyarat bukan urusan parser ini.
   if (!text || text.length > 200 || text.includes("?") || NOT_PLAIN.test(text)) return null;
 
+  // Ketiganya diuji BERDIRI SENDIRI, tanpa satu pun mendahului yang lain.
+  //
+  // Mendahulukan salah satunya menyembunyikan yang lain dari pemeriksaan
+  // ambiguitas di bawah — dan "geser saklar lalu pasang lampu di meeting 2"
+  // lolos sebagai perintah geser, membuang separuh kalimat orangnya tanpa
+  // mengatakan apa-apa.
+  const move = MOVE.test(text);
   const modify = MODIFY.test(text);
   const place = PLACE.test(text);
-  // Keduanya sekaligus ("pasang ulang, ganti yang lama") ambigu — serahkan ke model.
-  if (modify === place) return null;
+
+  // Lebih dari satu maksud dalam satu kalimat ambigu — serahkan ke model.
+  if ([move, modify, place].filter(Boolean).length !== 1) return null;
 
   const category = CATEGORIES.find((c) => c.words.test(text));
   if (!category) return null;
@@ -92,11 +111,32 @@ export function directCommand(
   const room = findRoom(text, context?.rooms ?? []);
   if (!room) return null;
 
-  const spec = modify ? COMMANDS_BY_NAME.modify_devices : placeSpec;
+  const spec = move
+    ? COMMANDS_BY_NAME.move_devices
+    : modify
+      ? COMMANDS_BY_NAME.modify_devices
+      : placeSpec;
   if (!spec || !canRun(spec, role)) return null;
 
   const values: Record<string, unknown> = { room };
-  if (modify) values.what = category.command.slice("place_".length);
+  if (move || modify) values.what = category.command.slice("place_".length);
+
+  /**
+   * Menggeser tidak menerima grid, jumlah, atau ketinggian — ia cuma memindahkan
+   * yang sudah ada. Yang dibacanya jarak dari pintu, dan itu saja.
+   *
+   * "geser saklar 300mm dari pintu di office": angkanya jarak, bukan jumlah.
+   * Membacanya sebagai jumlah akan mengirim `count=300` ke perintah yang tidak
+   * punya kolom itu, dan perintahnya ditolak validasi dengan alasan yang tidak
+   * berhubungan dengan apa pun yang diketik orangnya.
+   */
+  if (move) {
+    const stated = /\b(\d{2,4})\s*(?:mm)?\b(?![\s]*(?:x|×))/i.exec(
+      normalize(text).replace(normalize(room), " ")
+    );
+    if (stated) values.offset = Number(stated[1]);
+    return { spec, values };
+  }
 
   /**
    * Angka dibaca dari kalimat TANPA nama ruangannya.

@@ -896,6 +896,72 @@ export const COMMANDS: CommandSpec[] = [
     example: "/delete_devices Pantry what=lighting",
   },
   {
+    name: "move_devices",
+    label: { id: "Geser ke Pintu", en: "Move to Door" },
+    description: {
+      id: "Menggeser perangkat yang SUDAH terpasang ke samping pintu pada jarak yang diminta, tanpa menghapusnya — mark, sirkuit, dan tag-nya tetap. Untuk membetulkan saklar yang terlanjur berdiri jauh dari pintu.",
+      en: "Moves devices that are ALREADY placed to beside the door at the stated distance, without deleting them — their mark, circuit and tags survive. For correcting a switch that ended up far from the door.",
+    },
+    role: "editor",
+    group: "layout",
+    positional: room("Ruangan", "Room"),
+    fields: [
+      {
+        name: "what",
+        type: "select",
+        default: "lighting_device",
+        options: [
+          "lighting_device",
+          "receptacle",
+          "lighting",
+          "fire_alarm",
+          "telephone",
+          "lan",
+          "security",
+          "communication",
+        ],
+        label: { id: "Kategori", en: "Category" },
+      },
+      {
+        name: "offset",
+        type: "number",
+        default: 300,
+        min: 0,
+        max: 5000,
+        label: { id: "Jarak dari pintu (mm)", en: "Distance from door (mm)" },
+        hint: {
+          id: "Diukur dari TEPI daun pintu, bukan dari tengahnya — itu yang dimaksud \"300 dari pintu\" dan yang dipasang tukang.",
+          en: "Measured from the EDGE of the door leaf, not its centre — that is what \"300 from the door\" means and what a builder sets out.",
+        },
+      },
+      {
+        name: "marks",
+        type: "text",
+        label: { id: "Mark tertentu saja", en: "Only these marks" },
+        hint: {
+          id: "Dipisah koma, mis. SW-001. Kosongkan untuk seluruh kategori di ruangan itu.",
+          en: "Comma separated, e.g. SW-001. Leave empty for the whole category in that room.",
+        },
+      },
+      {
+        name: "door_id",
+        type: "text",
+        label: { id: "Id pintu", en: "Door id" },
+        hint: {
+          id: "Untuk ruangan berpintu banyak, atau pintu yang tidak terbaca batas ruangan. Kosongkan agar dipakai pintu terdekat dari tiap perangkat.",
+          en: "For rooms with several doors, or a door the room boundary does not see. Leave empty to use the door nearest each device.",
+        },
+      },
+      {
+        name: "dry_run",
+        type: "boolean",
+        default: false,
+        label: { id: "Uji coba saja", en: "Dry run" },
+      },
+    ],
+    example: "/move_devices OFFICE what=lighting_device offset=300",
+  },
+  {
     name: "undo",
     label: { id: "Batalkan", en: "Undo" },
     description: {

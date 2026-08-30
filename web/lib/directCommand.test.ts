@@ -70,6 +70,42 @@ describe("directCommand — kalimat yang dilaporkan pengguna", () => {
   });
 });
 
+describe("directCommand — menggeser yang sudah terpasang", () => {
+  // Kalimat yang membetulkan saklar yang terlanjur berdiri 3.570 mm dari
+  // pintu. Menggeser mempertahankan elemennya — mark, sirkuit, tag —
+  // sementara memodifikasi menghapus lalu memasang ulang.
+  it("geser saklar 300mm dari pintu di office", () => {
+    const out = directCommand("geser saklar 300mm dari pintu di office", "editor", ctx);
+
+    expect(out?.spec.name).toBe("move_devices");
+    expect(out?.values).toMatchObject({
+      room: "OFFICE",
+      what: "lighting_device",
+      offset: 300,
+    });
+  });
+
+  it("angkanya jarak, bukan jumlah", () => {
+    // `count=300` akan ditolak validasi dengan alasan yang tidak berhubungan
+    // dengan apa pun yang diketik orangnya.
+    const out = directCommand("pindahkan saklar di meeting 2 jadi 300 mm dari pintu", "editor", ctx);
+    expect(out?.values).not.toHaveProperty("count");
+    expect(out?.values.offset).toBe(300);
+  });
+
+  it("tanpa jarak yang disebut, bawaannya yang dipakai", () => {
+    const out = directCommand("geser saklar di office ke dekat pintu", "editor", ctx);
+    expect(out?.spec.name).toBe("move_devices");
+    expect(out?.values).not.toHaveProperty("offset");
+  });
+
+  it("geser tidak membawa grid atau ketinggian", () => {
+    const out = directCommand("geser saklar 300 mm dari pintu di office", "editor", ctx);
+    expect(out?.values).not.toHaveProperty("grid");
+    expect(out?.values).not.toHaveProperty("height");
+  });
+});
+
 describe("directCommand — yang TIDAK dijawabnya", () => {
   const nulls: [string, string][] = [
     ["pertanyaan", "di meeting 2 ada berapa lampu?"],
@@ -79,6 +115,7 @@ describe("directCommand — yang TIDAK dijawabnya", () => {
     ["tanpa kategori", "pasang sesuatu di meeting 2"],
     ["tanpa kata kerja", "lampu 5x3 di meeting 2"],
     ["dua kata kerja sekaligus", "ganti dan pasang lampu di meeting 2"],
+    ["geser sekaligus pasang", "geser saklar lalu pasang lampu di meeting 2"],
   ];
 
   for (const [why, line] of nulls) {
