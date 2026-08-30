@@ -135,6 +135,32 @@ interface ModelInfo {
  *  pernah bertabrakan dengan pilihan yang sah. */
 const MANUAL = "__ketik-sendiri__";
 
+/**
+ * Jarak terpendek antara dua pembacaan `model_info`.
+ *
+ * Panel ini hidup sebagai dockable pane di dalam Revit, dan berpindah antara
+ * jendela Revit dan panelnya memicu `focus` berkali-kali dalam beberapa detik.
+ * Tanpa jarak minimum, satu kali menyeret jendela berarti selusin baris antrean
+ * yang harus diambil add-in satu per satu.
+ */
+const MODEL_MIN_GAP_MS = 15_000;
+
+/**
+ * Selang pembacaan berkala selama panelnya terlihat.
+ *
+ * Ini ongkos yang dibayar dengan sadar. Dulu `model_info` dibaca SEKALI per
+ * proyek terpilih, dengan alasan yang benar — setiap pembacaan adalah satu baris
+ * antrean — dan akibatnya persis yang dilaporkan: orang membuka file .rvt lain
+ * di Revit, panelnya tetap menyebut nama file yang lama, dan perintah berikutnya
+ * berangkat ke dokumen yang tidak sedang dilihat siapa pun. Nama file yang salah
+ * di layar lebih mahal daripada satu baris antrean per menit, dan hanya salah
+ * satu dari keduanya yang bisa dilihat orangnya sebelum terlambat.
+ *
+ * Berhenti sendiri saat tab-nya tidak terlihat: yang tidak ada di layar tidak
+ * bisa menyesatkan siapa pun.
+ */
+const MODEL_POLL_MS = 60_000;
+
 export default function CommandRunner({
   groups,
   title,
@@ -243,6 +269,52 @@ export default function CommandRunner({
   const [modelLoading, setModelLoading] = useState(false);
   const [modelReachable, setModelReachable] = useState(true);
 
+  /**
+   * Pemeriksaan terakhir tidak dijawab, sementara nama file yang lama masih
+   * tampil.
+   *
+   * Dibedakan dari `modelReachable` dengan sengaja. Revit yang sedang menghitung
+   * sesuatu tidak mengambil baris antrean tepat waktu, dan menghapus nama file
+   * yang sudah benar karena itu berarti menukar keterangan dengan ketiadaan
+   * keterangan. Yang ditampilkan tetap nama yang terakhir dijawab — ditandai
+   * bahwa ia belum dipastikan lagi.
+   */
+  const [modelStale, setModelStale] = useState(false);
+
+  /**
+   * Nama file yang tampil sebelum Revit menyebut nama lain.
+   *
+   * Berganti dokumen di tengah jalan adalah kejadian yang harus DIKATAKAN,
+   * bukan sekadar diperbaiki diam-diam: daftar ruangan, daftar sheet, dan isi
+   * ruangan yang sudah dibaca semuanya milik dokumen yang lama, dan nama ruangan
+   * yang sedang setengah diketik di formulir bisa saja tidak ada di dokumen yang
+   * baru. Yang menutupnya adalah orangnya sendiri — atau pergantian berikutnya,
+   * yang menggantinya dengan nama yang baru saja ditinggalkan.
+   */
+  const [switchedFrom, setSwitchedFrom] = useState<string | null>(null);
+
+  /** Judul dokumen yang sedang tampil, untuk dibandingkan di luar render. */
+  const modelTitle = useRef<string | null>(null);
+  /** Satu pembacaan `model_info` pada satu waktu. */
+  const modelBusy = useRef(false);
+  /** Kapan pembacaan terakhir DIMULAI — dasar jarak minimum di atas. */
+  const lastModelRead = useRef(0);
+
+  /**
+   * Baris `model_info` yang sudah diantre tapi belum dijawab.
+   *
+   * Antrean Revit satu jalur: satu perintah pada satu waktu. Sebuah print 40
+   * sheet berarti `model_info` kita duduk di belakangnya belasan menit, dan
+   * pembacaannya menyerah menunggu jauh sebelum itu. Barisnya sendiri TIDAK
+   * hilang karena kita berhenti menunggu — ia tetap di antrean dan tetap akan
+   * dijalankan. Jadi pembacaan berikutnya menyambung menunggu baris yang sama,
+   * bukan mengantre yang kedua: tanpa ini, satu print panjang meninggalkan
+   * belasan baris model_info yang dijalankan beruntun sesudahnya, semuanya
+   * dengan jawaban yang sama persis, semuanya menahan perintah berikutnya yang
+   * benar-benar diminta orangnya.
+   */
+  const pendingModelRead = useRef<string | null>(null);
+
   // Proyek pertama dipilih otomatis supaya halaman langsung bisa dipakai.
   useEffect(() => {
     if (!project && projects.length) setProject(projects[0]);
@@ -271,6 +343,15 @@ export default function CommandRunner({
     setRooms([]);
     setSheets([]);
     setModel(null);
+    setRoomContents({});
+    // Bukan pergantian dokumen di Revit, jadi tidak ada yang perlu dikatakan —
+    // orangnya sendiri yang baru saja mengganti proyeknya.
+    modelTitle.current = null;
+    setSwitchedFrom(null);
+    setModelStale(false);
+    // Barisnya milik proyek yang tadi; menunggunya di proyek ini akan
+    // menjawab tentang model yang salah.
+    pendingModelRead.current = null;
   }, [project?.projectId]);
 
   /** Menambah satu gelembung dan mengembalikan id-nya, supaya ia bisa dikoreksi nanti. */
@@ -749,6 +830,43 @@ export default function CommandRunner({
   }
 
   /**
+   * Satu pembacaan `model_info`, yang menyambung baris yang sudah diantre.
+   *
+   * Sengaja bukan `runAndWait`. Bedanya cuma satu hal, dan hanya berarti untuk
+   * perintah yang dijalankan halaman ini sendiri berulang kali: kalau
+   * menunggunya menyerah, id barisnya DISIMPAN, dan panggilan berikutnya
+   * melanjutkan menunggu baris itu alih-alih membuat baris kedua yang menanyakan
+   * hal yang sama. Untuk perintah yang dikirim orangnya, menyerah menunggu
+   * memang berarti selesai — jawabannya menyusul lewat polling gelembung — jadi
+   * `runAndWait` tetap yang dipakai di sana.
+   */
+  const readModelInfo = useCallback(
+    async (tries: number) => {
+      const id = pendingModelRead.current ?? (await enqueue("model_info", {})).id;
+      pendingModelRead.current = id;
+
+      for (let i = 0; i < tries; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const res = await fetch(`/api/commands?id=${encodeURIComponent(id)}`);
+        if (!res.ok) continue;
+
+        const cmd = (await res.json()) as QueuedCommand;
+        if (!TERMINAL.includes(cmd.status)) continue;
+
+        pendingModelRead.current = null;
+        if (cmd.status !== "completed") {
+          throw new Error(cmd.error_message ?? t("command.roomsFailed"));
+        }
+        return cmd.result_json;
+      }
+
+      // Barisnya dibiarkan di antrean, dan id-nya dibiarkan di ref.
+      throw new Error(t("command.roomsTimeout"));
+    },
+    [enqueue, t]
+  );
+
+  /**
    * File .rvt yang sedang dibuka Revit, beserta setup yang tersimpan di
    * dalamnya.
    *
@@ -757,48 +875,89 @@ export default function CommandRunner({
    * mahal adalah saat keduanya tidak sama — perintah berangkat ke model yang
    * salah dan tidak ada apa pun di layar yang menunjukkannya.
    */
-  const loadModel = useCallback(async () => {
-    if (!project) return;
-    setModelLoading(true);
-    setModelReachable(true);
-    try {
-      const info = (await runAndWait("model_info", {})) as {
-        title?: string;
-        path?: string | null;
-        print_setups?: string[];
-        cad_setups?: string[];
-        family_types?: Record<string, string[]>;
-        rooms?: string[];
-        addin_version?: string;
-        upload_mode?: string;
-      } | null;
+  const loadModel = useCallback(
+    async (opts?: { background?: boolean }) => {
+      if (!project) return;
+      if (modelBusy.current) return;
 
-      setModel({
-        title: info?.title ?? "—",
-        path: info?.path ?? null,
-        printSetups: info?.print_setups ?? [],
-        cadSetups: info?.cad_setups ?? [],
-        familyTypes: info?.family_types ?? {},
-        rooms: info?.rooms ?? [],
-        addinVersion: info?.addin_version ?? "",
-        uploadMode: info?.upload_mode ?? "",
-      });
+      const background = opts?.background === true;
+      modelBusy.current = true;
+      lastModelRead.current = Date.now();
+      setModelLoading(true);
+      if (!background) setModelReachable(true);
 
-      // Nama ruangan datang bersama info model, jadi tombol "Ambil dari Revit"
-      // di field ruangan tidak perlu ditekan lagi — daftarnya sudah ada
-      // sebelum ada yang membuka formnya.
-      if (info?.rooms?.length) setRooms(info.rooms);
-    } catch {
-      // Dijalankan sendiri saat halaman dibuka, jadi kegagalannya tidak boleh
-      // muncul sebagai galat merah di atas form yang belum disentuh siapa pun.
-      // Revit yang tertutup adalah keadaan yang wajar, bukan kesalahan — yang
-      // ditampilkan cukup bahwa modelnya belum terbaca.
-      setModel(null);
-      setModelReachable(false);
-    } finally {
-      setModelLoading(false);
-    }
-  }, [project, runAndWait]);
+      try {
+        // Pembacaan latar menunggu lebih pendek. Ia berulang sendiri semenit
+        // lagi, jadi menunggu satu menit penuh untuk jawaban yang tidak datang
+        // hanya menahan giliran pembacaan berikutnya.
+        const info = (await readModelInfo(background ? 8 : 30)) as {
+          title?: string;
+          path?: string | null;
+          print_setups?: string[];
+          cad_setups?: string[];
+          family_types?: Record<string, string[]>;
+          rooms?: string[];
+          addin_version?: string;
+          upload_mode?: string;
+        } | null;
+
+        const title = info?.title ?? "—";
+        const previous = modelTitle.current;
+        modelTitle.current = title;
+
+        setModel({
+          title,
+          path: info?.path ?? null,
+          printSetups: info?.print_setups ?? [],
+          cadSetups: info?.cad_setups ?? [],
+          familyTypes: info?.family_types ?? {},
+          rooms: info?.rooms ?? [],
+          addinVersion: info?.addin_version ?? "",
+          uploadMode: info?.upload_mode ?? "",
+        });
+        setModelStale(false);
+        setModelReachable(true);
+
+        // Dokumen yang berganti membuat SEMUA yang dibaca dari dokumen
+        // sebelumnya salah sekaligus — daftar ruangan, daftar sheet, dan isi
+        // ruangan yang sudah dihitung. Dibiarkan hidup, ketiganya jadi jawaban
+        // percaya diri tentang file yang sudah tidak terbuka: "LOUNGE 5" tetap
+        // ada di dropdown, perintahnya berangkat, dan add-in menolaknya dengan
+        // nama ruangan yang tidak ada di dokumen yang sekarang.
+        if (previous !== null && previous !== title) {
+          setSwitchedFrom(previous);
+          setSheets([]);
+          setRoomContents({});
+          setRooms([]);
+        }
+
+        // Nama ruangan datang bersama info model, jadi tombol "Ambil dari Revit"
+        // di field ruangan tidak perlu ditekan lagi — daftarnya sudah ada
+        // sebelum ada yang membuka formnya.
+        if (info?.rooms?.length) setRooms(info.rooms);
+      } catch {
+        if (background) {
+          // Yang gagal cuma satu pemeriksaan berkala. Menghapus nama file yang
+          // sudah benar karena Revit sedang sibuk berarti menukar keterangan
+          // dengan ketiadaan keterangan; yang benar adalah menahannya sambil
+          // mengatakan bahwa ia belum dipastikan lagi.
+          setModelStale(true);
+        } else {
+          // Dijalankan sendiri saat halaman dibuka, jadi kegagalannya tidak boleh
+          // muncul sebagai galat merah di atas form yang belum disentuh siapa pun.
+          // Revit yang tertutup adalah keadaan yang wajar, bukan kesalahan — yang
+          // ditampilkan cukup bahwa modelnya belum terbaca.
+          setModel(null);
+          modelTitle.current = null;
+          setModelReachable(false);
+        }
+      } finally {
+        modelBusy.current = false;
+        setModelLoading(false);
+      }
+    },
+    [project, readModelInfo]
+  );
 
   /**
    * Nama file Revit muncul sendiri, tanpa ada yang perlu menekan apa pun.
@@ -808,9 +967,9 @@ export default function CommandRunner({
    * disentuh SEBELUM mengirim perintah, dan tombol yang harus ditekan lebih
    * dulu justru dilewati persis pada saat itu penting.
    *
-   * Sekali per proyek terpilih. Setiap panggilan adalah satu baris di antrean
-   * yang harus diambil add-in, jadi ini bukan sesuatu yang boleh diulang
-   * berkala.
+   * Sekali saat proyeknya terpilih; sesudah itu diperbarui oleh efek di
+   * bawahnya, karena file yang dibuka Revit bisa berganti kapan saja tanpa
+   * website menyentuh apa pun.
    */
   useEffect(() => {
     if (!project) return;
@@ -819,6 +978,88 @@ export default function CommandRunner({
     // dan efek ini hanya boleh berjalan saat proyeknya yang berganti.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.projectId]);
+
+  /**
+   * Nama file itu diperiksa lagi, karena yang membuatnya salah terjadi di luar
+   * website.
+   *
+   * Ini yang dilaporkan rusak: orang membuka file .rvt yang lain di Revit, dan
+   * panelnya tetap menyebut nama file sebelumnya sampai halamannya dimuat ulang.
+   * Tidak ada satu pun kejadian di sisi website yang menandai pergantian itu —
+   * tidak ada klik, tidak ada perintah, tidak ada jawaban yang berubah bunyinya
+   * — jadi satu-satunya cara mengetahuinya adalah bertanya lagi.
+   *
+   * Tiga pemicunya, dari yang paling murah:
+   *
+   * 1. **Panelnya kembali terlihat atau dapat fokus.** Berganti dokumen di Revit
+   *    berarti bekerja di jendela sebelah dulu, jadi inilah saat yang hampir
+   *    selalu tepat — dan yang menjadikannya murah adalah jarak minimumnya.
+   * 2. **Berkala selama terlihat.** Panel yang didok di samping jendela Revit
+   *    tidak pernah kehilangan fokus saat dokumennya diganti lewat tab di dalam
+   *    Revit sendiri. Tanpa yang satu ini, kasus itu tidak tertangkap sama
+   *    sekali.
+   * 3. **Hasil perintah yang menyebut dokumen lain** — lihat efek berikutnya.
+   *
+   * Berhenti begitu tab-nya tidak terlihat, dan tidak pernah lebih rapat dari
+   * `MODEL_MIN_GAP_MS` walau ketiganya menyala bersamaan.
+   */
+  useEffect(() => {
+    if (!project) return;
+
+    const refresh = () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      if (Date.now() - lastModelRead.current < MODEL_MIN_GAP_MS) return;
+      loadModel({ background: true });
+    };
+
+    const timer = setInterval(refresh, MODEL_POLL_MS);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.projectId]);
+
+  /**
+   * Jawaban yang datang dari dokumen lain memicu pembacaan ulang seketika.
+   *
+   * Ini pemicu yang paling tepat waktunya dan paling murah — nol baris antrean
+   * tambahan — karena yang dibacanya sudah ada di tangan: hasil perintah yang
+   * baru saja selesai. Add-in menyebutkan dokumen yang benar-benar dikerjakannya
+   * di setiap hasil (lihat `docs/addin-dokumen-aktif-dan-batas-ruangan.md`), dan
+   * begitu nama itu tidak sama dengan yang tampil, yang tampil sudah pasti
+   * salah — bukan mungkin salah, dan bukan salah semenit lagi.
+   *
+   * Add-in versi lama tidak mengirimkan medan itu sama sekali. Maka efek ini
+   * tidak melakukan apa-apa di sana, dan kedua pemicu di atas yang bekerja.
+   */
+  const documentChecked = useRef(new Set<string>());
+  useEffect(() => {
+    if (!project) return;
+
+    for (const run of runs) {
+      if (run.status !== "completed" || documentChecked.current.has(run.id)) continue;
+      // Diperiksa SEKALI per perintah. Baris hasil tidak pernah dibuang dari
+      // daftar `runs`, jadi tanpa penanda ini sebuah hasil lama yang menyebut
+      // dokumen lama akan memicu pembacaan ulang pada setiap render — terus
+      // menerus, karena nama di dalamnya memang tidak akan pernah cocok lagi.
+      documentChecked.current.add(run.id);
+
+      const result = run.result as { document?: unknown } | null | undefined;
+      const named = typeof result?.document === "string" ? result.document.trim() : "";
+      if (!named) continue;
+
+      if (modelTitle.current !== null && named !== modelTitle.current) {
+        loadModel({ background: true });
+        return;
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runs, project?.projectId]);
 
   /** Nama ruangan di model yang sedang terbuka. */
   async function loadRooms() {
@@ -1469,6 +1710,14 @@ export default function CommandRunner({
               {model.uploadMode && (
                 <span className="opacity-55">· unggah: {model.uploadMode}</span>
               )}
+              {/* Nama yang tampil adalah nama yang TERAKHIR dijawab, dan sekali
+                  pemeriksaannya tidak dijawab ia berhenti berarti "yang sedang
+                  terbuka". Bedanya disebutkan, bukan disembunyikan. */}
+              {modelStale && !modelLoading && (
+                <span className="text-amber-600 dark:text-amber-400">
+                  · {t("command.modelUnconfirmed")}
+                </span>
+              )}
             </>
           ) : (
             <span className="opacity-55">
@@ -1481,16 +1730,33 @@ export default function CommandRunner({
           )}
           {/* Tombolnya hanya muncul kalau pembacaan otomatisnya gagal — untuk
               mencoba lagi setelah Revit dibuka, bukan sebagai langkah biasa. */}
-          {!model && !modelLoading && (
+          {(!model || modelStale) && !modelLoading && (
             <button
               type="button"
-              onClick={loadModel}
+              onClick={() => loadModel()}
               className="text-accent underline"
             >
               {t("command.modelRetry")}
             </button>
           )}
         </div>
+
+        {/* Pergantian dokumen dikatakan, karena yang ikut hilang bersamanya
+            tidak terlihat: daftar ruangan, daftar sheet, dan isi ruangan yang
+            sudah dibaca semuanya dikosongkan di saat yang sama. Tanpa kalimat
+            ini yang terlihat cuma dropdown ruangan yang tiba-tiba kosong. */}
+        {switchedFrom && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-400/50 bg-amber-400/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+            <span>{t("command.modelSwitched").replace("{from}", switchedFrom)}</span>
+            <button
+              type="button"
+              onClick={() => setSwitchedFrom(null)}
+              className="underline"
+            >
+              {t("command.modelSwitchedOk")}
+            </button>
+          </div>
+        )}
 
         {/* Tombol per command — inilah yang menembak ke add-in Revit.
             Satu baris yang bisa digeser di telepon: dibungkus jadi lima baris,

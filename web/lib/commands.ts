@@ -196,8 +196,8 @@ export const COMMANDS: CommandSpec[] = [
         max: 500,
         label: { id: "Jumlah", en: "Count" },
         hint: {
-          id: "Kosongkan agar dihitung dari target lux. Gridnya disusun otomatis dari jumlah ini.",
-          en: "Leave empty to size it from the lux target. The grid is derived from this count.",
+          id: "Kosongkan agar dihitung dari target lux. Gridnya disusun otomatis dari jumlah ini. Di ruangan yang bukan kotak, titik yang jatuh di luar batas ruangan dibuang — yang terpasang jadi lebih sedikit, dan selisihnya disebut di hasil.",
+          en: "Leave empty to size it from the lux target. The grid is derived from this count. In a room that is not a rectangle, points falling outside the room boundary are dropped — fewer get placed, and the difference is named in the result.",
         },
       },
       {

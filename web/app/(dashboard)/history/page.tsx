@@ -69,12 +69,25 @@ export default function HistoryPage() {
 
       // Riwayat perintah milik sendiri, terbaru dulu. Indeks
       // idx_commands_queue_user_recent (migrasi 0008) persis untuk query ini.
+      //
+      // `model_info` dikeluarkan: tidak ada satu orang pun yang menjalankannya.
+      // Halaman perintah membacanya sendiri untuk tahu file .rvt mana yang
+      // sedang terbuka — sekali saat dibuka, lalu berkala selama panelnya
+      // terlihat — jadi ia akan mengisi lima puluh baris terakhir ini dalam
+      // waktu kurang dari satu jam dan mendorong keluar setiap perintah yang
+      // benar-benar dikirim orangnya. Riwayat yang isinya plumbing bukan
+      // riwayat.
+      //
+      // Disaring di query, bukan sesudahnya: `limit(50)` berlaku di database,
+      // jadi menyaringnya di sini berarti lima puluh baris yang diambil memang
+      // lima puluh perintah, bukan lima puluh baris yang tersisa tiga.
       const { data, error } = await supabase
         .from("commands_queue")
         .select(
           "id, command_type, command_text, status, result_json, error_message, queued_at, completed_at, execution_time_ms"
         )
         .eq("user_id", user.id)
+        .neq("command_type", "model_info")
         .order("queued_at", { ascending: false })
         .limit(50)
         .returns<HistoryRow[]>();

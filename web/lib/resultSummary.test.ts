@@ -146,6 +146,35 @@ describe("summarizeResult — perintah yang mengubah model", () => {
     expect(summarizeResult({ devices_placed: 0 }, t)).toBe("0 perangkat dipasang");
   });
 
+  it("yang dibuang karena di luar batas ruangan ikut disebut", () => {
+    // Ruangan berbentuk L: gridnya dibentangkan pada kotak ruangan, dan
+    // sebagian titiknya jatuh di ruangan sebelah. Add-in membuangnya, jadi 40
+    // yang diminta berakhir sebagai 34 yang terpasang — angka yang benar, dan
+    // yang terbaca sebagai kegagalan separuh jalan kalau selisihnya tidak
+    // punya sebab yang tertulis.
+    expect(
+      summarizeResult(
+        { devices_placed: 34, room: "LOUNGE 5", outside_boundary: 6 },
+        t
+      )
+    ).toBe("34 perangkat dipasang · ruangan LOUNGE 5 · 6 di luar batas ruangan");
+  });
+
+  it("nol di luar batas tidak disebut — tidak ada yang perlu dijelaskan", () => {
+    expect(summarizeResult({ devices_placed: 40, outside_boundary: 0 }, t)).toBe(
+      "40 perangkat dipasang"
+    );
+  });
+
+  it("add-in yang tidak memeriksa batas tidak dibuatkan kalimatnya", () => {
+    // Medannya tidak ada sama sekali di add-in versi lama. Menampilkan "0 di
+    // luar batas ruangan" untuk hasil yang batasnya tidak pernah dilihat
+    // adalah pernyataan yang tidak ada yang memeriksanya.
+    expect(summarizeResult({ devices_placed: 40, room: "LOUNGE 5" }, t)).toBe(
+      "40 perangkat dipasang · ruangan LOUNGE 5"
+    );
+  });
+
   it("menandai uji coba di depan, sebelum angkanya terbaca", () => {
     const summary = summarizeResult({ dry_run: true, devices_placed: 6, room: "PANTRY" }, t);
     expect(summary.startsWith("Uji coba: ")).toBe(true);
