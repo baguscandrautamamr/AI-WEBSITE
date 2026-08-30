@@ -61,6 +61,11 @@ describe("asksToRun / refusesAsAlreadyDone", () => {
       "Baik, 6 lampu di Meeting 1 sudah saya catat. Tingginya berapa meter?",
       "Mau saya kirim sekarang?",
       "Ruangan itu berisi 6 armatur.",
+      // Inilah pagar yang paling menentukan: kedua penandanya ada — orangnya
+      // menyuruh, balasannya berbunyi "sudah terpasang" — dan ia tetap sebuah
+      // pertanyaan. Memaksanya berangkat berarti menjawab sendiri pertanyaan
+      // yang baru saja diajukan kepada orangnya.
+      "Ruangan itu sudah terpasang 9 armatur — mau ditata ulang atau ditambah?",
     ]) {
       expect(refusesAsAlreadyDone(line), line).toBe(false);
     }

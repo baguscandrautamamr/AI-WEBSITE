@@ -167,6 +167,21 @@ export function refusesAsAlreadyDone(text: string): boolean {
   const body = (text ?? "").trim();
   if (!body) return false;
 
+  // Balasan yang MEMUAT pertanyaan tidak pernah dihitung sebagai penolakan.
+  //
+  // Ini pagar yang menahan satu-satunya cara penjagaan ini bisa merugikan.
+  // "Pasang 6 lampu di Meeting 1" dijawab "ruangan itu sudah terpasang 9
+  // armatur — mau ditata ulang atau ditambah?" memuat kedua penandanya:
+  // orangnya menyuruh, dan balasannya berbunyi "sudah terpasang". Tanpa pagar
+  // ini perintahnya akan dipaksa berangkat, dengan jawaban yang belum diberikan
+  // siapa pun atas pertanyaan yang baru saja diajukan.
+  //
+  // Sebuah penolakan yang benar-benar menolak tidak bertanya apa-apa; ia
+  // menyatakan. Dan kalaupun ada penolakan yang kebetulan diakhiri "ada lagi?",
+  // yang hilang cuma pemaksaannya — tombol perintahnya tetap ada, dan itu arah
+  // salah yang jauh lebih murah daripada memasang sesuatu yang tidak diminta.
+  if (body.includes("?")) return false;
+
   return /\b(sudah|telah)\s+(saya\s+)?(di)?(pasang|kirim|jalan|laksana|kerja|lakuk|selesai|tata|ubah|ganti|modifikasi|terpasang|terkirim|dieksekusi)/i.test(
     body
   )
