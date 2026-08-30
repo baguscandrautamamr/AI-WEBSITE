@@ -1,3 +1,4 @@
+import { MARK } from "./chatHistory";
 import { COMMANDS, canRun, type CommandField, type CommandSpec, type Role } from "./commands";
 import { familyNameOf } from "./families";
 
@@ -120,6 +121,29 @@ export function toolsForRole(role: Role): AnthropicTool[] {
 export function mentionsCommand(text: string): boolean {
   if (!text) return false;
   return COMMANDS.some((c) => new RegExp(`(^|[^a-z_])/${c.name}\\b`, "i").test(text));
+}
+
+/**
+ * Jawaban yang MENIRU sebuah catatan sistem.
+ *
+ * Bentuk kegagalan ketiga, dan yang paling menyesatkan dari ketiganya. Riwayat
+ * memuat catatan sistem sebagai giliran asisten — harus, karena model yang tidak
+ * melihat perintah yang ia kirim sendiri menyimpulkan permintaannya belum
+ * dikerjakan — dan giliran asisten adalah persis yang sedang diminta model untuk
+ * dituliskan berikutnya. Jadi ia menulis satu lagi: penanda catatannya, nama
+ * tool, baris argumen, lengkap dengan "HASILNYA:" dan angka yang tidak pernah
+ * datang dari Revit karena tidak ada perintah yang berangkat.
+ *
+ * Yang dibaca orangnya: laporan bahwa lima belas armatur telah dipasang. Yang
+ * ada di Revit: tidak ada apa-apa. Ini kegagalan yang paling mahal di sistem
+ * ini — bukan karena paling sering, tapi karena ia satu-satunya yang berbohong
+ * dengan angka.
+ *
+ * Dikenali dari penandanya sendiri (`MARK`), bukan dari kemiripan gaya: penanda
+ * itu tidak pernah muncul di kalimat siapa pun kecuali sebagai tiruan.
+ */
+export function echoesSystemNote(text: string): boolean {
+  return (text ?? "").includes(MARK);
 }
 
 /**
@@ -250,11 +274,16 @@ ATURAN:
   memakainya sendiri. Isi \`door_offset\` HANYA kalau orangnya menyebut jarak lain
   ("saklar 500 mm dari pintu"); jangan mengisinya dengan 300 untuk menegaskan
   yang sudah berlaku.
-- Ruangan yang SUDAH punya kategori itu ditata ulang, bukan ditambahi: pakai
-  \`modify_devices\` (dengan \`what\`), bukan \`place_*\`. "Pasang 10 lampu" di ruangan
-  yang sudah berisi 9 armatur berarti 19 armatur bertumpuk pada satu plafon.
-  Website memeriksa isi ruangannya sebelum mengirim dan akan menawarkan
-  penggantian kalau kamu keliru memilih, tapi pilihlah yang benar sejak awal.
+- PILIH PERINTAH DARI KATA KERJA YANG DIPAKAI ORANGNYA, bukan dari terkaan soal
+  isi ruangan. "Pasang", "tambah", "kasih" → \`place_*\`. "Ganti", "modifikasi",
+  "tata ulang", "ubah jadi" → \`modify_devices\` (dengan \`what\`). Kamu TIDAK BISA
+  tahu apakah sebuah ruangan sudah berisi — kamu tidak melihat model, dan
+  catatan di riwayat merekam masa lalu, bukan sekarang. Menerkanya berarti
+  menebak, dan yang menjaga tebakan itu bukan kamu: website membaca isi
+  ruangannya sebelum mengirim dan menawarkan penggantian kalau ternyata sudah
+  berisi, dan \`modify_devices\` pada ruangan kosong tetap benar — add-in
+  menghapus nol lalu memasang. Jadi jangan berpikir dua kali soal ini; pakai
+  kata kerjanya.
 - Pertanyaan tentang ISI model yang tidak dijawab \`query\` — pintu, dinding, volume
   beton, parameter apa pun — dijawab \`inspect\`, dan urutannya wajib: mulai
   \`what=categories\` untuk tahu kategori apa yang ada, lalu
@@ -324,6 +353,24 @@ SATU-SATUNYA CARA MENGIRIM PERINTAH ADALAH MEMANGGIL TOOL:
   menuliskan baris perintahnya sama sekali — cukup tanyakan yang kurang.
 - Riwayat percakapan ini memuat catatan sistem yang berbentuk seperti baris
   perintah. Itu catatan, bukan contoh cara menjawab.
+
+CATATAN SISTEM DI RIWAYAT — BACA INI SEKALI, BERLAKU UNTUK SEMUANYA:
+- Giliran yang diawali \`[CATATAN SISTEM]\` ditulis SISTEM, bukan olehmu. Ia
+  laporan mesin tentang apa yang terjadi, bukan jawaban, dan BUKAN contoh cara
+  menjawab. JANGAN pernah menulis \`[CATATAN SISTEM]\` dalam jawabanmu, jangan
+  meniru bentuknya, dan jangan mengarang isinya — angka di dalamnya datang dari
+  Revit, dan angka yang kamu tulis sendiri dalam bentuk itu adalah laporan palsu
+  yang terbaca persis seperti laporan sungguhan.
+- Ia merekam SATU SAAT DI MASA LALU, bukan keadaan model sekarang. Sejak itu
+  modelnya bisa saja sudah diubah, dihapus, atau di-undo tanpa kamu tahu. Yang
+  melihat keadaan sekarang cuma orang yang sedang menatap layar Revit — dan
+  dialah yang sedang mengetik kepadamu.
+- Maka: kalau orangnya meminta sesuatu dijalankan, JALANKAN — panggil tool-nya.
+  Jangan mencari di catatan apakah itu sudah pernah dikerjakan. Untuk perintah
+  BACA, angka yang sudah ada di catatan boleh dipakai menjawab pertanyaan
+  lanjutan tanpa memanggil tool lagi; untuk perintah yang MENGUBAH model, tidak
+  ada angka untuk dijawab ulang — satu-satunya yang bisa dimaksud orangnya
+  adalah menjalankannya lagi.
 
 YANG TIDAK BOLEH KAMU KATAKAN:
 - JANGAN pernah menyatakan sebuah perintah sudah dijalankan, sedang berjalan,

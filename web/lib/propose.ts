@@ -2,6 +2,7 @@ import { anthropic, EFFORT, MODEL } from "./anthropic";
 import {
   ELECTRICAL_SYSTEM_PROMPT,
   asksToRun,
+  echoesSystemNote,
   mentionsCommand,
   modelContextBlock,
   refusesAsAlreadyDone,
@@ -157,6 +158,18 @@ export async function propose(input: {
   let forcedRetry = false;
 
   /**
+   * Pemaksaan yang dijalankan lalu tetap tidak menghasilkan panggilan tool.
+   *
+   * Dicatat karena tanpa ini ia tidak bisa dibedakan dari pemaksaan yang tidak
+   * pernah dijalankan: `forced_retry` sama-sama true, dan hasilnya sama-sama
+   * sebuah balasan teks. Padahal keduanya menuntut perbaikan yang berbeda —
+   * yang satu di deteksinya, yang satu lagi di jalur panggilannya (permintaan
+   * ini lewat gateway pihak ketiga, dan `tool_choice` termasuk yang bisa tidak
+   * diteruskan utuh). Satu kolom di `ai_events` menggantikan satu sesi menebak.
+   */
+  let forceFailed: string | null = null;
+
+  /**
    * Satu-satunya jalan keluar, supaya tidak ada cabang yang lupa mencatat.
    *
    * Fungsi ini punya delapan hasil yang berbeda — perintah siap, perintah
@@ -216,11 +229,31 @@ export async function propose(input: {
   // pesan terakhir orangnya memang menyuruh menjalankan.
   const refusedButAsked = asksToRun(message) && refusesAsAlreadyDone(text);
 
-  if (!toolUse && tools.length > 0 && (mentionsCommand(text) || refusedButAsked)) {
+  //
+  // Bentuk KETIGA, dan yang paling menyesatkan: jawaban yang MENIRU catatan
+  // sistem. Model menulis penanda catatannya sendiri, nama tool, baris
+  // argumen, "HASILNYA:", dan angka — lima belas armatur dipasang, lima belas
+  // sirkuit dibuat — tanpa satu pun tool dipanggil. Tidak ada baris di
+  // commands_queue, tidak ada apa pun di Revit, dan yang dibaca orangnya adalah
+  // laporan lengkap dengan angkanya.
+  //
+  // Sebabnya ada di bentuk riwayatnya: catatan sistem dicatat sebagai giliran
+  // ASISTEN — harus, karena model yang tidak melihat perintah yang ia kirim
+  // sendiri menyimpulkan permintaannya belum dikerjakan — dan giliran asisten
+  // adalah persis yang sedang diminta model untuk dituliskan berikutnya.
+  //
+  // Tanpa syarat tambahan, tidak seperti dua bentuk di atas. Sebuah jawaban
+  // yang memuat penanda catatan sistem tidak pernah benar, apa pun yang
+  // ditanyakan orangnya.
+  const echoed = echoesSystemNote(text);
+
+  if (!toolUse && tools.length > 0 && (mentionsCommand(text) || refusedButAsked || echoed)) {
     console.warn(
-      refusedButAsked
-        ? "[propose] jawaban menolak dengan alasan sudah dikerjakan — dipaksa"
-        : "[propose] jawaban menulis perintah tanpa memanggil tool — dipaksa"
+      echoed
+        ? "[propose] jawaban meniru catatan sistem — dipaksa"
+        : refusedButAsked
+          ? "[propose] jawaban menolak dengan alasan sudah dikerjakan — dipaksa"
+          : "[propose] jawaban menulis perintah tanpa memanggil tool — dipaksa"
     );
     forcedRetry = true;
     try {
@@ -234,11 +267,13 @@ export async function propose(input: {
         // biayanya tidak hilang dari catatan — yang hilang cuma penggandaannya.
         stats = statsOf(forced);
       }
+      if (!forcedTool) forceFailed = "forced_retry_no_tool";
     } catch (err) {
       // Percobaan kedua yang gagal bukan alasan menjatuhkan giliran ini: jawaban
       // pertamanya tetap ada, dan di bawah ia dikembalikan dengan keterangan
       // bahwa TIDAK ada perintah yang dikirim.
       console.error("[propose] forced tool retry failed", err);
+      forceFailed = "forced_retry_threw";
     }
   }
 
@@ -274,16 +309,37 @@ export async function propose(input: {
       );
     }
 
+    // Tiruan catatan sistem TIDAK PERNAH ditampilkan, bahkan setelah pemaksaan
+    // gagal.
+    //
+    // Menandainya "tidak ada perintah yang dikirim" tidak cukup di sini, dan
+    // bedanya menentukan: dua bentuk yang lain menghasilkan kalimat yang salah,
+    // yang ini menghasilkan LAPORAN BERANGKA — "15 perangkat dipasang · 15
+    // sirkuit dibuat · Beban 3300 VA" — untuk pekerjaan yang tidak pernah
+    // terjadi. Angka sebanyak itu tidak bisa dinetralkan oleh satu baris
+    // peringatan di sebelahnya; yang membacanya sudah membaca angkanya.
+    //
+    // Jadi teksnya dibuang, bukan dibingkai.
+    const shown = echoesSystemNote(text)
+      ? "Saya belum benar-benar mengirim apa pun ke Revit pada giliran ini. " +
+        "Ulangi permintaannya, atau kirim langsung lewat tombol perintah di atas."
+      : text || "Bisa diperjelas maksudnya?";
+
     return done(
       {
         kind: "reply",
-        text: text || "Bisa diperjelas maksudnya?",
+        text: shown,
         // Jawaban yang menyebut sebuah perintah padahal tidak ada yang dikirim
         // ditandai, supaya panel chat mengatakannya terus terang alih-alih
         // membiarkan kalimat model berdiri sebagai laporan.
-        nothingSent: mentionsCommand(text) || refusedButAsked,
+        nothingSent: mentionsCommand(text) || refusedButAsked || echoed,
       },
-      { outcome: "reply", tool: null, wrote_command_as_text: mentionsCommand(text) }
+      {
+        outcome: "reply",
+        tool: null,
+        wrote_command_as_text: mentionsCommand(text) || echoed,
+        ...(forceFailed ? { error: forceFailed } : {}),
+      }
     );
   }
 

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { MARK } from "./chatHistory";
 import {
   ELECTRICAL_SYSTEM_PROMPT,
   asksToRun,
+  echoesSystemNote,
   mentionsCommand,
   modelContextBlock,
   refusesAsAlreadyDone,
@@ -69,6 +71,56 @@ describe("asksToRun / refusesAsAlreadyDone", () => {
     ]) {
       expect(refusesAsAlreadyDone(line), line).toBe(false);
     }
+  });
+});
+
+describe("echoesSystemNote", () => {
+  // Bentuk kegagalan yang paling menyesatkan di sistem ini: model menulis
+  // catatan sistemnya sendiri sebagai jawaban — nama tool, baris argumen,
+  // "HASILNYA:", dan angka — tanpa satu pun tool dipanggil. Yang dibaca orangnya
+  // adalah laporan bahwa lima belas armatur telah dipasang; yang ada di Revit
+  // tidak ada apa-apa.
+  it("mengenali tiruan catatan sistem", () => {
+    expect(
+      echoesSystemNote(
+        `${MARK} Kamu memanggil tool modify_devices; sistem menjalankannya di ` +
+          `Revit dan Revit sudah menjawab. HASILNYA: 15 perangkat dipasang.`
+      )
+    ).toBe(true);
+  });
+
+  it("jawaban biasa tidak dianggap tiruan", () => {
+    expect(echoesSystemNote("Baik, saya kirim 15 downlight ke MEETING 1.")).toBe(false);
+    expect(echoesSystemNote("")).toBe(false);
+  });
+});
+
+describe("aturan yang pindah dari catatan ke prompt sistem", () => {
+  // Kalimat-kalimat ini dulu menempel di SETIAP catatan hasil — sampai dua
+  // belas kali dalam satu permintaan. Pengulangannya bukan cuma biaya input:
+  // giliran asisten yang berisi kalimat yang sama berulang-ulang adalah pola
+  // terdekat yang tersedia untuk ditiru, dan yang ditiru model adalah bentuk
+  // yang paling sering ia lihat. Sekarang berdiri sekali, di sini.
+  it("catatan sistem dinyatakan bukan contoh cara menjawab", () => {
+    expect(ELECTRICAL_SYSTEM_PROMPT).toContain(MARK);
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/bukan contoh cara menjawab/i);
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/jangan mengarang isinya/i);
+  });
+
+  it("catatan dinyatakan masa lalu, dan permintaan baru tetap dijalankan", () => {
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/masa lalu/i);
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/bukan keadaan model sekarang/i);
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/JALANKAN/);
+  });
+
+  it("perintah dipilih dari kata kerja orangnya, bukan dari terkaan isi ruangan", () => {
+    // Model tidak melihat model Revit. Menyuruhnya menebak apakah sebuah
+    // ruangan sudah berisi berarti menyuruhnya mencari bukti — dan satu-satunya
+    // bukti yang tersedia baginya adalah catatan riwayat, yang merekam masa
+    // lalu. Di situlah "pasang lampu di MEETING 1" berubah jadi modify_devices
+    // untuk ruangan yang di layar jelas kosong.
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/KATA KERJA YANG DIPAKAI ORANGNYA/);
+    expect(ELECTRICAL_SYSTEM_PROMPT).toMatch(/TIDAK BISA\s+tahu apakah sebuah ruangan sudah berisi/);
   });
 });
 

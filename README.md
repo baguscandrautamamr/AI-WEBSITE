@@ -159,6 +159,36 @@ sebelum perintah yang diminta orangnya berangkat. Yang tahu keadaan model
 sekarang adalah orang yang sedang menatap layar Revit; ia sudah melihatnya, dan
 ia sudah mengetik apa yang ia mau.
 
+**Jawaban yang meniru catatan sistem dibuang, bukan ditampilkan.** Bentuk
+kegagalan paling mahal di sistem ini — bukan karena paling sering, tapi karena
+ia satu-satunya yang berbohong dengan angka. "Pasang lampu 5x3 downlight di
+meeting 1" dijawab dengan sebuah `[CATATAN SISTEM]` karangan lengkap dengan
+"HASILNYA: 15 perangkat dipasang · 15 sirkuit dibuat · Beban 3300 VA", tanpa
+satu pun tool dipanggil: tidak ada baris di `commands_queue`, tidak ada apa pun
+di Revit, dan yang dibaca orangnya adalah laporan sukses berangka. Sebabnya ada
+di bentuk riwayatnya — catatan sistem dicatat sebagai giliran ASISTEN (harus:
+model yang tidak melihat perintah yang ia kirim sendiri menyimpulkan
+permintaannya belum dikerjakan), dan giliran asisten adalah persis yang sedang
+diminta model untuk dituliskan berikutnya. Tiga lapis sekarang: catatannya
+dipendekkan dari 553 jadi 231 karakter dengan ceramahnya dipindah ke prompt
+sistem SEKALI alih-alih diulang dua belas kali (~1.000 token per giliran, dan
+satu pola yang jauh lebih tipis untuk ditiru); balasan yang memuat penanda
+catatan memicu pengulangan dengan `tool_choice: any`; dan kalau itu pun gagal,
+teksnya DIBUANG — satu baris peringatan di sebelah angka yang salah tidak
+menetralkan angka yang sudah terbaca.
+
+**Perintah dipilih dari kata kerja orangnya, bukan dari terkaan isi ruangan.**
+Prompt dulu menyuruh model memakai `modify_devices` untuk ruangan yang sudah
+berisi dan `place_*` untuk yang kosong — sebuah pertanyaan yang model TIDAK BISA
+jawab: ia tidak melihat model Revit. Yang dilakukannya adalah mencari bukti, dan
+satu-satunya bukti yang tersedia baginya adalah catatan riwayat, yang merekam
+masa lalu. Di situlah "pasang lampu di MEETING 1" berubah jadi `modify_devices`
+untuk ruangan yang di layar jelas kosong. Sekarang: "pasang/tambah" → `place_*`,
+"ganti/modifikasi/tata ulang" → `modify_devices`, titik. Yang menjaga tebakannya
+bukan model — website membaca isi ruangan sebelum mengirim dan menawarkan
+penggantian kalau ternyata sudah berisi, dan `modify_devices` pada ruangan
+kosong tetap benar karena add-in menghapus nol lalu memasang.
+
 **Penolakan "sudah dikerjakan" dipaksa jadi perintah.** Riwayat memuat catatan
 bahwa perintah serupa pernah berangkat, dan dari situ model menyimpulkan
 pekerjaannya selesai — lalu menjawab begitu, tanpa memanggil tool apa pun.
@@ -238,13 +268,19 @@ model yang sedang terbuka — dipisah ke blok kedua, SESUDAH penandanya
 ujung prompt, membuat setiap proyek punya prefiks yang berbeda, dan tidak ada
 satu pun giliran yang bisa kena cache.
 
-**`effort` rendah.** Giliran mode Electrical menerjemahkan satu kalimat jadi
-satu panggilan tool, dengan katalog yang sudah menyebutkan setiap argumen dan
-rentangnya, dan hasilnya divalidasi ulang di `buildPayload` dan
-`resolveFamilies` sebelum berangkat ke mana pun. Bawaan API adalah `high`, dan
-di sini yang ditambahkannya bukan ketepatan melainkan detik-detik yang
-dihabiskan orangnya menatap "Menyusun perintah…". `AI_EFFORT` menaikkannya lagi
-tanpa deploy kalau ternyata ada bentuk permintaan yang menuntut lebih.
+**`effort` diturunkan dari `high` ke `medium`.** Giliran mode Electrical memilih
+satu tool dari katalog yang sudah menyebutkan setiap argumen dan rentangnya,
+lalu hasilnya divalidasi ulang di `buildPayload` dan `resolveFamilies` sebelum
+berangkat ke mana pun. Bawaan API `high` menambahkan detik-detik, bukan
+ketepatan. **`medium`, bukan `low`** — dan itu langkah mundur yang disengaja
+dari nilai yang sempat dipasang: pada `low` model lebih banyak mencocokkan pola
+daripada memilih, dan pola terdekat yang tersedia baginya adalah giliran asisten
+terakhir di riwayat, yang berupa catatan sistem. `AI_EFFORT` mengubahnya tanpa
+deploy.
+
+**Catatan riwayat dipendekkan.** 553 → 231 karakter per catatan, sampai dua
+belas catatan per giliran. Lihat "Jawaban yang meniru catatan sistem" di atas —
+pemendekannya bukan cuma soal biaya input.
 
 **Satu pembacaan Revit yang dibuang.** Lihat "Modifikasi berangkat apa adanya"
 di atas: sampai enam belas detik, di depan perintah yang paling sering diulang
@@ -322,10 +358,10 @@ AI_GATEWAY_API_KEY=
 AI_GATEWAY_BASE_URL=https://gateway.olagon.site/anthropic
 AI_MODEL=claude-sonnet-5
 # Seberapa dalam model berpikir sebelum menjawab: low|medium|high|xhigh|max.
-# Kosong = low, karena giliran mode Electrical adalah penerjemahan satu
-# kalimat jadi satu perintah, bukan penalaran. Naikkan kalau ada bentuk
-# permintaan yang ternyata menuntut lebih.
-AI_EFFORT=low
+# Kosong = medium. Bawaan API `high` berlebihan untuk memilih satu tool dari
+# katalog; `low` terlalu jauh — model jadi lebih banyak meniru pola terdekat di
+# riwayat daripada memilih.
+AI_EFFORT=medium
 
 # Hanya dipakai /api/files/upload (belum ada halaman yang memanggilnya —
 # lihat "Yang belum ada").

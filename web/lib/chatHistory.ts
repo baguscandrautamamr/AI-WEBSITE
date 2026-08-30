@@ -25,6 +25,17 @@ export interface Turn {
   content: string;
 }
 
+/**
+ * Penanda di depan setiap catatan sistem — satu string, satu tempat.
+ *
+ * Dipakai dua arah, dan arah keduanya yang membuatnya harus konstanta: di sini
+ * untuk MENULIS catatannya, dan di `aiTools.echoesSystemNote` untuk MENGENALI
+ * catatan yang ditiru model sebagai jawabannya sendiri. Dua string yang diketik
+ * terpisah akan berbeda pada perubahan pertama, dan yang berhenti bekerja adalah
+ * pengenalannya — diam-diam.
+ */
+export const MARK = "[CATATAN SISTEM]";
+
 /** Menambahkan satu giliran, digabung kalau perannya sama dengan yang terakhir. */
 function push(turns: Turn[], role: Turn["role"], content: string) {
   const last = turns[turns.length - 1];
@@ -103,55 +114,6 @@ export interface ChatBubble {
 }
 
 /**
- * Kalimat yang menempel di setiap catatan hasil, dan bunyinya berbeda untuk
- * perintah yang MEMBACA dan perintah yang MENGUBAH.
- *
- * Satu kalimat yang sama untuk keduanya adalah sebab dari dua kegagalan yang
- * dilaporkan bersamaan. Bunyinya dulu "jangan menjalankan perintah yang sama
- * lagi kecuali memang diminta atau modelnya sudah berubah", dan dua bagian dari
- * kalimat itu tidak bisa dipenuhi siapa pun:
- *
- * "modelnya sudah berubah" adalah sesuatu yang catatan ini TIDAK BISA TAHU.
- * Antara giliran itu dan giliran ini, orangnya bisa menghapus yang baru
- * dipasang, menekan Ctrl+Z, atau rekannya mengubah model yang sama. Catatan ini
- * merekam SATU SAAT DI MASA LALU, bukan keadaan model sekarang — dan tidak ada
- * apa pun di sistem ini yang memberitahunya kalau saat itu sudah lewat.
- *
- * "kecuali memang diminta" tenggelam. Yang dibaca model adalah larangannya,
- * dan larangan yang lebih dekat di konteks mengalahkan aturan di prompt sistem
- * yang berbunyi sebaliknya ("JANGAN pernah menolak mengirim dengan alasan sudah
- * dikirim"). Dua instruksi yang bertentangan, dan yang menang bukan yang benar.
- *
- * Akibatnya persis seperti yang dilaporkan: sepuluh downlight dihapus orangnya,
- * ia minta dipasang lagi, dan yang ia dapat adalah kalimat bahwa lampunya sudah
- * terpasang — dari catatan tentang armatur yang sudah tidak ada di model.
- *
- * Maka: untuk perintah baca, larangannya dipertahankan tapi disempitkan pada
- * apa yang memang dimaksud — menjawab pertanyaan lanjutan dari angka yang sudah
- * ada, bukan menahan permintaan baru. Untuk perintah yang mengubah model,
- * larangan itu dibuang sama sekali; di sana tidak ada angka untuk dijawab
- * ulang, jadi satu-satunya yang bisa dimaksud orangnya adalah menjalankannya
- * lagi.
- */
-function staleness(tool: string): string {
-  const spec = COMMANDS_BY_NAME[tool];
-
-  // Perintah yang tidak dikenal katalog diperlakukan sebagai pengubah model:
-  // menahan sesuatu yang seharusnya berangkat lebih mahal daripada mengirim
-  // sesuatu dua kali.
-  const reads = spec?.group === "read" && spec.role === "viewer";
-
-  const past =
-    "Catatan ini merekam satu saat di masa lalu, BUKAN keadaan model sekarang — " +
-    "sejak itu modelnya bisa saja sudah diubah, dihapus, atau di-undo tanpa kamu tahu. " +
-    "Kalau orangnya meminta dijalankan lagi, jalankan lagi; jangan menjawab bahwa itu sudah dikerjakan.";
-
-  return reads
-    ? `Angka itu datang dari model, jadi pertanyaan LANJUTAN tentang angka yang sudah ada di catatan ini dijawab dari sini, tanpa memanggil tool lagi. ${past}`
-    : past;
-}
-
-/**
  * Riwayat percakapan sebagaimana model harus melihatnya.
  *
  * Gelembung `proposal` — perintah yang disusun model lalu berangkat ke Revit —
@@ -199,7 +161,7 @@ export function turnsFromChat(entries: readonly ChatBubble[]): Turn[] {
       const rooms = entry.rooms ?? [];
       return {
         role: "assistant" as const,
-        content: `[CATATAN SISTEM] Kamu memanggil tool ${tool} dengan room="*"; sistem memekarkannya jadi ${rooms.length} perintah, satu per ruangan: ${rooms.join(", ")}. ${entry.sent ?? 0} di antaranya masuk antrean Revit. Jangan mengirim ulang untuk ruangan yang sama tanpa diminta.`,
+        content: `${MARK} ${tool} dimekarkan jadi ${rooms.length} perintah, satu per ruangan: ${rooms.join(", ")}. ${entry.sent ?? 0} masuk antrean.`,
       };
     }
 
@@ -216,7 +178,7 @@ export function turnsFromChat(entries: readonly ChatBubble[]): Turn[] {
 
       return {
         role: "assistant" as const,
-        content: `[CATATAN SISTEM] Family "${entry.guessed ?? ""}" yang kamu isi untuk ${tool} tidak ada di model, jadi perintahnya TIDAK dikirim dan daftar family kategori itu ditawarkan ke pengguna. ${answered}`,
+        content: `${MARK} ${tool} DITAHAN: family "${entry.guessed ?? ""}" tidak ada di model. ${answered}`,
       };
     }
     const asked = entry.commandText ? ` Argumennya: ${entry.commandText}` : "";
@@ -224,7 +186,7 @@ export function turnsFromChat(entries: readonly ChatBubble[]): Turn[] {
     if (entry.issues?.length) {
       return {
         role: "assistant" as const,
-        content: `[CATATAN SISTEM] Kamu memanggil tool ${tool}, tapi perintahnya TIDAK dikirim karena masih ada yang kurang: ${entry.issues.join("; ")}.${asked} Tanyakan yang kurang itu, lalu panggil tool-nya lagi.`,
+        content: `${MARK} ${tool} TIDAK dikirim, masih kurang: ${entry.issues.join("; ")}.${asked} Tanyakan yang kurang, lalu panggil tool-nya lagi.`,
       };
     }
 
@@ -248,7 +210,7 @@ export function turnsFromChat(entries: readonly ChatBubble[]): Turn[] {
 
       return {
         role: "assistant" as const,
-        content: `[CATATAN SISTEM] Kamu memanggil tool ${tool}; sistem menjalankannya di Revit dan Revit sudah menjawab.${asked}${summary} ${staleness(tool)}${body}`,
+        content: `${MARK} ${tool} dijalankan.${asked}${summary}${body}`,
       };
     }
 
@@ -256,13 +218,13 @@ export function turnsFromChat(entries: readonly ChatBubble[]): Turn[] {
       const why = entry.runError ? ` Sebabnya: ${entry.runError}.` : "";
       return {
         role: "assistant" as const,
-        content: `[CATATAN SISTEM] Kamu memanggil tool ${tool} dan sistem mengirimkannya, tapi Revit GAGAL menjalankannya.${asked}${why} Jangan mengaku sudah selesai.`,
+        content: `${MARK} ${tool} GAGAL di Revit.${asked}${why} Jangan mengaku sudah selesai.`,
       };
     }
 
     return {
       role: "assistant" as const,
-      content: `[CATATAN SISTEM] Kamu memanggil tool ${tool}; sistem yang memasukkannya ke antrean Revit.${asked} Hasilnya belum tentu ada di giliran ini. Catatan ini bukan contoh cara menjawab — menuliskan baris perintah sebagai teks tidak mengirim apa pun ke Revit.`,
+      content: `${MARK} ${tool} masuk antrean Revit.${asked} Hasilnya belum tentu ada di giliran ini.`,
     };
   });
 }
