@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { rateLimit, tooManyRequests } from "@/lib/rateLimit";
-import { anthropic, MODEL } from "@/lib/anthropic";
+import { MODEL, STANDARD_MAX_TOKENS as STANDARD_CAP, llm, tokenCap } from "@/lib/llm";
 import { guardArea } from "@/lib/access";
 import {
   attachmentNote,
   checkImages,
   imageOnlyQuestion,
   type ImageInput,
-  type ImageType,
 } from "@/lib/imageInput";
 import { asLocale, type Locale } from "@/lib/locale";
 import {
@@ -38,7 +37,17 @@ const QUESTIONS_PER_MINUTE = 20;
  * tidak membeli apa pun dan hanya memotong gambar di tengah tag — yang
  * menghasilkan gambar RUSAK, bukan gambar pendek.
  */
-export const STANDARD_MAX_TOKENS = 32_000;
+/**
+ * Batasnya sekarang env (`AI_MAX_TOKENS_STANDARD`), dan bawaannya TIDAK
+ * dikirim sama sekali — lihat `lib/llm.ts`.
+ *
+ * Dulu 32.000 di sini, dan alasannya tetap berlaku sebagai peringatan: tagihan
+ * dihitung per permintaan, jadi batas yang ketat tidak membeli apa pun dan
+ * hanya memotong gambar di tengah tag — yang menghasilkan gambar RUSAK, bukan
+ * gambar pendek. Kalau `AI_MAX_TOKENS_STANDARD` diisi, isi dengan angka yang
+ * lapang.
+ */
+export const STANDARD_MAX_TOKENS = STANDARD_CAP;
 
 /**
  * Aturan bahasa jawaban, satu paragraf, ditentukan pilihan bahasa antarmuka.
@@ -487,20 +496,27 @@ export async function POST(req: Request) {
        * sebaliknya model menjawab pertanyaannya lebih dulu lalu baru melihat
        * gambarnya — yang berarti jawabannya disusun tanpa hal yang ditanyakan.
        */
+      /**
+       * Gambar dikirim sebagai data URL, bukan blok base64 bermedan sendiri.
+       *
+       * Ini salah satu perbedaan bentuk kawat yang paling mudah terlewat saat
+       * pindah dari Anthropic: di sana sebuah gambar adalah
+       * `{type:"image", source:{type:"base64", media_type, data}}`; di Chat
+       * Completions ia `{type:"image_url", image_url:{url:"data:<mime>;base64,…"}}`.
+       * `media_type` yang tadinya medan tersendiri sekarang jadi bagian dari
+       * URL-nya.
+       */
       type Block =
         | { type: "text"; text: string }
-        // `media_type` bertipe sempit, bukan string: SDK-nya menuntut salah satu
-        // dari empat format yang memang bisa dibaca, dan itu pemeriksaan yang
-        // lebih baik terjadi saat kompilasi daripada sebagai 400 dari gateway.
-        | { type: "image"; source: { type: "base64"; media_type: ImageType; data: string } };
+        | { type: "image_url"; image_url: { url: string } };
 
       function asked(text: string, withImages: ImageInput[] = []): Block[] | string {
         if (withImages.length === 0) return text;
         return [
           ...withImages.map(
             (image): Block => ({
-              type: "image",
-              source: { type: "base64", media_type: image.media_type, data: image.data },
+              type: "image_url",
+              image_url: { url: `data:${image.media_type};base64,${image.data}` },
             })
           ),
           { type: "text", text },
@@ -508,43 +524,67 @@ export async function POST(req: Request) {
       }
 
       /** Satu panggilan, dialirkan potongan demi potongan sambil dikumpulkan. */
-      async function ask(
-        messages: { role: "user" | "assistant"; content: string | Block[] }[]
-      ) {
+      /**
+       * Satu giliran percakapan.
+       *
+       * Union yang dibedakan per peran, bukan `{role: "user"|"assistant"}`
+       * dengan isi yang sama: hanya giliran PENGGUNA yang boleh membawa gambar,
+       * dan menyatakannya begitu membuat pembedaan itu diperiksa saat kompilasi
+       * alih-alih kembali sebagai 400 dari penyedia.
+       */
+      type ChatTurn =
+        | { role: "user"; content: string | Block[] }
+        | { role: "assistant"; content: string };
+
+      let lastFinish: string | null = null;
+
+      async function ask(messages: ChatTurn[]) {
         let text = "";
 
-        const response = anthropic.messages.stream({
+        const response = await llm.chat.completions.create({
           model: MODEL,
-          // Ruangnya dilonggarkan, bukan dihemat: tagihan dihitung per
-          // permintaan, jadi batas yang ketat tidak membeli apa pun dan hanya
-          // memotong gambar di tengah tag — yang menghasilkan gambar RUSAK,
-          // bukan gambar pendek. Gambar berdimensi yang lengkap memang memakan
-          // ribuan token sendiri, dan sekarang ia boleh.
-          max_tokens: STANDARD_MAX_TOKENS,
-          system: systemPrompt(locale),
-          messages,
+          ...tokenCap(STANDARD_MAX_TOKENS),
+          stream: true,
+          // Angka pemakaian tidak ikut di aliran kecuali diminta. Tanpa ini
+          // `ai_events` mencatat null untuk setiap pertanyaan mode Standar —
+          // dan kolom yang selalu null berhenti bisa membedakan apa pun.
+          stream_options: { include_usage: true },
+          messages: [{ role: "system" as const, content: systemPrompt(locale) }, ...messages],
         });
 
-        for await (const event of response) {
-          if (
-            event.type === "content_block_delta" &&
-            event.delta.type === "text_delta" &&
-            event.delta.text
-          ) {
-            text += event.delta.text;
-            send({ t: event.delta.text });
+        /**
+         * Potongan terakhir membawa `usage`, dan biasanya TANPA teks.
+         *
+         * Bedanya dari Anthropic: di sana angka pemakaian diambil dari
+         * `finalMessage()` sesudah aliran selesai. Di sini ia datang sebagai
+         * potongan tersendiri di ujung, jadi ia harus ditangkap sambil jalan —
+         * dan potongan itu punya `choices` kosong, yang membuat pembaca yang
+         * mengandaikan `choices[0]` selalu ada melempar tepat di akhir sebuah
+         * jawaban yang sudah utuh di layar.
+         */
+        let usage: unknown = null;
+
+        for await (const chunk of response) {
+          const piece = chunk.choices?.[0]?.delta?.content;
+          if (typeof piece === "string" && piece) {
+            text += piece;
+            send({ t: piece });
           }
+          if (chunk.usage) usage = chunk.usage;
+          const finish = chunk.choices?.[0]?.finish_reason;
+          if (finish) lastFinish = finish;
         }
 
-        // Angka pemakaian dan `stop_reason` hanya ada pada pesan yang sudah
-        // utuh; potongan-potongan yang dialirkan di atas tidak membawanya.
-        //
         // Dipagari try sendiri: jawabannya sudah sampai ke layar orangnya pada
         // titik ini, dan telemetri yang melempar akan membatalkannya.
         try {
-          stats = statsOf(await response.finalMessage());
+          stats = statsOf({
+            model: MODEL,
+            choices: [{ finish_reason: lastFinish }],
+            usage: usage as never,
+          });
         } catch (err) {
-          console.error("[api/ai/standard] finalMessage gagal", err);
+          console.error("[api/ai/standard] pembacaan usage gagal", err);
         }
 
         return text;
@@ -630,14 +670,17 @@ export async function POST(req: Request) {
           strayCount = stray.words.length;
 
           try {
-            const asked = await anthropic.messages.create({
+            const asked = await llm.chat.completions.create({
               model: MODEL,
               max_tokens: 300,
-              system:
-                "Kamu penerjemah kata tunggal. Balas HANYA daftar `asli => padanan`, " +
-                "satu per baris, tanpa kalimat pembuka dan tanpa penjelasan. Padanannya " +
-                "wajib huruf Latin.",
               messages: [
+                {
+                  role: "system" as const,
+                  content:
+                    "Kamu penerjemah kata tunggal. Balas HANYA daftar `asli => padanan`, " +
+                    "satu per baris, tanpa kalimat pembuka dan tanpa penjelasan. Padanannya " +
+                    "wajib huruf Latin.",
+                },
                 {
                   role: "user",
                   // Padanannya diminta dalam bahasa JAWABAN, bukan selalu
@@ -657,9 +700,7 @@ export async function POST(req: Request) {
               ],
             });
 
-            const said = asked.content
-              .map((block) => (block.type === "text" ? block.text : ""))
-              .join("");
+            const said = asked.choices?.[0]?.message?.content ?? "";
 
             const fixes = parseFixes(said, stray.words);
 

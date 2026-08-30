@@ -1,4 +1,4 @@
-import { anthropic, EFFORT, MODEL } from "./anthropic";
+import { MAX_TOKENS, MODEL, llm, tokenCap } from "./llm";
 import {
   ELECTRICAL_SYSTEM_PROMPT,
   asksToRun,
@@ -15,6 +15,7 @@ import { resolveFamilies } from "./familyChoice";
 import { CommandValidationError, buildPayload } from "./queue";
 import { expandRooms } from "./roomList";
 import { type AiEvent, statsOf } from "./aiEvents";
+import type { ChatCompletion as Completion } from "openai/resources/chat/completions";
 
 /**
  * Satu kalimat manusia → satu usulan perintah Revit. TANPA menjalankannya.
@@ -48,25 +49,16 @@ export type ProposeResult =
   | { ok: false; status: number; error: string; event: ProposeEvent };
 
 /**
- * Ruang untuk thinking + jawaban + panggilan tool, sekaligus.
+ * Batas token jawaban sekarang milik `lib/llm.ts`, dan bawaannya TIDAK DIKIRIM.
  *
- * Dulu 2048, dan itu terlalu sempit dengan cara yang tidak terlihat. Pada Sonnet
- * 5 adaptive thinking aktif secara default dan `max_tokens` membatasi thinking
- * BESERTA jawabannya (lihat anthropic.ts) — jadi permintaan yang butuh berpikir
- * agak panjang ("semua ruangan, tiga kategori") bisa menghabiskan jatahnya
- * sebelum blok `tool_use` selesai ditulis.
- *
- * Yang terjadi kemudian bukan galat. Jawabannya berhenti di tengah, tidak ada
- * blok tool_use untuk ditemukan, dan permintaan itu jatuh ke cabang "model
- * bertanya balik" di bawah — sehingga yang dibaca orangnya adalah "Bisa
- * diperjelas maksudnya?" untuk kalimat yang sudah sangat jelas. Ia lalu mengetik
- * ulang kalimat yang sama, dan gagal dengan cara yang sama.
- *
- * 16.000 adalah angka yang dianjurkan untuk permintaan non-streaming: cukup
- * lapang, dan masih di bawah batas waktu HTTP bawaan SDK. Mode standard yang
- * memang dialirkan memakai 32.000.
+ * Dulu 16.000, dan angkanya punya alasan yang sudah tidak berlaku: pada Sonnet
+ * adaptive thinking aktif dan `max_tokens` membatasi thinking BESERTA
+ * jawabannya, jadi permintaan yang butuh berpikir agak panjang bisa menghabiskan
+ * jatahnya sebelum blok tool selesai ditulis. Chat Completions tidak punya
+ * thinking yang ikut terhitung di situ, dan penyedia yang berbeda menerima nama
+ * medan yang berbeda untuk batas ini — menebak yang salah menghasilkan 400 pada
+ * setiap permintaan, bukan jawaban yang lebih pendek. Lihat `AI_MAX_TOKENS`.
  */
-export const MAX_TOKENS = 16_000;
 
 export async function propose(input: {
   role: Role;
@@ -80,56 +72,35 @@ export async function propose(input: {
   const messages = buildMessages(history, message);
 
   /**
-   * Prompt sistem dalam DUA blok, dan urutannya yang menentukan.
+   * Prompt sistem sebagai PESAN pertama, bukan medan tersendiri.
    *
-   * Cache Anthropic mencocokkan prefiks — `tools`, lalu `system`, lalu
-   * `messages` — jadi penanda cache di ujung blok pertama membekukan seluruh
-   * katalog tool BESERTA seluruh aturan prompt. Keduanya sama persis di setiap
-   * giliran dan setiap pengguna, dan keduanya besar: dua puluh delapan tool
-   * dengan skema lengkapnya, plus prompt yang panjangnya ratusan baris.
+   * Bedanya dari Anthropic bukan cuma tempat. Di sana `system` adalah medan di
+   * luar `messages`, dan itu yang memungkinkan penanda cache dipasang di
+   * ujungnya: katalog tool dan seluruh aturan prompt jadi prefiks yang sama
+   * persis di setiap giliran, dan yang berubah — daftar family dan ruangan di
+   * model yang sedang terbuka — duduk sesudahnya tanpa membatalkan apa pun.
    *
-   * Yang berubah — daftar family dan ruangan di model yang sedang terbuka —
-   * duduk di blok kedua, SESUDAH penandanya, jadi ia tidak ikut membatalkan
-   * apa pun. Sebelum dipisah, blok itu menempel di ujung prompt dan membuat
-   * setiap giliran punya prefiks yang berbeda: tidak ada satu pun yang bisa
-   * kena cache, dan yang dibayar penuh adalah bagian yang justru tidak pernah
-   * berubah.
+   * Chat Completions tidak punya penanda itu. Keduanya digabung jadi satu pesan
+   * `system`, dan seluruhnya dibayar penuh di setiap giliran. Urutannya tetap
+   * dipertahankan — yang tidak berubah lebih dulu — karena sebagian penyedia
+   * melakukan caching prefiks sendiri tanpa diminta, dan urutan itu yang
+   * membuatnya mungkin kalau memang ada.
    */
   const context_ = modelContextBlock(context);
-  const system = [
-    {
-      type: "text" as const,
-      text: ELECTRICAL_SYSTEM_PROMPT,
-      cache_control: { type: "ephemeral" as const },
-    },
-    ...(context_ ? [{ type: "text" as const, text: context_ }] : []),
-  ];
+  const system = context_
+    ? `${ELECTRICAL_SYSTEM_PROMPT}\n\n${context_}`
+    : ELECTRICAL_SYSTEM_PROMPT;
 
   const ask = (force: boolean) =>
-    anthropic.messages.create({
+    llm.chat.completions.create({
       model: MODEL,
-      max_tokens: MAX_TOKENS,
-      /**
-       * Seberapa dalam model boleh berpikir sebelum menjawab.
-       *
-       * Giliran ini menerjemahkan SATU kalimat jadi SATU panggilan tool, dengan
-       * katalog yang sudah menyebutkan setiap argumen dan rentangnya, dan
-       * hasilnya divalidasi lagi di `buildPayload` dan `resolveFamilies` sebelum
-       * berangkat ke mana pun. Berpikir panjang di sini tidak membuat
-       * jawabannya lebih benar; yang ia tambahkan cuma detik-detik yang
-       * ditunggu orangnya sambil melihat "Menyusun perintah…".
-       *
-       * Bisa dinaikkan lewat env tanpa deploy ulang kalau ternyata ada bentuk
-       * permintaan yang menuntut lebih — itu sebabnya ia env, bukan konstanta.
-       */
-      output_config: { effort: EFFORT },
-      system,
-      tools: tools as never,
-      // `any` = wajib memakai salah satu tool. Dipakai hanya pada percobaan
-      // kedua, saat percobaan pertama jelas-jelas BERMAKSUD mengirim perintah
-      // tapi menuliskannya sebagai teks.
-      ...(force ? { tool_choice: { type: "any" as const } } : {}),
-      messages,
+      ...tokenCap(MAX_TOKENS),
+      tools,
+      // `required` = wajib memakai salah satu tool — padanan `{type:"any"}` di
+      // Anthropic. Dipakai hanya pada percobaan kedua, saat percobaan pertama
+      // jelas-jelas BERMAKSUD mengirim perintah tapi menuliskannya sebagai teks.
+      ...(force ? { tool_choice: "required" as const } : {}),
+      messages: [{ role: "system" as const, content: system }, ...messages],
     });
 
   const startedAt = Date.now();
@@ -348,8 +319,8 @@ export async function propose(input: {
     };
   }
 
-  let toolUse = response.content.find((b) => b.type === "tool_use");
-  let text = textOf(response.content);
+  let toolUse = toolCallOf(response);
+  let text = textOf(response);
 
   stats = statsOf(response);
 
@@ -433,10 +404,10 @@ export async function propose(input: {
     forcedRetry = true;
     try {
       const forced = await ask(true);
-      const forcedTool = forced.content.find((b) => b.type === "tool_use");
+      const forcedTool = toolCallOf(forced);
       if (forcedTool) {
         toolUse = forcedTool;
-        text = textOf(forced.content) || "";
+        text = textOf(forced) || "";
         // Angka pemakaian ikut yang KEDUA: itu jawaban yang benar-benar dipakai.
         // Percobaan pertamanya tetap terhitung lewat `forced_retry`, jadi
         // biayanya tidak hilang dari catatan — yang hilang cuma penggandaannya.
@@ -454,7 +425,7 @@ export async function propose(input: {
 
   // Tidak memilih tool = model bertanya balik atau menolak. Itu hasil yang sah,
   // bukan kegagalan: pertanyaan klarifikasi justru yang membuat mode ini aman.
-  if (!toolUse || toolUse.type !== "tool_use") {
+  if (!toolUse) {
     /**
      * KECUALI kalau jawabannya memang terpotong di batas token.
      *
@@ -531,13 +502,51 @@ export async function propose(input: {
     );
   }
 
-  return settle(spec, (toolUse.input ?? {}) as Record<string, unknown>, text || null);
+  return settle(spec, toolUse.args, text || null);
 }
 
-/** Bagian teks dari sebuah jawaban, digabung. */
-function textOf(content: { type: string; text?: string }[]): string {
-  return content
-    .flatMap((b) => (b.type === "text" && typeof b.text === "string" ? [b.text] : []))
-    .join("\n")
-    .trim();
+/** Bagian teks dari sebuah jawaban. */
+function textOf(response: Completion): string {
+  const content = response.choices?.[0]?.message?.content;
+  return typeof content === "string" ? content.trim() : "";
+}
+
+/**
+ * Panggilan tool pertama dari sebuah jawaban, argumennya sudah jadi objek.
+ *
+ * Dua hal yang berbeda dari Anthropic dan keduanya wajib ditangani di sini.
+ *
+ * Pertama, `arguments` datang sebagai STRING JSON, bukan objek — di Anthropic
+ * `input` sudah berupa objek. Yang lupa mem-parse-nya tidak mendapat galat: ia
+ * mendapat sebuah string yang lolos ke `buildPayload` sebagai kumpulan argumen
+ * kosong, lalu berangkat ke Revit sebagai perintah tanpa satu pun nilai.
+ *
+ * Kedua, string itu ditulis model dan karenanya bisa bukan JSON yang sah.
+ * Dijawab null, bukan dilempar: sebuah jawaban yang argumennya tidak terbaca
+ * diperlakukan sama dengan jawaban tanpa tool sama sekali, dan jalur pemaksaan
+ * di atas yang menanganinya.
+ */
+function toolCallOf(
+  response: Completion
+): { name: string; args: Record<string, unknown> } | null {
+  const call = response.choices?.[0]?.message?.tool_calls?.find(
+    (c): c is typeof c & { function: { name: string; arguments: string } } =>
+      "function" in c && typeof c.function?.name === "string"
+  );
+  if (!call) return null;
+
+  const raw = call.function.arguments;
+  if (typeof raw !== "string" || raw.trim() === "") {
+    return { name: call.function.name, args: {} };
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? { name: call.function.name, args: parsed as Record<string, unknown> }
+      : null;
+  } catch {
+    console.warn("[propose] argumen tool bukan JSON yang sah:", raw.slice(0, 200));
+    return null;
+  }
 }

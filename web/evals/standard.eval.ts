@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anthropic, MODEL } from "@/lib/anthropic";
+import { MODEL, llm, tokenCap } from "@/lib/llm";
 import { redoReason, strayWords } from "@/lib/history";
 import { buildSources, type FoundChunk } from "@/lib/standards";
 import { STANDARD_MAX_TOKENS, systemPrompt } from "@/app/api/ai/standard/route";
@@ -29,22 +29,26 @@ const hasKey = Boolean(process.env.AI_GATEWAY_API_KEY);
  *
  * `systemPrompt` dan `STANDARD_MAX_TOKENS` diimpor dari route-nya, bukan
  * disalin. Yang tersisa di sini cuma bentuk pemanggilannya, dan itu sengaja
- * dijaga sama: streaming, karena max_tokens sebesar itu pada permintaan
- * non-streaming menabrak batas waktu HTTP.
+ * dijaga sama: streaming, karena jawaban mode ini memuat gambar SVG utuh dan
+ * permintaan non-streaming sebesar itu menabrak batas waktu HTTP.
  */
 async function ask(question: string, locale: "id" | "en" = "id"): Promise<string> {
-  const stream = anthropic.messages.stream({
+  const stream = await llm.chat.completions.create({
     model: MODEL,
-    max_tokens: STANDARD_MAX_TOKENS,
-    system: systemPrompt(locale),
-    messages: [{ role: "user", content: question }],
+    ...tokenCap(STANDARD_MAX_TOKENS),
+    stream: true,
+    messages: [
+      { role: "system", content: systemPrompt(locale) },
+      { role: "user", content: question },
+    ],
   });
 
-  const message = await stream.finalMessage();
-  return message.content
-    .flatMap((block) => (block.type === "text" ? [block.text] : []))
-    .join("\n")
-    .trim();
+  let text = "";
+  for await (const chunk of stream) {
+    const piece = chunk.choices?.[0]?.delta?.content;
+    if (typeof piece === "string") text += piece;
+  }
+  return text.trim();
 }
 
 /** Sumber palsu, supaya kutipan bisa diuji tanpa korpus sungguhan. */

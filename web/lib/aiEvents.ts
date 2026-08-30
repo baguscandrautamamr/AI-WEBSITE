@@ -1,6 +1,5 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { MODEL } from "./anthropic";
+import { MODEL } from "./llm";
 
 /**
  * Telemetri per pemanggilan model bahasa — tabel `ai_events` (migrasi 0011).
@@ -75,25 +74,39 @@ export interface AiEvent {
  * perubahan pertama.
  *
  * `usage` sengaja dibaca defensif. Yang menjawab adalah gateway pihak ketiga
- * (lihat lib/anthropic.ts), jadi tidak ada jaminan setiap medan yang dijanjikan
+ * (lihat lib/llm.ts), jadi tidak ada jaminan setiap medan yang dijanjikan
  * SDK benar-benar ikut di setiap jawaban — dan telemetri yang melempar karena
  * sebuah medan kosong akan menjatuhkan permintaan yang jawabannya sudah benar.
  */
 export function statsOf(response: {
   model?: string;
-  stop_reason?: unknown;
-  usage?: Partial<Anthropic.Usage> | null;
+  choices?: { finish_reason?: unknown }[] | null;
+  usage?: {
+    prompt_tokens?: unknown;
+    completion_tokens?: unknown;
+    prompt_tokens_details?: { cached_tokens?: unknown } | null;
+  } | null;
 }): Pick<
   AiEvent,
   "model_served" | "stop_reason" | "input_tokens" | "output_tokens" | "cache_read_tokens"
 > {
   const usage = response.usage ?? {};
+  const finish = response.choices?.[0]?.finish_reason;
+
   return {
     model_served: response.model ?? null,
-    stop_reason: typeof response.stop_reason === "string" ? response.stop_reason : null,
-    input_tokens: num(usage.input_tokens),
-    output_tokens: num(usage.output_tokens),
-    cache_read_tokens: num(usage.cache_read_input_tokens),
+    // Kolomnya tetap bernama `stop_reason` — nama Anthropic — dan isinya
+    // sekarang `finish_reason`. Diganti namanya berarti migrasi database untuk
+    // kolom yang artinya sama persis; yang berubah cuma kosakata nilainya
+    // (`max_tokens` jadi `length`, `tool_use` jadi `tool_calls`).
+    stop_reason: typeof finish === "string" ? finish : null,
+    input_tokens: num(usage.prompt_tokens),
+    output_tokens: num(usage.completion_tokens),
+    // Caching tidak lagi bisa disetel dari sini, tapi sebagian penyedia
+    // melakukannya sendiri dan melaporkannya. Kalau tidak ada, null — dan null
+    // di kolom ini sekarang berarti "tidak dilaporkan", bukan "tidak kena
+    // cache".
+    cache_read_tokens: num(usage.prompt_tokens_details?.cached_tokens),
   };
 }
 

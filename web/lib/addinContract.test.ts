@@ -19,7 +19,7 @@ describe("kontrak add-in — perintah kelistrikan", () => {
   it("ketiganya ditawarkan sebagai tool kepada model, show_element tidak", () => {
     // Ketiganya membaca saja, jadi seorang viewer pun boleh — dan itu yang
     // membuat rantai baca berantai bisa menjawab tanpa menunggu siapa pun.
-    const names = toolsForRole("viewer").map((t) => t.name);
+    const names = toolsForRole("viewer").map((t) => t.function.name);
     for (const n of ["get_electrical_loads", "get_panel_schedule", "check_circuit_balance"]) {
       expect(names, n).toContain(n);
     }
