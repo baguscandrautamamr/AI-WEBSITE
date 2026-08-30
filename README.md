@@ -159,6 +159,26 @@ sebelum perintah yang diminta orangnya berangkat. Yang tahu keadaan model
 sekarang adalah orang yang sedang menatap layar Revit; ia sudah melihatnya, dan
 ia sudah mengetik apa yang ia mau.
 
+**Kalimat perintah yang lugas tidak menunggu model sama sekali.** "pasang lampu
+recessed di meeting 2 5x3 tinggi 3 meter" memuat setiap argumen yang
+dibutuhkan — kata kerja, kategori, ruangan, family, grid, ketinggian — dan
+melemparkannya ke model menambahkan satu ketergantungan yang tidak memberi
+apa-apa. Ketergantungan itulah yang dilaporkan rusak: balasan teks berkali-kali
+berturut-turut, tanpa satu pun perintah berangkat, bahkan setelah
+`tool_choice: any` dipaksakan — dan permintaan ini lewat gateway pihak ketiga,
+jadi apa yang benar-benar sampai ke model di seberang sana bukan sesuatu yang
+bisa dipastikan dari sini. `web/lib/directCommand.ts` membacanya sendiri.
+
+Yang dibacanya bukan tebakan, dan itu syarat ia boleh ada: nama ruangan dan nama
+family DICARI di daftar yang dilaporkan add-in lewat `model_info` — tanpa daftar
+itu ia tidak menjawab sama sekali. Ia juga menolak apa pun yang tidak ia yakini
+(pertanyaan, kalimat bersyarat, negasi, dua kata kerja sekaligus, kategori yang
+tidak disebut), dan yang ditolak jatuh ke model persis seperti sebelumnya. Yang
+diterima tetap lewat `resolveFamilies` dan `buildPayload` — jalur validasi yang
+sama dengan usulan model, tanpa satu langkah pun dilewati. Efek sampingnya:
+nol panggilan API dan nol detik menunggu untuk kalimat yang paling sering
+diketik.
+
 **Jawaban yang meniru catatan sistem dibuang, bukan ditampilkan.** Bentuk
 kegagalan paling mahal di sistem ini — bukan karena paling sering, tapi karena
 ia satu-satunya yang berbohong dengan angka. "Pasang lampu 5x3 downlight di

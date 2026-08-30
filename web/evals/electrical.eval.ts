@@ -14,6 +14,20 @@ import cases from "./cases/electrical.json";
  * Actions → Eval → Run workflow. MANUAL, tidak berjadwal — lihat sebabnya di
  * .github/workflows/eval.yml.
  *
+ * SEBAGIAN KASUS DI SINI TIDAK LAGI MENYENTUH MODEL. `propose` membaca sendiri
+ * kalimat perintah yang lugas ("pasang lampu recessed di meeting 2 5x3 tinggi 3
+ * meter") lewat `directCommand`, tanpa satu pun panggilan API. Untuk kasus itu
+ * suite ini menguji parser, bukan model — jaminannya justru lebih kuat, tapi ia
+ * berhenti menjawab pertanyaan yang jadi alasan utama suite ini ada: apakah
+ * perilaku MODEL masih seperti yang dirancang setelah `AI_MODEL` naik.
+ *
+ * Mana yang mana bisa dibaca tanpa menebak: giliran yang dijawab parser menulis
+ * `input_tokens`/`output_tokens` null dan `model_served` null di `ai_events` —
+ * sebuah perintah yang datang dari model tidak pernah punya nol token. Kalau
+ * suatu saat suite ini perlu memaksa jalur model, yang harus ditambahkan adalah
+ * kasus yang kalimatnya TIDAK lugas: yang menyebut ruangan di luar daftar,
+ * bersyarat, atau berupa pertanyaan.
+ *
  * Yang dipanggil `propose()` — fungsi yang SAMA dengan yang dipakai
  * /api/ai/electrical. Bukan tiruannya. Itu seluruh sebab fungsi itu dikeluarkan
  * dari route-nya: eval yang menguji salinan logika akan lulus sementara yang
