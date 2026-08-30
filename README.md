@@ -159,6 +159,22 @@ sebelum perintah yang diminta orangnya berangkat. Yang tahu keadaan model
 sekarang adalah orang yang sedang menatap layar Revit; ia sudah melihatnya, dan
 ia sudah mengetik apa yang ia mau.
 
+**Yang salah tempat digeser, bukan dihapus lalu dipasang ulang.** Saklar yang
+berdiri 3.570 mm dari pintu padahal seharusnya 300 mm cuma salah koordinat —
+perangkatnya sendiri benar. Satu-satunya jalan yang ada sebelumnya,
+`/modify_devices`, menghapus lalu memasang ulang: yang ikut hilang bersamanya
+adalah Mark-nya, sirkuit yang sudah menyambungnya, tag yang menempel padanya,
+dan setiap penyesuaian yang sudah dikerjakan orang di atasnya. `/move_devices`
+menggeser elemen yang sama ke tempat yang benar, dan `directCommand` mengenali
+kata kerjanya ("geser saklar 300mm dari pintu di office") jadi ia tidak menunggu
+model.
+
+Jarak yang dilaporkannya **diukur sesudahnya, bukan yang diminta**. Revit
+mengekang perpindahan instance yang menempel pada muka dinding, dan kekangan itu
+tidak selalu melempar — ia diam-diam menaruh elemennya di tempat lain. Balasan
+yang berbunyi "300 mm" karena 300 mm yang diminta tidak membuktikan apa pun, dan
+itu persis bentuk kegagalan yang perintah ini dibuat untuk memperbaiki.
+
 **Kalimat perintah yang lugas tidak menunggu model sama sekali.** "pasang lampu
 recessed di meeting 2 5x3 tinggi 3 meter" memuat setiap argumen yang
 dibutuhkan — kata kerja, kategori, ruangan, family, grid, ketinggian — dan
