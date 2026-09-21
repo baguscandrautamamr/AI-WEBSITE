@@ -159,6 +159,35 @@ const MODEL_MIN_GAP_MS = 15_000;
  */
 const MODEL_POLL_MS = 60_000;
 
+/**
+ * Selang polling antrean saat ADA yang sedang berjalan.
+ *
+ * Secepat dulu: selama sebuah perintah menunggu jawaban Revit, dua detik adalah
+ * jarak antara "sudah selesai" dan orang yang masih menatap pemintal.
+ */
+const QUEUE_BUSY_POLL_MS = 2_000;
+
+/**
+ * Selang polling antrean saat TIDAK ada yang berjalan — dan alasan berkas ini
+ * diubah sama sekali.
+ *
+ * Panel ini dulu menanyakan `/api/commands/active` setiap dua detik selama
+ * sebuah proyek terpilih, tanpa syarat apa pun: tab yang ditinggal terbuka
+ * semalaman mengirim 1.800 permintaan per jam sampai paginya. Yang dibayar
+ * bukan cuma jumlah permintaannya. Di Fluid, sebuah instance yang tidak pernah
+ * lebih dari dua detik menganggur tidak pernah mati — dan memori yang
+ * disediakan untuknya ditagih per jam selama ia hidup, jadi satu tab yang lupa
+ * ditutup menagih 24 jam memori setiap hari. Itulah yang menghabiskan kuota
+ * gratisnya, bukan pemakaian yang sebenarnya.
+ *
+ * Tiga puluh detik saat sepi, dan itu tidak menunda apa pun yang bisa dilihat:
+ * daftar ini dibaca ulang seketika begitu tab-nya kembali terlihat, dan sekali
+ * lagi tepat sebelum sebuah perintah dikirim — dua saat yang persis menjadi
+ * alasan daftar ini ada. Yang hilang hanya perubahan di layar yang tidak sedang
+ * dilihat siapa pun.
+ */
+const QUEUE_IDLE_POLL_MS = 30_000;
+
 export default function CommandRunner({
   groups,
   title,
@@ -421,8 +450,8 @@ export default function CommandRunner({
    * untuk sheet yang berbeda tidak bentrok, dan memperingatkan keduanya akan
    * melatih orang menutup peringatan tanpa membacanya.
    */
-  function clashingWith(commandText: string) {
-    return active.find((a) => !a.mine && a.commandText === commandText);
+  function clashingWith(commandText: string, list: ActiveCommand[] = active) {
+    return list.find((a) => !a.mine && a.commandText === commandText);
   }
 
   /**
@@ -668,7 +697,12 @@ export default function CommandRunner({
       // teks akhirnya — dan teks itu baru ada setelah nilai formulir divalidasi
       // dan dirapikan server. Sudah masuk antrean pada titik ini, jadi yang
       // ditawarkan bukan membatalkan melainkan memberi tahu.
-      const clash = clashingWith(body.commandText);
+      //
+      // Dibaca ulang lebih dulu, satu permintaan. Inilah satu-satunya saat
+      // daftar ini dipakai untuk memutuskan sesuatu dan bukan untuk dilihat,
+      // jadi di sinilah ia harus paling baru — dan yang menjadikan polling
+      // sepinya boleh selambat tiga puluh detik justru baris ini.
+      const clash = clashingWith(body.commandText, (await refreshActive()) ?? active);
       if (clash) {
         setIssues([
           t("command.clash").replace("{who}", clash.who || t("command.clashSomeone")),
@@ -1534,26 +1568,33 @@ export default function CommandRunner({
    * itu saat orang memutuskan apakah aman mengirim sesuatu sekarang. Polling
    * yang hanya jalan saat sibuk akan diam tepat di saat pertanyaannya muncul.
    */
-  const refreshActive = useCallback(async () => {
-    if (!project) return;
+  const refreshActive = useCallback(async (): Promise<ActiveCommand[] | null> => {
+    if (!project) return null;
     try {
       const res = await fetch(
         `/api/commands/active?projectId=${encodeURIComponent(project.projectId)}`
       );
-      if (!res.ok) return;
+      if (!res.ok) return null;
       const body = (await res.json()) as {
         commands: ActiveCommand[];
         addin?: { busy?: boolean; lastSeen?: string | null };
       };
-      setActive(body.commands ?? []);
+      const commands = body.commands ?? [];
+      setActive(commands);
       setAddin({
         busy: Boolean(body.addin?.busy),
         lastSeen: body.addin?.lastSeen ?? null,
       });
+      // Dikembalikan, bukan hanya disimpan: `send` memeriksa bentrokan tepat
+      // setelah memanggil ini, dan state React belum berubah pada baris
+      // berikutnya. Tanpa nilai kembalian, pemeriksaan itu membaca daftar
+      // sebelum pembacaan ini — persis yang ingin dihindarinya.
+      return commands;
     } catch {
       // Jaringan yang sedang buruk bukan alasan menampilkan galat di panel ini:
       // isinya sudah kedaluwarsa beberapa detik dan itu memang wajar. Daftar
       // yang lama tetap lebih berguna daripada pesan kesalahan.
+      return null;
     }
   }, [project]);
 
@@ -1561,9 +1602,25 @@ export default function CommandRunner({
     void refreshActive();
   }, [refreshActive]);
 
-  usePolling(Boolean(project), refreshActive);
-
   const pending = runs.some((r) => !TERMINAL.includes(r.status));
+
+  /**
+   * Sibuk = ada sesuatu yang bisa berubah sendiri.
+   *
+   * Perintah sendiri yang belum terminal, add-in yang sedang memegang sesuatu,
+   * atau antrean proyek yang tidak kosong — selama salah satunya benar, daftar
+   * ini berubah tanpa ada yang menekan apa pun, dan dua detik adalah harganya.
+   * Kalau ketiganya salah, tidak ada satu pun sumber perubahan yang berjalan,
+   * dan menanyakannya tiga puluh kali semenit hanya menagih jawaban yang sama.
+   */
+  const queueBusy = pending || addin.busy || active.length > 0;
+
+  usePolling(
+    Boolean(project),
+    refreshActive,
+    queueBusy ? QUEUE_BUSY_POLL_MS : QUEUE_IDLE_POLL_MS
+  );
+
   usePolling(pending, async () => {
     const open = runs.filter((r) => !TERMINAL.includes(r.status));
     if (!open.length) return;
@@ -2848,11 +2905,21 @@ function SheetPicker({
 }
 
 /**
- * Polling 2 detik selama masih ada command yang belum selesai, dan berhenti
- * total begitu semuanya terminal — supaya tab yang dibiarkan terbuka tidak
- * memukuli API selamanya.
+ * Polling selama `active`, berhenti total begitu tidak lagi — dan berhenti juga
+ * selama tab-nya tidak terlihat.
+ *
+ * Syarat kedua itu yang baru, dan ia bukan penghematan kecil. Tab yang
+ * ditinggalkan di latar belakang adalah keadaan normal panel ini: ia didok di
+ * sebelah Revit dan ditinggal berjam-jam. Tanpa syarat ini, setiap tab seperti
+ * itu terus menanyakan hal yang tidak ada yang membaca jawabannya — permintaan
+ * yang ditagih, ke instance yang karena itu tidak pernah boleh mati.
+ *
+ * Kembali terlihat = satu pembacaan SEKETIKA, sebelum interval berikutnya.
+ * Tanpa itu, menghentikan polling di latar belakang berarti orang yang kembali
+ * ke tab-nya menatap daftar basi selama satu selang penuh, dan itu persis
+ * ongkos yang membuat orang memilih polling tanpa henti sejak awal.
  */
-function usePolling(active: boolean, fn: () => void | Promise<void>) {
+function usePolling(active: boolean, fn: () => unknown, everyMs = QUEUE_BUSY_POLL_MS) {
   const saved = useRef(fn);
 
   // Ditulis di dalam efek, bukan saat render: menulis ref saat render tidak
@@ -2864,7 +2931,50 @@ function usePolling(active: boolean, fn: () => void | Promise<void>) {
 
   useEffect(() => {
     if (!active) return;
-    const id = setInterval(() => void saved.current(), 2000);
-    return () => clearInterval(id);
-  }, [active]);
+
+    let timer: ReturnType<typeof setInterval> | null = null;
+    let first = true;
+
+    const stop = () => {
+      if (timer !== null) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+
+    const sync = () => {
+      // Dilepas di awal, bukan di akhir: efek ini bisa dipasang saat tab-nya
+      // sudah tidak terlihat, dan cabang `hidden` di bawah keluar lebih dulu.
+      // Kalau penandanya dilepas sesudah itu, pemasangan yang tersembunyi tetap
+      // terhitung "pertama" sampai kapan pun — dan orang yang akhirnya membuka
+      // tab-nya menunggu satu selang penuh sebelum daftarnya diperbarui.
+      const mounting = first;
+      first = false;
+
+      const hidden = typeof document !== "undefined" && document.visibilityState !== "visible";
+      if (hidden) {
+        stop();
+        return;
+      }
+
+      // `timer === null` berarti baru saja kembali terlihat — dibaca sekali
+      // sekarang, lalu intervalnya menyusul. Kecuali saat baru dipasang: di situ
+      // pemanggilnya yang membaca, dan dua pembacaan untuk satu pemasangan
+      // adalah satu permintaan yang tidak menjawab apa pun.
+      if (timer === null) {
+        if (!mounting) void saved.current();
+        timer = setInterval(() => void saved.current(), everyMs);
+      }
+    };
+
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    window.addEventListener("focus", sync);
+
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", sync);
+      window.removeEventListener("focus", sync);
+    };
+  }, [active, everyMs]);
 }

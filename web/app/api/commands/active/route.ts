@@ -5,6 +5,18 @@ import { guardArea, roleForProject } from "@/lib/access";
 export const runtime = "nodejs";
 
 /**
+ * Sepuluh detik, bukan bawaannya.
+ *
+ * Route ini dipolling. Yang ditagih Vercel bukan hanya jumlah permintaannya,
+ * melainkan lama sebuah instance hidup dikali memorinya —
+ * jadi satu permintaan yang menggantung menunggu Supabase yang tidak menjawab
+ * menagih sampai batas waktunya habis. Jawaban yang datang setelah sepuluh
+ * detik pun sudah tidak dipakai: pemanggilnya menanyakannya lagi jauh sebelum
+ * itu.
+ */
+export const maxDuration = 10;
+
+/**
  * Perintah yang sedang berjalan di sebuah proyek — milik siapa pun, bukan hanya
  * milik yang bertanya.
  *
@@ -64,23 +76,56 @@ export async function GET(req: Request) {
   // Diperiksa sebelum klien service dipakai. Klien itu melewati RLS, jadi
   // satu-satunya yang menjaga batas proyek di sini adalah pemeriksaan ini —
   // dan ia harus terjadi lebih dulu, bukan sesudah datanya dibaca.
-  const gate = await guardArea(supabase, user.id, "revit");
+  //
+  // Berbarengan, bukan berurutan. Keduanya pertanyaan yang berdiri sendiri —
+  // kelas akun dan peran proyek tidak saling menentukan — dan keduanya satu
+  // perjalanan ke Supabase. Menunggu yang pertama selesai sebelum mengirim yang
+  // kedua menggandakan waktu hidup sebuah permintaan yang dipolling, dan waktu
+  // hidup itulah yang ditagih sebagai memori. Keduanya tetap selesai sebelum
+  // baris `createServiceClient` di bawah, jadi urutan yang dijaga komentar di
+  // atas tidak berubah sama sekali.
+  const [gate, role] = await Promise.all([
+    guardArea(supabase, user.id, "revit"),
+    roleForProject(supabase, user.id, projectId),
+  ]);
+
   if (!gate.ok) return NextResponse.json({ error: gate.reason }, { status: 403 });
 
-  const role = await roleForProject(supabase, user.id, projectId);
   if (!role) {
     return NextResponse.json({ error: "tidak punya akses ke proyek ini" }, { status: 403 });
   }
 
   const service = createServiceClient();
 
-  const { data: rows, error } = await service
-    .from("commands_queue")
-    .select("id, command_type, command_text, status, queued_at, user_id")
-    .eq("project_id", projectId)
-    .in("status", IN_FLIGHT)
-    .order("queued_at", { ascending: true })
-    .limit(MAX_ROWS);
+  // Dua pertanyaan yang tidak saling membutuhkan, dikirim bersamaan: antrean
+  // yang sedang berjalan, dan kapan add-in terakhir menyelesaikan sesuatu.
+  // Alasannya sama dengan di atas — yang ditagih adalah lamanya permintaan ini
+  // hidup.
+  const [{ data: rows, error }, { data: lastDone }] = await Promise.all([
+    service
+      .from("commands_queue")
+      .select("id, command_type, command_text, status, queued_at, user_id")
+      .eq("project_id", projectId)
+      .in("status", IN_FLIGHT)
+      .order("queued_at", { ascending: true })
+      .limit(MAX_ROWS),
+    // Kapan add-in terakhir benar-benar mengerjakan sesuatu di proyek ini.
+    //
+    // Tanpa ini "Menunggu diambil add-in" adalah satu kalimat untuk dua keadaan
+    // yang sangat berbeda: antrean yang bergerak tapi panjang, dan add-in yang
+    // tidak mengambil apa pun karena Revit tertutup — atau karena add-in-nya
+    // menunggu di project Supabase/kode proyek yang lain. Yang kedua bisa
+    // ditunggu selamanya tanpa pernah terjadi apa-apa, dan itu persis keadaan
+    // yang paling perlu dikatakan.
+    service
+      .from("commands_queue")
+      .select("completed_at")
+      .eq("project_id", projectId)
+      .not("completed_at", "is", null)
+      .order("completed_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
 
   if (error) {
     console.error("[api/commands/active] query failed", error);
@@ -100,23 +145,6 @@ export async function GET(req: Request) {
       names.set(person.id, person.full_name ?? "");
     }
   }
-
-  // Kapan add-in terakhir benar-benar mengerjakan sesuatu di proyek ini.
-  //
-  // Tanpa ini "Menunggu diambil add-in" adalah satu kalimat untuk dua keadaan
-  // yang sangat berbeda: antrean yang bergerak tapi panjang, dan add-in yang
-  // tidak mengambil apa pun karena Revit tertutup — atau karena add-in-nya
-  // menunggu di project Supabase/kode proyek yang lain. Yang kedua bisa
-  // ditunggu selamanya tanpa pernah terjadi apa-apa, dan itu persis keadaan
-  // yang paling perlu dikatakan.
-  const { data: lastDone } = await service
-    .from("commands_queue")
-    .select("completed_at")
-    .eq("project_id", projectId)
-    .not("completed_at", "is", null)
-    .order("completed_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
 
   return NextResponse.json({
     addin: {
