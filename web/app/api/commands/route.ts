@@ -5,6 +5,15 @@ import { guardArea, roleForProject } from "@/lib/access";
 
 export const runtime = "nodejs";
 
+/**
+ * Sama alasannya dengan `active/route.ts`: GET di berkas ini dipolling setiap
+ * dua detik selama sebuah perintah berjalan, dan permintaan yang menggantung
+ * menahan instance-nya tetap hidup — yang ditagih sebagai memori, per jam,
+ * sampai batas waktunya habis. Sepuluh detik lebih panjang dari waktu wajar
+ * membaca satu baris, dan jauh lebih pendek dari bawaannya.
+ */
+export const maxDuration = 10;
+
 // POST — kirim satu command ke antrian yang dipolling add-in Revit.
 export async function POST(req: Request) {
   const supabase = await createClient();

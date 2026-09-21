@@ -488,6 +488,71 @@ menentukan, dan menyetelnya ke `public` persis yang menyebabkan 404 di atas.
 (Repo `electrical_ai` memang memakai `"outputDirectory": "public"` — itu benar
 di sana, karena isinya static + serverless `api/`, bukan Next.js.)
 
+## Tetap di dalam kuota gratis Vercel
+
+Pernah lewat, dan bukan karena pemakaian. Dalam satu periode: Fluid Active CPU
+**9j33m dari 4j** (7j49m di antaranya dari project ini), Provisioned Memory
+**711,8 GB-Jam dari 360**, Edge Requests **1 juta dari 1 juta**, Function
+Invocations **1 juta dari 1 juta** — sementara yang benar-benar dikerjakan
+aplikasi ini sehari bisa dihitung dengan jari.
+
+Seluruhnya berasal dari satu baris: panel perintah menanyakan
+`/api/commands/active` **setiap dua detik** selama sebuah proyek terpilih, tanpa
+syarat lain. Panel ini hidup didok di sebelah jendela Revit dan ditinggal
+berjam-jam; itu memang cara pakainya. Aritmetikanya:
+
+| | |
+|---|---|
+| 1 tab terbuka | 30 permintaan/menit = **43.200/hari** |
+| kuota invocations | 1.000.000/bulan |
+| habis dalam | **± 23 hari-tab** — satu tab yang lupa ditutup, sendirian |
+
+Angka memorinya lebih memberi tahu lagi. 711,8 GB-Jam pada 1 GB berarti ± 712
+jam instance hidup, dan sebulan hanya punya 720 jam: **instance-nya praktis
+tidak pernah mati sebulan penuh.** Di Fluid, memori yang disediakan ditagih
+selama sebuah instance hidup — dan permintaan yang datang setiap dua detik tidak
+pernah memberi jeda yang cukup untuk mematikannya. Jadi yang ditagih bukan
+pekerjaan, melainkan kesiagaan: tagihan 24 jam sehari untuk tab yang tidak ada
+yang menatapnya.
+
+CPU-nya sendiri wajar — 7j49m dibagi sejuta permintaan ± 28 ms per permintaan.
+Yang tidak wajar jumlah permintaannya.
+
+Tiga hal yang mengubahnya, semuanya di `usePolling` (`CommandRunner.tsx`) dan
+`app/api/commands/active/route.ts`:
+
+1. **Tab yang tidak terlihat tidak memolling apa pun.** `visibilitychange`
+   menghentikan intervalnya dan `focus`/kembali-terlihat memicu satu pembacaan
+   seketika — jadi yang hilang cuma perubahan di layar yang memang tidak sedang
+   dilihat siapa pun, bukan kesegaran yang terasa.
+2. **Dua detik hanya saat ada yang berjalan.** Selama antrean kosong, add-in
+   menganggur, dan tidak ada perintah sendiri yang menunggu, selangnya 30 detik
+   (`QUEUE_IDLE_POLL_MS`) — tidak ada satu pun sumber perubahan yang menyala,
+   jadi menanyakannya 30 kali semenit hanya menagih jawaban yang sama.
+3. **Yang butuh jawaban paling baru membacanya sendiri.** Peringatan bentrok di
+   `send()` — satu-satunya tempat daftar ini dipakai untuk memutuskan dan bukan
+   untuk dilihat — memanggil `refreshActive()` tepat sebelum memeriksa, dan
+   memakai nilai kembaliannya (bukan state React, yang belum berubah pada baris
+   berikutnya). Justru baris ini yang membuat polling sepinya boleh selambat itu.
+
+Sisanya memperpendek umur tiap permintaan, karena umur itulah yang ditagih
+sebagai memori: `guardArea` + `roleForProject` dan kedua pembacaan
+`commands_queue` masing-masing dijalankan berbarengan lewat `Promise.all` (tujuh
+perjalanan berurutan ke Supabase jadi empat), dan `maxDuration = 10` di kedua
+route `commands` supaya satu permintaan yang menggantung tidak menagih sampai
+batas bawaannya habis. Urutan pemeriksaan aksesnya tidak berubah — keduanya
+tetap selesai sebelum `createServiceClient()` dipakai.
+
+Hasilnya, untuk satu orang yang panelnya terbuka 8 jam dan benar-benar sibuk
+1 jam di antaranya: **± 2.600 permintaan/hari, turun dari 43.200.** Dan di luar
+jam kerja tidak ada permintaan sama sekali, jadi instance-nya boleh mati —
+yang menghapus bagian terbesar dari tagihan memorinya.
+
+**Kalau angkanya naik lagi, tersangkanya selalu yang sama:** sesuatu yang
+dipanggil berkala tanpa syarat. Periksa `setInterval` dan loop `while`/`for`
+yang berisi `fetch("/api/…")` sebelum memeriksa hal lain — bukan jumlah
+penggunanya.
+
 ## Kenapa tidak ada `middleware.ts`
 
 Sengaja dihapus, dan jangan ditambahkan lagi tanpa membaca ini.
